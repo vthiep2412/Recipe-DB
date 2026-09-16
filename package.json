@@ -1,0 +1,22 @@
+{
+  "name": "recipedb",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tunnel": "bunx cloudflared tunnel --url http://localhost:5176"
+  },
+  "dependencies": {
+    "preact": "^10.25.4",
+    "lucide-preact": "^0.475.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.9.5",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
