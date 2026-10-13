@@ -11,8 +11,9 @@
     "tunnel": "bunx cloudflared tunnel --url http://localhost:5176"
   },
   "dependencies": {
-    "preact": "^10.25.4",
-    "lucide-preact": "^0.475.0"
+    "lucide-preact": "^0.475.0",
+    "marked": "^18.0.14",
+    "preact": "^10.25.4"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.5",

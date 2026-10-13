@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { X } from 'lucide-preact';
 
 interface Props {
@@ -8,15 +8,87 @@ interface Props {
 
 export function AppSettingsModal({ isOpen, onClose }: Props) {
   const [activeTab, setActiveTab] = useState<'tab1' | 'tab2'>('tab1');
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previousActiveElement.current = document.activeElement as HTMLElement | null;
+
+    const modalEl = modalRef.current;
+    if (modalEl) {
+      const focusables = modalEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length > 0) {
+        focusables[0].focus();
+      } else {
+        modalEl.focus();
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (e.key === 'Tab' && modalEl) {
+        const focusables = Array.from(
+          modalEl.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !modalEl.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !modalEl.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (previousActiveElement.current && typeof previousActiveElement.current.focus === 'function') {
+        previousActiveElement.current.focus();
+      }
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()}>
+      <div
+        ref={modalRef}
+        tabIndex={-1}
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-settings-title"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h2 className="modal-title">App Settings</h2>
-          <button className="nav-btn" onClick={onClose} aria-label="Close settings">
+          <h2 id="app-settings-title" className="modal-title">App Settings</h2>
+          <button type="button" className="nav-btn" onClick={onClose} aria-label="Close settings">
             <X size={20} />
           </button>
         </div>

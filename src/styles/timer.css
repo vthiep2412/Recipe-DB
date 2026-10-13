@@ -1,0 +1,644 @@
+/* Recipe Viewer Multi-Timer System Styles */
+
+/* Common Modal Backdrop */
+.timer-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(0.5rem);
+  -webkit-backdrop-filter: blur(0.5rem);
+  animation: timerFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes timerFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 1. Windows Time Picker Modal */
+.windows-picker-card {
+  width: min(24rem, calc(100vw - 2rem));
+  background-color: var(--background-secondary, #1c1c1f);
+  color: var(--text-normal, #f3f4f6);
+  border: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.14));
+  border-radius: 0.75rem;
+  box-shadow: 0 1.25rem 2.5rem rgba(0, 0, 0, 0.45);
+  padding: 1.5rem 1.75rem;
+  animation: timerCardScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes timerCardScale {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.windows-picker-header {
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+
+.windows-picker-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-normal, #f3f4f6);
+}
+
+.windows-picker-columns {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0 1.25rem;
+}
+
+.windows-picker-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 4.5rem;
+  user-select: none;
+}
+
+.windows-picker-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 2rem;
+  background: transparent;
+  border: 0.0625rem solid transparent;
+  border-radius: 0.375rem;
+  color: var(--text-muted, #9ca3af);
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.windows-picker-chevron:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-normal, #f3f4f6);
+}
+
+.windows-picker-chevron:active {
+  transform: scale(0.95);
+}
+
+.windows-picker-col-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.35rem 0;
+}
+
+.windows-picker-digit {
+  font-size: 2.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal, #ffffff);
+  line-height: 1.15;
+}
+
+.windows-picker-unit {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+  color: var(--text-muted, #9ca3af);
+  margin-top: 0.15rem;
+}
+
+.windows-picker-colon {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 0.85rem;
+}
+
+.windows-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.windows-picker-btn {
+  flex: 1;
+  height: 2.75rem;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.windows-picker-btn.cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-normal, #f3f4f6);
+  border: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.14));
+}
+
+.windows-picker-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.windows-picker-btn.save {
+  background: var(--interactive-accent, #f59e0b);
+  color: #111827;
+}
+
+.windows-picker-btn.save:hover {
+  filter: brightness(1.1);
+  transform: translateY(-0.0625rem);
+}
+
+/* 2. Timer Alarm Modal */
+.alarm-modal-card {
+  width: min(52rem, calc(100vw - 2rem));
+  max-height: min(42rem, calc(100vh - 3rem));
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-secondary, #1c1c1f);
+  color: var(--text-normal, #f3f4f6);
+  border: 0.125rem solid #ef4444;
+  border-radius: 1rem;
+  box-shadow: 0 1.5rem 3rem rgba(239, 68, 68, 0.25), 0 0.5rem 1.5rem rgba(0, 0, 0, 0.6);
+  padding: 1.5rem;
+  animation: timerCardScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.alarm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.1));
+}
+
+.alarm-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.alarm-header-title h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f87171;
+}
+
+.alarm-header-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+.alarm-ringing-bell {
+  animation: bellShake 1.2s ease-in-out infinite;
+}
+
+@keyframes bellShake {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-14deg); }
+  45% { transform: rotate(10deg); }
+  60% { transform: rotate(-10deg); }
+  75% { transform: rotate(4deg); }
+}
+
+.alarm-count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.4rem;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.alarm-modal-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: transparent;
+  border: none;
+  border-radius: 0.375rem;
+  color: var(--text-muted, #9ca3af);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alarm-modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-normal, #f3f4f6);
+}
+
+.alarm-cards-container {
+  overflow-y: auto;
+  padding: 0.25rem 0.25rem 0.75rem;
+  max-height: calc(100vh - 14rem);
+}
+
+.alarm-cards-container.row-layout {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.alarm-cards-container.row-layout .alarm-timer-tile {
+  flex: 1 1 15rem;
+  max-width: 20rem;
+}
+
+.alarm-cards-container.grid-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+
+.alarm-timer-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(239, 68, 68, 0.08);
+  border: 0.0625rem solid rgba(239, 68, 68, 0.35);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.alarm-tile-cue-wrap {
+  margin-bottom: 1.25rem;
+}
+
+/* Very BIG text for the creator cue / doneness note */
+.alarm-tile-cue {
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #ffffff;
+  word-break: break-word;
+  letter-spacing: -0.02rem;
+}
+
+.alarm-tile-context {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted, #9ca3af);
+}
+
+.alarm-tile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alarm-btn-stop {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alarm-btn-stop:hover {
+  background: #dc2626;
+  transform: translateY(-0.0625rem);
+}
+
+.alarm-btn-change {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 2.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-normal, #f3f4f6);
+  border: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.15));
+  border-radius: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alarm-btn-change:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.alarm-modal-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.1));
+}
+
+.alarm-btn-silence-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 1.5rem;
+  background: rgba(239, 68, 68, 0.18);
+  border: 0.0625rem solid #ef4444;
+  border-radius: 0.5rem;
+  color: #f87171;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alarm-btn-silence-all:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+/* 3. APP-STYLE JUMPING TIMER WIDGET (ON RIGHT SIDE) */
+.app-timer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.app-timer-container {
+  position: fixed;
+  top: 4.5rem;
+  left: min(calc(50vw + 25.5rem), calc(100vw - 17.5rem));
+  right: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-height: calc(100dvh - 5.5rem);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+@media (max-width: 1024px) {
+  .app-timer-container {
+    top: 4rem;
+    left: auto;
+    right: 1.5rem;
+  }
+}
+
+.app-timer-jump-card {
+  position: relative;
+  width: 16rem;
+  background-color: var(--background-secondary, #1c1c1f);
+  border: 0.0625rem solid var(--background-modifier-border, rgba(255, 255, 255, 0.16));
+  border-radius: 1.25rem;
+  box-shadow: 0 1.25rem 2.5rem rgba(0, 0, 0, 0.5), 0 0.25rem 0.75rem rgba(0, 0, 0, 0.3);
+  padding: 1rem 1.25rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  will-change: transform, opacity;
+  overflow: hidden;
+}
+
+.app-timer-card-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .app-timer-jump-card {
+    width: 14rem;
+    padding: 1rem 1rem 1rem;
+  }
+}
+
+/* Top-right close button that closes the timer completely */
+.app-timer-close-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-muted, #9ca3af);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.15s ease;
+}
+
+.app-timer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+/* Horseshoe arc timer gauge */
+.app-timer-horseshoe-wrapper {
+  position: relative;
+  width: 13.5rem;
+  height: 13.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .app-timer-horseshoe-wrapper {
+    width: 11.5rem;
+    height: 12rem;
+  }
+}
+
+.app-timer-horseshoe-svg {
+  width: 100%;
+  height: 7.02rem;
+  overflow: visible;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .app-timer-horseshoe-svg {
+    height: 6rem;
+  }
+}
+
+.app-timer-horseshoe-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 11;
+  stroke-linecap: round;
+}
+
+.app-timer-horseshoe-indicator {
+  fill: none;
+  stroke: var(--interactive-accent, #f59e0b);
+  stroke-width: 11;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.85s linear;
+}
+
+.app-timer-horseshoe-digits {
+  position: absolute;
+  top: 4.86rem;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  letter-spacing: -0.02rem;
+  user-select: none;
+  cursor: pointer;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.app-timer-horseshoe-digits:hover {
+  opacity: 0.85;
+}
+
+@media (max-width: 768px) {
+  .app-timer-horseshoe-digits {
+    top: 4.15rem;
+    font-size: 2rem;
+  }
+}
+
+/* Creator note in the spacious lower arch opening */
+.app-timer-horseshoe-note {
+  position: absolute;
+  top: 7.15rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-muted, #9ca3af);
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  user-select: none;
+}
+
+@media (max-width: 768px) {
+  .app-timer-horseshoe-note {
+    top: 6.35rem;
+    font-size: 0.72rem;
+    width: 9rem;
+  }
+}
+
+/* Centered pause button nestled in bottom opening */
+.app-timer-horseshoe-pause-btn {
+  position: absolute;
+  bottom: 0.15rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 9999px;
+  border: 0.0625rem solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, filter 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.app-timer-horseshoe-pause-btn.running {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f3f4f6;
+  box-shadow: 0 0.25rem 0.85rem rgba(0, 0, 0, 0.65), 0 0.0625rem 0.1875rem rgba(0, 0, 0, 0.8);
+}
+
+.app-timer-horseshoe-pause-btn.paused {
+  background: var(--interactive-accent, #f59e0b);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0.25rem 0.85rem rgba(0, 0, 0, 0.65), 0 0.0625rem 0.1875rem rgba(0, 0, 0, 0.8);
+}
+
+.app-timer-horseshoe-pause-btn:hover {
+  filter: brightness(1.12);
+  transform: translateX(-50%) scale(1.05);
+}
+
+.app-timer-horseshoe-pause-btn:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
+/* 4. SPACE MOVE: The whole thing on screen moves to the left smoothly to create space for active timer */
+.cook-preview-view {
+  transition: transform 0.48s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.cook-preview-view.timer-active {
+  transform: translateX(-10rem);
+}
+
+@media (min-width: 1500px) {
+  .cook-preview-view.timer-active {
+    transform: translateX(-6rem);
+  }
+}
+
+@media (max-width: 1100px) {
+  .cook-preview-view.timer-active {
+    transform: translateX(-12.5rem);
+  }
+}
+
+@media (max-width: 768px) {
+  .cook-preview-view.timer-active {
+    transform: none;
+  }
+}
+

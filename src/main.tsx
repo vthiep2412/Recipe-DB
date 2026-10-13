@@ -1,16 +1,19 @@
 import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import './styles/theme.css';
 import './styles/recipe.css';
+import './styles/timer.css';
 import { Navbar } from './components/Navbar';
 import { SearchPage } from './components/SearchPage';
 import { RecipeDetailView } from './components/RecipeDetailView';
+import { KitchenStudio } from './components/KitchenStudio/KitchenStudio';
 import { AppSettingsModal } from './components/AppSettingsModal';
 import { getAllRecipes, getRecipeById } from './recipes';
 
 export function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   const recipes = getAllRecipes();
 
@@ -25,12 +28,19 @@ export function App() {
   const navigate = (path: string) => {
     window.history.pushState({}, '', path);
     setCurrentPath(path);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   let mainContent;
 
-  if (currentPath.startsWith('/recipes/')) {
+  if (currentPath.startsWith('/kitchen-studio')) {
+    mainContent = (
+      <KitchenStudio
+        currentPath={currentPath}
+        onNavigate={navigate}
+      />
+    );
+  } else if (currentPath.startsWith('/recipes/')) {
     const recipeId = currentPath.replace('/recipes/', '');
     const recipe = getRecipeById(recipeId);
 
@@ -61,19 +71,19 @@ export function App() {
   }
 
   return (
-    <div>
+    <>
       <Navbar
         onNavigate={navigate}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
-      <main>{mainContent}</main>
+      <main ref={mainRef} className="app-main">{mainContent}</main>
 
       <AppSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
-    </div>
+    </>
   );
 }
 

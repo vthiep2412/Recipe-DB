@@ -4,6 +4,10 @@ export function parseFraction(fractionStr: string): number | null {
   const trimmed = fractionStr.trim();
   if (!trimmed) return null;
 
+  if (!/^(\d+(\.\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)$/.test(trimmed)) {
+    return null;
+  }
+
   if (trimmed.includes(' ')) {
     const parts = trimmed.split(' ');
     if (parts.length === 2) {
@@ -192,7 +196,9 @@ export function parseCooklang(rawContent: string, id = 'recipe-1'): RecipeJSON {
         const numVal = quantityText ? parseFraction(quantityText) : null;
         const normalizedKey = name.toLowerCase();
 
-        if (!allIngredientsMap.has(normalizedKey)) {
+        const existing = allIngredientsMap.get(normalizedKey);
+
+        if (!existing) {
           allIngredientsMap.set(normalizedKey, {
             id: `ing-${allIngredientsMap.size + 1}`,
             name,
@@ -202,9 +208,37 @@ export function parseCooklang(rawContent: string, id = 'recipe-1'): RecipeJSON {
             note,
             isHidden
           });
-        } else if (!isHidden && allIngredientsMap.get(normalizedKey)?.isHidden) {
-          const existing = allIngredientsMap.get(normalizedKey)!;
+        } else if (!isHidden && existing.isHidden) {
           existing.isHidden = false;
+          if (numVal !== null) existing.quantityValue = numVal;
+          if (unit) existing.unit = unit;
+          if (quantityText) existing.quantityText = quantityText;
+          if (note) existing.note = note;
+        } else if (!isHidden) {
+          const existingUnit = (existing.unit || '').toLowerCase().trim();
+          const currentUnit = (unit || '').toLowerCase().trim();
+          const unitsCompatible = existingUnit === currentUnit;
+
+          if (unitsCompatible && existing.quantityValue !== null && numVal !== null) {
+            existing.quantityValue += numVal;
+            existing.quantityText = formatFraction(existing.quantityValue);
+            if (note && existing.note && !existing.note.includes(note)) {
+              existing.note = `${existing.note}, ${note}`;
+            } else if (note && !existing.note) {
+              existing.note = note;
+            }
+          } else if (quantityText || unit) {
+            const extraKey = `${normalizedKey}__${allIngredientsMap.size + 1}`;
+            allIngredientsMap.set(extraKey, {
+              id: `ing-${allIngredientsMap.size + 1}`,
+              name,
+              quantityValue: numVal,
+              unit,
+              quantityText: quantityText || null,
+              note,
+              isHidden: false
+            });
+          }
         }
 
         tokens.push({
@@ -271,9 +305,12 @@ export function parseCooklang(rawContent: string, id = 'recipe-1'): RecipeJSON {
   let servingsUnitName = 'servings';
   const servingsRaw = metadata['servings'] || metadata['yield'];
   if (servingsRaw) {
-    const match = servingsRaw.match(/^([\d.]+)\s*(.*)$/);
+    const match = servingsRaw.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)\s*(.*)$/);
     if (match) {
-      servingsBase = parseFloat(match[1]) || 1;
+      const parsedBase = parseFraction(match[1]);
+      if (parsedBase !== null && parsedBase > 0) {
+        servingsBase = parsedBase;
+      }
       servingsUnitName = match[2].trim() || 'servings';
     }
   }

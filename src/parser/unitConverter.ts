@@ -83,6 +83,22 @@ export function convertUnit(
       const g = value * 28.35;
       return g >= 1000 ? { value: Math.round((g / 1000) * 100) / 100, unit: 'kg' } : { value: Math.round(g), unit: 'g' };
     }
+    if (rawUnit === 'fl_oz' || rawUnit === 'fl oz' || rawUnit === 'floz' || rawUnit === 'fluid ounce' || rawUnit === 'fluid ounces') {
+      const ml = value * preset.fl_oz;
+      return ml >= 1000 ? { value: Math.round((ml / 1000) * 100) / 100, unit: 'l' } : { value: Math.round(ml), unit: 'ml' };
+    }
+    if (rawUnit === 'pt' || rawUnit === 'pts' || rawUnit === 'pint' || rawUnit === 'pints') {
+      const ml = value * preset.pt;
+      return ml >= 1000 ? { value: Math.round((ml / 1000) * 100) / 100, unit: 'l' } : { value: Math.round(ml), unit: 'ml' };
+    }
+    if (rawUnit === 'qt' || rawUnit === 'qts' || rawUnit === 'quart' || rawUnit === 'quarts') {
+      const ml = value * preset.qt;
+      return ml >= 1000 ? { value: Math.round((ml / 1000) * 100) / 100, unit: 'l' } : { value: Math.round(ml), unit: 'ml' };
+    }
+    if (rawUnit === 'gal' || rawUnit === 'gals' || rawUnit === 'gallon' || rawUnit === 'gallons') {
+      const ml = value * preset.gal;
+      return ml >= 1000 ? { value: Math.round((ml / 1000) * 100) / 100, unit: 'l' } : { value: Math.round(ml), unit: 'ml' };
+    }
     if (rawUnit === 'lb' || rawUnit === 'pound' || rawUnit === 'pounds') {
       const g = value * 453.59;
       return { value: Math.round((g / 1000) * 100) / 100, unit: 'kg' };
