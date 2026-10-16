@@ -91,7 +91,7 @@ function recipeStudioApiPlugin(): Plugin {
 export default defineConfig({
   plugins: [preact(), recipeStudioApiPlugin()],
   server: {
-    port: 3000,
+    port: 5176,
     host: '0.0.0.0',
     allowedHosts: true
   }
