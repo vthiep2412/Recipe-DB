@@ -22,6 +22,12 @@ function recipeStudioApiPlugin(): Plugin {
                 fs.mkdirSync(recipesDir, { recursive: true });
               }
               const filePath = path.join(recipesDir, `${recipeId}.json`);
+              if (fs.existsSync(filePath)) {
+                res.statusCode = 409;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: `Recipe "${recipeId}" already exists. Overwrite is not allowed.` }));
+                return;
+              }
               fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ ok: true, filePath, id: recipeId }));

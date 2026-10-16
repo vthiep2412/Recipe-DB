@@ -10,11 +10,13 @@ import { SectionNode } from './SectionNode';
 import { StepNode } from './StepNode';
 import { NodeInspector } from './NodeInspector';
 import { SidebarToolbox } from './SidebarToolbox';
-import { JsonDrawer } from './JsonDrawer';
+import { PreviewDrawer } from './PreviewDrawer';
 import { MediaModal } from './MediaModal';
 import { CustomItemModal } from './CustomItemModal';
 import { RecipeMetadataModal } from './RecipeMetadataModal';
 import { CascadeDeleteModal } from './CascadeDeleteModal';
+import { ExportRecipeModal } from './ExportRecipeModal';
+import { ReparentSectionModal } from './ReparentSectionModal';
 
 interface KitchenCanvasProps {
   workspace: StudioWorkspace;
@@ -95,20 +97,36 @@ function resolveNodeSectionId(
   return fallbackSectionId;
 }
 
+function clusterSectionsHierarchically(sections: CanvasSection[]): CanvasSection[] {
+  const roots = sections.filter(s => !s.parentSectionId || !sections.some(p => p.id === s.parentSectionId));
+  const result: CanvasSection[] = [];
+  for (const root of roots) {
+    result.push(root);
+    const subs = sections.filter(s => s.parentSectionId === root.id);
+    for (const sub of subs) {
+      result.push(sub);
+    }
+  }
+  for (const s of sections) {
+    if (!result.some(r => r.id === s.id)) {
+      result.push(s);
+    }
+  }
+  return result.map((s, idx) => ({ ...s, order: idx }));
+}
+
 function reorderSectionsAndNodes(
   newSections: CanvasSection[],
   currentNodes: CanvasStepNode[]
 ): { sections: CanvasSection[]; canvasNodes: CanvasStepNode[] } {
-  newSections.forEach((s, idx) => {
-    s.order = idx;
-  });
+  const clusteredSections = clusterSectionsHierarchically(newSections);
 
-  const knownSectionIds = new Set(newSections.map(s => s.id));
+  const knownSectionIds = new Set(clusteredSections.map(s => s.id));
   const nodesById = new Map(currentNodes.map(n => [n.id, n]));
-  const defaultSecId = newSections[0]?.id || 'sec-main';
+  const defaultSecId = clusteredSections[0]?.id || 'sec-main';
 
   const nodesBySection: Record<string, CanvasStepNode[]> = {};
-  for (const s of newSections) {
+  for (const s of clusteredSections) {
     nodesBySection[s.id] = [];
   }
 
@@ -119,7 +137,7 @@ function reorderSectionsAndNodes(
   }
 
   const nextNodes: CanvasStepNode[] = [];
-  for (const s of newSections) {
+  for (const s of clusteredSections) {
     const secNodes = nodesBySection[s.id] || [];
     nextNodes.push(...secNodes);
   }
@@ -141,7 +159,7 @@ function reorderSectionsAndNodes(
   });
 
   return {
-    sections: newSections,
+    sections: clusteredSections,
     canvasNodes: resequencedNodes
   };
 }
@@ -218,6 +236,9 @@ export function KitchenCanvas({
     title: string;
     itemCount: number;
   } | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isReparentModalOpen, setIsReparentModalOpen] = useState(false);
+  const [reorderAnimatingDeltas, setReorderAnimatingDeltas] = useState<Record<string, number>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -274,7 +295,6 @@ export function KitchenCanvas({
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   const [dragCurrentDeltaX, setDragCurrentDeltaX] = useState<number>(0);
   const dragStartCanvasPointerXRef = useRef<number>(0);
-  const dragSectionIndexRef = useRef<number>(-1);
   const dragRafIdRef = useRef<number | null>(null);
   const dragPointerClientXRef = useRef<number>(0);
 
@@ -282,8 +302,18 @@ export function KitchenCanvas({
   const handleMouseDown = (e: MouseEvent) => {
     const isMiddleClick = e.button === 1;
     const isBackgroundClick = !(e.target as HTMLElement).closest(
-      '.studio-canvas-node, .section-node-card, .studio-sidebar-toolbox, .studio-json-drawer, .studio-inspector-card, .canvas-top-bar'
+      '.studio-canvas-node, .section-node-card, .studio-sidebar-toolbox, .studio-json-drawer, .studio-preview-drawer, .studio-inspector-card, .canvas-top-bar, .universal-dropdown-container, .universal-dropdown-portal, .studio-modal-overlay, .studio-modal-backdrop'
     );
+
+    // If click is outside the inspector and outside nodes, close the inspector
+    const isInsideInspector = Boolean((e.target as HTMLElement).closest('.canvas-inspector-anchor, .studio-inspector-card, .universal-dropdown-container, .universal-dropdown-portal'));
+    const isInsideSelectedStep = Boolean((e.target as HTMLElement).closest(`.studio-canvas-node[data-node-id="${selectedNodeId}"]`));
+    if (!isInsideInspector && !isInsideSelectedStep) {
+      if (activeMentionId || isYieldMode) {
+        setActiveMentionId(null);
+        setIsYieldMode(false);
+      }
+    }
 
     if (isMiddleClick || isSpacePressed || isBackgroundClick) {
       if (isMiddleClick) e.preventDefault();
@@ -308,6 +338,7 @@ export function KitchenCanvas({
     const target = e.target as HTMLElement;
     if (
       target.closest('.json-drawer-content') ||
+      target.closest('.studio-preview-drawer') ||
       target.closest('.universal-dropdown-list') ||
       target.closest('.universal-dropdown-container') ||
       target.closest('.compact-dropdown-menu') ||
@@ -343,8 +374,13 @@ export function KitchenCanvas({
   // Node dimension constants
   const SECTION_DEFAULT_WIDTH = 576;
   const SECTION_DEFAULT_HEIGHT = 160;
+  const SUBSECTION_DEFAULT_WIDTH = 512;
   const STEP_DEFAULT_WIDTH = 576;
   const STEP_DEFAULT_HEIGHT = 260;
+
+  const SECTION_ACCENT_COLORS = [
+    '#ff7a00'
+  ];
 
   const VERTICAL_GAP = 90;
   const HORIZONTAL_GAP = 80;
@@ -356,6 +392,7 @@ export function KitchenCanvas({
 
   const [nodeSizes, setNodeSizes] = useState<Record<string, NodeSize>>({});
   const observerMapRef = useRef<Map<string, ResizeObserver>>(new Map());
+  const restingLayoutRef = useRef<{ baseColumnX: Record<string, number>; slotWidths: Record<string, number> }>({ baseColumnX: {}, slotWidths: {} });
 
   const registerNodeRef = (id: string, el: HTMLElement | null) => {
     if (!el) {
@@ -410,15 +447,57 @@ export function KitchenCanvas({
     };
   }, []);
 
-  // Compute dynamic positions for sections and child steps
+  // Group sections hierarchically: roots followed immediately by child subsections
+  const { orderedSections, sectionParentMap, sectionAccentMap, clusters } = useMemo(() => {
+    const roots = currentSections.filter(s => !s.parentSectionId || !currentSections.some(p => p.id === s.parentSectionId));
+    const ordered: CanvasSection[] = [];
+    const parentMap: Record<string, CanvasSection> = {};
+    const accentMap: Record<string, string> = {};
+    const clusterList: { root: CanvasSection; subsections: CanvasSection[]; accentColor: string }[] = [];
+
+    roots.forEach((root, rootIdx) => {
+      const accent = SECTION_ACCENT_COLORS[rootIdx % SECTION_ACCENT_COLORS.length];
+      const subs = currentSections.filter(s => s.parentSectionId === root.id);
+      accentMap[root.id] = accent;
+      ordered.push(root);
+
+      subs.forEach(sub => {
+        parentMap[sub.id] = root;
+        accentMap[sub.id] = accent;
+        ordered.push(sub);
+      });
+
+      clusterList.push({
+        root,
+        subsections: subs,
+        accentColor: accent
+      });
+    });
+
+    for (const s of currentSections) {
+      if (!ordered.some(o => o.id === s.id)) {
+        ordered.push(s);
+        accentMap[s.id] = SECTION_ACCENT_COLORS[0];
+      }
+    }
+
+    return {
+      orderedSections: ordered,
+      sectionParentMap: parentMap,
+      sectionAccentMap: accentMap,
+      clusters: clusterList
+    };
+  }, [currentSections]);
+
+  // Compute dynamic positions for sections and child steps with real-time sliding
   const nodePositions = useMemo(() => {
     const positions: Record<string, NodeLayoutPos> = {};
-    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const knownSectionIds = new Set(orderedSections.map(s => s.id));
     const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
-    const defaultSecId = currentSections[0]?.id || 'sec-main';
+    const defaultSecId = orderedSections[0]?.id || 'sec-main';
 
     const stepsBySection: Record<string, CanvasStepNode[]> = {};
-    for (const sec of currentSections) {
+    for (const sec of orderedSections) {
       stepsBySection[sec.id] = [];
     }
     for (const node of workspace.canvasNodes) {
@@ -444,13 +523,17 @@ export function KitchenCanvas({
       return Math.max(ownWidth, childrenTotalWidth);
     };
 
+    // First pass: compute resting base X and slot widths for all columns
+    const baseColumnX: Record<string, number> = {};
+    const slotWidths: Record<string, number> = {};
     let currentColumnX = 0;
 
-    for (let secIdx = 0; secIdx < currentSections.length; secIdx++) {
-      const sec = currentSections[secIdx];
+    for (let secIdx = 0; secIdx < orderedSections.length; secIdx++) {
+      const sec = orderedSections[secIdx];
+      const isSub = Boolean(sec.parentSectionId);
+      const defaultW = isSub ? SUBSECTION_DEFAULT_WIDTH : SECTION_DEFAULT_WIDTH;
       const secSteps = stepsBySection[sec.id] || [];
-      const secW = nodeSizes[sec.id]?.width || SECTION_DEFAULT_WIDTH;
-      const secH = nodeSizes[sec.id]?.height || SECTION_DEFAULT_HEIGHT;
+      const secW = nodeSizes[sec.id]?.width || defaultW;
 
       const rootStepNodes = secSteps.filter(
         n => n.parentId === sec.id || n.parentId === 'root' || !workspace.canvasNodes.some(x => x.id === n.parentId)
@@ -458,14 +541,104 @@ export function KitchenCanvas({
 
       const subtreeWidths = rootStepNodes.map(r => getSubtreeWidth(r.id));
       const rootsTotalW = subtreeWidths.reduce((acc, w, idx) => acc + w + (idx > 0 ? 60 : 0), 0);
-      const columnSlotWidth = Math.max(secW, rootsTotalW, SECTION_DEFAULT_WIDTH);
+      const columnSlotWidth = Math.max(secW, rootsTotalW, defaultW);
 
-      let secPosDeltaX = 0;
-      if (draggingSectionId === sec.id) {
-        secPosDeltaX = dragCurrentDeltaX;
+      baseColumnX[sec.id] = currentColumnX;
+      slotWidths[sec.id] = columnSlotWidth;
+      currentColumnX += columnSlotWidth + HORIZONTAL_GAP;
+    }
+
+    restingLayoutRef.current = { baseColumnX, slotWidths };
+
+    // Compute live real-time drag sliding deltas
+    const liveDeltas: Record<string, number> = {};
+    if (draggingSectionId) {
+      const draggedCluster = clusters.find(c => c.root.id === draggingSectionId);
+      if (draggedCluster) {
+        // Atomic cluster drag: root and all subsections move together
+        for (const member of [draggedCluster.root, ...draggedCluster.subsections]) {
+          liveDeltas[member.id] = dragCurrentDeltaX;
+        }
+
+        const draggedClusterStartX = baseColumnX[draggedCluster.root.id] || 0;
+        const lastMember = draggedCluster.subsections[draggedCluster.subsections.length - 1] || draggedCluster.root;
+        const draggedClusterEndX = (baseColumnX[lastMember.id] || 0) + (slotWidths[lastMember.id] || SECTION_DEFAULT_WIDTH);
+        const draggedClusterWidth = draggedClusterEndX - draggedClusterStartX;
+        const draggedClusterCenter = draggedClusterStartX + draggedClusterWidth / 2 + dragCurrentDeltaX;
+        const clusterIndex = clusters.indexOf(draggedCluster);
+
+        // Real-time 50% midpoint crossover detection for other clusters
+        clusters.forEach((otherCluster, oIdx) => {
+          if (oIdx === clusterIndex) return;
+          const otherStartX = baseColumnX[otherCluster.root.id] || 0;
+          const otherLast = otherCluster.subsections[otherCluster.subsections.length - 1] || otherCluster.root;
+          const otherEndX = (baseColumnX[otherLast.id] || 0) + (slotWidths[otherLast.id] || SECTION_DEFAULT_WIDTH);
+          const otherWidth = otherEndX - otherStartX;
+          const otherCenter = otherStartX + otherWidth / 2;
+
+          if (oIdx > clusterIndex) {
+            const midpoint = (draggedClusterStartX + draggedClusterWidth / 2 + otherCenter) / 2;
+            if (draggedClusterCenter > midpoint) {
+              const slideShift = -(draggedClusterWidth + HORIZONTAL_GAP);
+              for (const m of [otherCluster.root, ...otherCluster.subsections]) {
+                liveDeltas[m.id] = slideShift;
+              }
+            }
+          } else {
+            const midpoint = (draggedClusterStartX + draggedClusterWidth / 2 + otherCenter) / 2;
+            if (draggedClusterCenter < midpoint) {
+              const slideShift = (draggedClusterWidth + HORIZONTAL_GAP);
+              for (const m of [otherCluster.root, ...otherCluster.subsections]) {
+                liveDeltas[m.id] = slideShift;
+              }
+            }
+          }
+        });
+      } else {
+        // Individual subsection drag within cluster
+        liveDeltas[draggingSectionId] = dragCurrentDeltaX;
+        const parentCluster = clusters.find(c => c.subsections.some(s => s.id === draggingSectionId));
+        if (parentCluster) {
+          const subIdx = parentCluster.subsections.findIndex(s => s.id === draggingSectionId);
+          const draggedSub = parentCluster.subsections[subIdx];
+          const draggedBaseX = baseColumnX[draggedSub.id] || 0;
+          const draggedW = slotWidths[draggedSub.id] || SUBSECTION_DEFAULT_WIDTH;
+          const draggedCenter = draggedBaseX + draggedW / 2 + dragCurrentDeltaX;
+
+          parentCluster.subsections.forEach((sibling, sibIdx) => {
+            if (sibIdx === subIdx) return;
+            const sibBaseX = baseColumnX[sibling.id] || 0;
+            const sibW = slotWidths[sibling.id] || SUBSECTION_DEFAULT_WIDTH;
+            const sibCenter = sibBaseX + sibW / 2;
+
+            if (sibIdx > subIdx) {
+              const midpoint = (draggedBaseX + draggedW / 2 + sibCenter) / 2;
+              if (draggedCenter > midpoint) {
+                liveDeltas[sibling.id] = -(draggedW + HORIZONTAL_GAP);
+              }
+            } else {
+              const midpoint = (draggedBaseX + draggedW / 2 + sibCenter) / 2;
+              if (draggedCenter < midpoint) {
+                liveDeltas[sibling.id] = (draggedW + HORIZONTAL_GAP);
+              }
+            }
+          });
+        }
       }
+    }
 
-      const columnCenterX = currentColumnX + columnSlotWidth / 2 + secPosDeltaX;
+    // Second pass: position section headers and subtrees
+    for (let secIdx = 0; secIdx < orderedSections.length; secIdx++) {
+      const sec = orderedSections[secIdx];
+      const isSub = Boolean(sec.parentSectionId);
+      const defaultW = isSub ? SUBSECTION_DEFAULT_WIDTH : SECTION_DEFAULT_WIDTH;
+      const secSteps = stepsBySection[sec.id] || [];
+      const secW = nodeSizes[sec.id]?.width || defaultW;
+      const secH = nodeSizes[sec.id]?.height || SECTION_DEFAULT_HEIGHT;
+      const columnSlotWidth = slotWidths[sec.id] || defaultW;
+
+      const secPosDeltaX = liveDeltas[sec.id] || 0;
+      const columnCenterX = (baseColumnX[sec.id] || 0) + columnSlotWidth / 2 + secPosDeltaX;
       const secX = columnCenterX - secW / 2;
       const secY = 0;
 
@@ -524,6 +697,13 @@ export function KitchenCanvas({
         }
       };
 
+      const rootStepNodes = secSteps.filter(
+        n => n.parentId === sec.id || n.parentId === 'root' || !workspace.canvasNodes.some(x => x.id === n.parentId)
+      );
+
+      const subtreeWidths = rootStepNodes.map(r => getSubtreeWidth(r.id));
+      const rootsTotalW = subtreeWidths.reduce((acc, w, idx) => acc + w + (idx > 0 ? 60 : 0), 0);
+
       if (rootStepNodes.length === 1) {
         const rootStep = rootStepNodes[0];
         const rW = nodeSizes[rootStep.id]?.width || STEP_DEFAULT_WIDTH;
@@ -558,12 +738,66 @@ export function KitchenCanvas({
           currentRootX += slotW + 60;
         }
       }
-
-      currentColumnX += columnSlotWidth + HORIZONTAL_GAP;
     }
 
     return positions;
-  }, [workspace.canvasNodes, currentSections, nodeSizes, draggingSectionId, dragCurrentDeltaX]);
+  }, [workspace.canvasNodes, orderedSections, clusters, nodeSizes, draggingSectionId, dragCurrentDeltaX]);
+
+  // Compute overarching tree brackets connecting parent sections to their child subsections
+  const overarchingBrackets = useMemo(() => {
+    const brackets: {
+      key: string;
+      parentDot: { cx: number; cy: number };
+      childDots: { cx: number; cy: number }[];
+      mainArchD: string;
+      stemPaths: string[];
+      accentColor: string;
+    }[] = [];
+
+    for (const cluster of clusters) {
+      if (cluster.subsections.length === 0) continue;
+      const rootPos = nodePositions[cluster.root.id];
+      if (!rootPos) continue;
+
+      const subPositions = cluster.subsections
+        .map(s => nodePositions[s.id])
+        .filter((p): p is NodeLayoutPos => Boolean(p));
+      if (subPositions.length === 0) continue;
+
+      const parentAnchorX = rootPos.x + rootPos.width / 2;
+      const parentAnchorY = rootPos.y;
+
+      const archHeight = 24 + (subPositions.length - 1) * 10;
+      const archY = parentAnchorY - archHeight;
+      const radius = 8;
+
+      const lastChildPos = subPositions[subPositions.length - 1];
+      const lastChildX = lastChildPos.x + lastChildPos.width / 2;
+
+      const mainD = `M ${parentAnchorX} ${parentAnchorY} V ${archY + radius} A ${radius} ${radius} 0 0 1 ${parentAnchorX + radius} ${archY} H ${lastChildX}`;
+
+      const stems: string[] = [];
+      const childDots: { cx: number; cy: number }[] = [];
+
+      for (const cPos of subPositions) {
+        const cX = cPos.x + cPos.width / 2;
+        const cY = cPos.y;
+        stems.push(`M ${cX} ${archY} L ${cX} ${cY}`);
+        childDots.push({ cx: cX, cy: cY });
+      }
+
+      brackets.push({
+        key: `bracket-${cluster.root.id}`,
+        parentDot: { cx: parentAnchorX, cy: parentAnchorY },
+        childDots,
+        mainArchD: mainD,
+        stemPaths: stems,
+        accentColor: cluster.accentColor
+      });
+    }
+
+    return brackets;
+  }, [clusters, nodePositions]);
 
   // Compute intra section connector wire paths
   const connectorWires = useMemo(() => {
@@ -646,39 +880,38 @@ export function KitchenCanvas({
     return wires;
   }, [workspace.canvasNodes, nodePositions, nodeSizes, selectedNodeId, highlightedStepId]);
 
-  // Section column drag reorder handlers
-  const handleStartDragSection = (e: PointerEvent, sectionId: string, idx: number) => {
+  // Section column drag reorder handlers with real-time sliding
+  const handleStartDragSection = (e: PointerEvent, sectionId: string, _idx: number) => {
     e.stopPropagation();
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
 
     setDraggingSectionId(sectionId);
-    dragSectionIndexRef.current = idx;
     dragPointerClientXRef.current = e.clientX;
     dragStartCanvasPointerXRef.current = (e.clientX - panRef.current.x) / zoom;
     setDragCurrentDeltaX(0);
 
-    const slotDist = STEP_DEFAULT_WIDTH + HORIZONTAL_GAP;
-    const minDelta = -idx * slotDist;
-    const maxDelta = (currentSections.length - 1 - idx) * slotDist;
+    const resting = restingLayoutRef.current;
+    const baseColumnX = resting.baseColumnX;
+    const slotWidths = resting.slotWidths;
 
-    const applyElasticResistance = (rawDelta: number): number => {
-      if (rawDelta < minDelta) {
-        const overshoot = minDelta - rawDelta;
-        return minDelta - overshoot * 0.25;
-      }
-      if (rawDelta > maxDelta) {
-        const overshoot = rawDelta - maxDelta;
-        return maxDelta + overshoot * 0.25;
-      }
-      return rawDelta;
-    };
+    let moveRafId: number | null = null;
+    let latestPointerClientX = e.clientX;
 
     const updateDelta = (clientX: number) => {
       dragPointerClientXRef.current = clientX;
       const currentCanvasPointerX = (clientX - panRef.current.x) / zoom;
       const rawDelta = currentCanvasPointerX - dragStartCanvasPointerXRef.current;
-      setDragCurrentDeltaX(applyElasticResistance(rawDelta));
+      setDragCurrentDeltaX(rawDelta);
+    };
+
+    const scheduleMoveUpdate = () => {
+      if (moveRafId === null) {
+        moveRafId = requestAnimationFrame(() => {
+          moveRafId = null;
+          updateDelta(latestPointerClientX);
+        });
+      }
     };
 
     const autoPanLoop = () => {
@@ -709,10 +942,15 @@ export function KitchenCanvas({
     dragRafIdRef.current = requestAnimationFrame(autoPanLoop);
 
     const handlePointerMove = (ev: PointerEvent) => {
-      updateDelta(ev.clientX);
+      latestPointerClientX = ev.clientX;
+      scheduleMoveUpdate();
     };
 
     const handlePointerUp = (ev: PointerEvent) => {
+      if (moveRafId !== null) {
+        cancelAnimationFrame(moveRafId);
+        moveRafId = null;
+      }
       if (dragRafIdRef.current !== null) {
         cancelAnimationFrame(dragRafIdRef.current);
         dragRafIdRef.current = null;
@@ -725,29 +963,108 @@ export function KitchenCanvas({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
 
-      const currentCanvasPointerX = (ev.clientX - panRef.current.x) / zoom;
-      const finalDelta = currentCanvasPointerX - dragStartCanvasPointerXRef.current;
-      const threshold = 180;
-      let slotShift = 0;
-      if (Math.abs(finalDelta) >= threshold) {
-        slotShift = finalDelta > 0
-          ? Math.max(1, Math.round(finalDelta / slotDist))
-          : Math.min(-1, Math.round(finalDelta / slotDist));
-      }
+      // Compute final delta from exact pointer release position
+      const finalCanvasPointerX = (ev.clientX - panRef.current.x) / zoom;
+      const finalDeltaX = finalCanvasPointerX - dragStartCanvasPointerXRef.current;
 
-      if (slotShift !== 0) {
-        const fromIdx = dragSectionIndexRef.current;
-        const targetIdx = Math.max(0, Math.min(currentSections.length - 1, fromIdx + slotShift));
-        if (targetIdx !== fromIdx) {
-          const nextSections = [...currentSections];
-          const [moved] = nextSections.splice(fromIdx, 1);
-          nextSections.splice(targetIdx, 0, moved);
-          const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
-          updateWorkspaceState({
-            ...workspace,
-            sections: reordered.sections,
-            canvasNodes: reordered.canvasNodes
+      const isRoot = !sectionParentMap[sectionId];
+      if (isRoot) {
+        const draggedCluster = clusters.find(c => c.root.id === sectionId);
+        if (draggedCluster) {
+          const currentClusterIdx = clusters.indexOf(draggedCluster);
+
+          // Compute resting centers of all clusters
+          const clusterRestingCenters = clusters.map(c => {
+            const startX = baseColumnX[c.root.id] || 0;
+            const last = c.subsections[c.subsections.length - 1] || c.root;
+            const endX = (baseColumnX[last.id] || 0) + (slotWidths[last.id] || SECTION_DEFAULT_WIDTH);
+            const width = endX - startX;
+            return {
+              cluster: c,
+              center: startX + width / 2
+            };
           });
+
+          const currentEntry = clusterRestingCenters[currentClusterIdx];
+          const startingCenter = currentEntry ? currentEntry.center : 0;
+          const trueDroppedCenter = startingCenter + finalDeltaX;
+
+          let targetClusterIdx = currentClusterIdx;
+          let bestDist = Infinity;
+          clusterRestingCenters.forEach((entry, idx) => {
+            const dist = Math.abs(trueDroppedCenter - entry.center);
+            if (dist < bestDist) {
+              bestDist = dist;
+              targetClusterIdx = idx;
+            }
+          });
+
+          if (targetClusterIdx !== currentClusterIdx) {
+            const nextClusters = [...clusters];
+            const [moved] = nextClusters.splice(currentClusterIdx, 1);
+            nextClusters.splice(targetClusterIdx, 0, moved);
+
+            const nextSections: CanvasSection[] = [];
+            for (const c of nextClusters) {
+              nextSections.push(c.root, ...c.subsections);
+            }
+            const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
+            updateWorkspaceState({
+              ...workspace,
+              sections: reordered.sections,
+              canvasNodes: reordered.canvasNodes
+            });
+          }
+        }
+      } else {
+        const parentCluster = clusters.find(c => c.subsections.some(s => s.id === sectionId));
+        if (parentCluster) {
+          const currentSubIdx = parentCluster.subsections.findIndex(s => s.id === sectionId);
+
+          // Compute resting centers of all subsections in this cluster
+          const subRestingCenters = parentCluster.subsections.map(s => {
+            const startX = baseColumnX[s.id] || 0;
+            const width = slotWidths[s.id] || SUBSECTION_DEFAULT_WIDTH;
+            return {
+              sub: s,
+              center: startX + width / 2
+            };
+          });
+
+          const currentSubEntry = subRestingCenters[currentSubIdx];
+          const startingCenter = currentSubEntry ? currentSubEntry.center : 0;
+          const trueDroppedCenter = startingCenter + finalDeltaX;
+
+          let targetSubIdx = currentSubIdx;
+          let bestDist = Infinity;
+          subRestingCenters.forEach((entry, idx) => {
+            const dist = Math.abs(trueDroppedCenter - entry.center);
+            if (dist < bestDist) {
+              bestDist = dist;
+              targetSubIdx = idx;
+            }
+          });
+
+          if (targetSubIdx !== currentSubIdx) {
+            const nextSubs = [...parentCluster.subsections];
+            const [moved] = nextSubs.splice(currentSubIdx, 1);
+            nextSubs.splice(targetSubIdx, 0, moved);
+
+            const nextSections: CanvasSection[] = [];
+            for (const c of clusters) {
+              if (c.root.id === parentCluster.root.id) {
+                nextSections.push(c.root, ...nextSubs);
+              } else {
+                nextSections.push(c.root, ...c.subsections);
+              }
+            }
+            const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
+            updateWorkspaceState({
+              ...workspace,
+              sections: reordered.sections,
+              canvasNodes: reordered.canvasNodes
+            });
+          }
         }
       }
 
@@ -759,19 +1076,88 @@ export function KitchenCanvas({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const handleMoveSection = (sectionIndex: number, direction: 'left' | 'right') => {
-    const targetIndex = direction === 'left' ? sectionIndex - 1 : sectionIndex + 1;
-    if (targetIndex < 0 || targetIndex >= currentSections.length) return;
-    const nextSections = [...currentSections];
-    const temp = nextSections[sectionIndex];
-    nextSections[sectionIndex] = nextSections[targetIndex];
-    nextSections[targetIndex] = temp;
-    const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
-    updateWorkspaceState({
-      ...workspace,
-      sections: reordered.sections,
-      canvasNodes: reordered.canvasNodes
-    });
+  const handleMoveSection = (sectionId: string, direction: 'left' | 'right') => {
+    const isRoot = !sectionParentMap[sectionId];
+    if (isRoot) {
+      const clusterIdx = clusters.findIndex(c => c.root.id === sectionId);
+      if (clusterIdx === -1) return;
+      const targetClusterIdx = direction === 'left' ? clusterIdx - 1 : clusterIdx + 1;
+      if (targetClusterIdx < 0 || targetClusterIdx >= clusters.length) return;
+
+      const currentCluster = clusters[clusterIdx];
+      const targetCluster = clusters[targetClusterIdx];
+
+      const currentStartX = nodePositions[currentCluster.root.id]?.x || 0;
+      const targetStartX = nodePositions[targetCluster.root.id]?.x || 0;
+      const dist = targetStartX - currentStartX;
+
+      const animating: Record<string, number> = {};
+      for (const m of [currentCluster.root, ...currentCluster.subsections]) {
+        animating[m.id] = dist;
+      }
+      for (const m of [targetCluster.root, ...targetCluster.subsections]) {
+        animating[m.id] = -dist;
+      }
+      setReorderAnimatingDeltas(animating);
+
+      setTimeout(() => {
+        const nextClusters = [...clusters];
+        const [moved] = nextClusters.splice(clusterIdx, 1);
+        nextClusters.splice(targetClusterIdx, 0, moved);
+
+        const nextSections: CanvasSection[] = [];
+        for (const c of nextClusters) {
+          nextSections.push(c.root, ...c.subsections);
+        }
+        const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
+        updateWorkspaceState({
+          ...workspace,
+          sections: reordered.sections,
+          canvasNodes: reordered.canvasNodes
+        });
+        setReorderAnimatingDeltas({});
+      }, 220);
+    } else {
+      const parentCluster = clusters.find(c => c.subsections.some(s => s.id === sectionId));
+      if (!parentCluster) return;
+      const subIdx = parentCluster.subsections.findIndex(s => s.id === sectionId);
+      const targetSubIdx = direction === 'left' ? subIdx - 1 : subIdx + 1;
+      if (targetSubIdx < 0 || targetSubIdx >= parentCluster.subsections.length) return;
+
+      const currentSub = parentCluster.subsections[subIdx];
+      const targetSub = parentCluster.subsections[targetSubIdx];
+      const currentX = nodePositions[currentSub.id]?.x || 0;
+      const targetX = nodePositions[targetSub.id]?.x || 0;
+      const dist = targetX - currentX;
+
+      const animating: Record<string, number> = {
+        [currentSub.id]: dist,
+        [targetSub.id]: -dist
+      };
+      setReorderAnimatingDeltas(animating);
+
+      setTimeout(() => {
+        const nextSubs = [...parentCluster.subsections];
+        const [moved] = nextSubs.splice(subIdx, 1);
+        nextSubs.splice(targetSubIdx, 0, moved);
+
+        const nextSections: CanvasSection[] = [];
+        for (const c of clusters) {
+          if (c.root.id === parentCluster.root.id) {
+            nextSections.push(c.root, ...nextSubs);
+          } else {
+            nextSections.push(c.root, ...c.subsections);
+          }
+        }
+        const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
+        updateWorkspaceState({
+          ...workspace,
+          sections: reordered.sections,
+          canvasNodes: reordered.canvasNodes
+        });
+        setReorderAnimatingDeltas({});
+      }, 220);
+    }
   };
 
   const handleUpdateSection = (sectionId: string, updated: Partial<CanvasSection>) => {
@@ -782,7 +1168,7 @@ export function KitchenCanvas({
     updateWorkspaceState({ ...workspace, sections: nextSections });
   };
 
-  // Section and subsection creation
+  // Section and subsection creation with strict depth 1 rules
   const handleAddSectionNode = () => {
     const newId = `sec-${Date.now()}`;
     const order = currentSections.length;
@@ -793,30 +1179,56 @@ export function KitchenCanvas({
       showInlineTools: false
     };
 
+    const reordered = reorderSectionsAndNodes([...currentSections, newSection], workspace.canvasNodes);
     updateWorkspaceState({
       ...workspace,
-      sections: [...currentSections, newSection]
+      sections: reordered.sections,
+      canvasNodes: reordered.canvasNodes
     });
     setSelectedNodeId(newId);
   };
 
   const handleAddSubsectionNode = () => {
-    if (!selectedSection || selectedSection.parentSectionId) return;
+    if (!selectedSection) return;
+    if (selectedSection.parentSectionId) return;
+    const targetParentId = selectedSection.id;
+    const parentSec = currentSections.find(s => s.id === targetParentId);
+    const parentName = parentSec?.name || 'Section';
+    const existingSubsections = currentSections.filter(s => s.parentSectionId === targetParentId);
     const newId = `sec-sub-${Date.now()}`;
-    const order = currentSections.length;
     const newSection: CanvasSection = {
       id: newId,
-      name: `${selectedSection.name} Part 2`,
-      order,
-      parentSectionId: selectedSection.id,
+      name: `${parentName} Part ${existingSubsections.length + 2}`,
+      order: currentSections.length,
+      parentSectionId: targetParentId,
       showInlineTools: false
     };
 
+    const reordered = reorderSectionsAndNodes([...currentSections, newSection], workspace.canvasNodes);
     updateWorkspaceState({
       ...workspace,
-      sections: [...currentSections, newSection]
+      sections: reordered.sections,
+      canvasNodes: reordered.canvasNodes
     });
     setSelectedNodeId(newId);
+  };
+
+  const handleReparentSection = (sectionId: string, newParentSectionId?: string) => {
+    const nextSections = currentSections.map(s => {
+      if (s.id === sectionId) {
+        return {
+          ...s,
+          parentSectionId: newParentSectionId || undefined
+        };
+      }
+      return s;
+    });
+    const reordered = reorderSectionsAndNodes(nextSections, workspace.canvasNodes);
+    updateWorkspaceState({
+      ...workspace,
+      sections: reordered.sections,
+      canvasNodes: reordered.canvasNodes
+    });
   };
 
   // Add step node with tree guardrails
@@ -1066,24 +1478,9 @@ export function KitchenCanvas({
     }, 1600);
   };
 
-  // Export recipe graph to disk via Vite server endpoint
-  const handleExport = async () => {
-    const finalGraph = exportStudioWorkspaceToRecipeGraph(workspace);
-    const jsonString = JSON.stringify(finalGraph, null, 2);
-
-    try {
-      const res = await fetch('/api/save-recipe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: jsonString
-      });
-      const data = await res.json();
-      if (data.ok) {
-        showToast(`Saved to src/recipes/${data.id}.json!`);
-      }
-    } catch {
-      // Ignore network errors on static hosting
-    }
+  // Open Export Recipe Modal
+  const handleExport = () => {
+    setIsExportModalOpen(true);
   };
 
   return (
@@ -1145,8 +1542,44 @@ export function KitchenCanvas({
           transformOrigin: '0 0'
         }}
       >
-        {/* SVG Wire Layer for Connectors */}
+        {/* SVG Wire Layer for Connectors & Overarching Tree Brackets */}
         <svg className="canvas-wires-layer">
+          {/* Overarching Tree Brackets connecting Parent Sections to Child Subsections */}
+          {overarchingBrackets.map(b => (
+            <g key={b.key}>
+              <path
+                d={b.mainArchD}
+                className="canvas-wire-bracket"
+                style={{ stroke: b.accentColor }}
+              />
+              {b.stemPaths.map((stemD, sIdx) => (
+                <path
+                  key={`stem-${b.key}-${sIdx}`}
+                  d={stemD}
+                  className="canvas-wire-bracket-stem"
+                  style={{ stroke: b.accentColor }}
+                />
+              ))}
+              <circle
+                cx={b.parentDot.cx}
+                cy={b.parentDot.cy}
+                r={4}
+                className="canvas-wire-bracket-dot"
+                style={{ fill: b.accentColor }}
+              />
+              {b.childDots.map((cd, cdIdx) => (
+                <circle
+                  key={`child-dot-${b.key}-${cdIdx}`}
+                  cx={cd.cx}
+                  cy={cd.cy}
+                  r={4}
+                  className="canvas-wire-bracket-dot"
+                  style={{ fill: b.accentColor }}
+                />
+              ))}
+            </g>
+          ))}
+
           {connectorWires.map((wire, idx) => (
             <path
               key={`tree-wire-${idx}`}
@@ -1164,32 +1597,59 @@ export function KitchenCanvas({
         </svg>
 
         {/* Section Nodes */}
-        {currentSections.map((sec, idx) => {
+        {orderedSections.map((sec, idx) => {
           const pos = nodePositions[sec.id];
           if (!pos) return null;
+
+          const isRoot = !sectionParentMap[sec.id];
+          let isFirst = false;
+          let isLast = false;
+          if (isRoot) {
+            const cIdx = clusters.findIndex(c => c.root.id === sec.id);
+            isFirst = cIdx === 0;
+            isLast = cIdx === clusters.length - 1;
+          } else {
+            const parentCluster = clusters.find(c => c.subsections.some(s => s.id === sec.id));
+            if (parentCluster) {
+              const sIdx = parentCluster.subsections.findIndex(s => s.id === sec.id);
+              isFirst = sIdx === 0;
+              isLast = sIdx === parentCluster.subsections.length - 1;
+            }
+          }
+
+          const isDirectlyDragged = draggingSectionId === sec.id;
+          const isPartOfDraggedCluster = Boolean(
+            draggingSectionId &&
+            clusters.some(c => c.root.id === draggingSectionId && (c.root.id === sec.id || c.subsections.some(s => s.id === sec.id)))
+          );
+          const isActivelyDragged = isDirectlyDragged || isPartOfDraggedCluster;
+          const slideDelta = reorderAnimatingDeltas[sec.id] || 0;
+          const isSliding = !isActivelyDragged && (Boolean(draggingSectionId) || slideDelta !== 0);
 
           return (
             <div
               key={sec.id}
               ref={el => registerNodeRef(sec.id, el as HTMLElement)}
-              className="canvas-node-wrapper"
+              className={`canvas-node-wrapper ${isActivelyDragged ? 'is-dragging' : isSliding ? 'is-sliding' : ''}`}
               style={{
-                transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`
+                transform: `translate3d(${pos.x + slideDelta}px, ${pos.y}px, 0)`
               }}
             >
               <SectionNode
                 section={sec}
-                isFirst={idx === 0}
-                isLast={idx === currentSections.length - 1}
+                isFirst={isFirst}
+                isLast={isLast}
                 isSelected={selectedNodeId === sec.id}
+                accentColor={sectionAccentMap[sec.id]}
+                parentName={sectionParentMap[sec.id]?.name}
                 onSelect={() => {
                   setSelectedNodeId(sec.id);
                   setActiveMentionId(null);
                   setIsYieldMode(false);
                 }}
                 onChange={updated => handleUpdateSection(sec.id, updated)}
-                onMoveLeft={() => handleMoveSection(idx, 'left')}
-                onMoveRight={() => handleMoveSection(idx, 'right')}
+                onMoveLeft={() => handleMoveSection(sec.id, 'left')}
+                onMoveRight={() => handleMoveSection(sec.id, 'right')}
                 onStartDrag={e => handleStartDragSection(e, sec.id, idx)}
                 onDelete={() => handleRequestDeleteSection(sec.id)}
               />
@@ -1202,13 +1662,25 @@ export function KitchenCanvas({
           const pos = nodePositions[node.id];
           if (!pos) return null;
 
+          const isThisNodeInspectorOpen = selectedNodeId === node.id && Boolean(activeMention || isYieldMode);
+          const nodeSecId = node.sectionId || 'sec-main';
+          const isStepParentDragged = Boolean(
+            draggingSectionId && (
+              draggingSectionId === nodeSecId ||
+              clusters.some(c => c.root.id === draggingSectionId && (c.root.id === nodeSecId || c.subsections.some(s => s.id === nodeSecId)))
+            )
+          );
+          const stepSlideDelta = reorderAnimatingDeltas[nodeSecId] || 0;
+          const isStepSliding = !isStepParentDragged && (Boolean(draggingSectionId) || stepSlideDelta !== 0);
+
           return (
             <div
               key={node.id}
               ref={el => registerNodeRef(node.id, el as HTMLElement)}
-              className="canvas-node-wrapper"
+              className={`canvas-node-wrapper ${isThisNodeInspectorOpen ? 'is-inspector-open' : ''} ${isStepParentDragged ? 'is-dragging' : isStepSliding ? 'is-sliding' : ''}`}
               style={{
-                transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`
+                transform: `translate3d(${pos.x + stepSlideDelta}px, ${pos.y}px, 0)`,
+                zIndex: isThisNodeInspectorOpen ? 100 : 10
               }}
             >
               <StepNode
@@ -1334,6 +1806,7 @@ export function KitchenCanvas({
         zoom={zoom}
         onAddSectionNode={handleAddSectionNode}
         onAddSubsectionNode={handleAddSubsectionNode}
+        onChangeParentSection={() => setIsReparentModalOpen(true)}
         onAddStepNode={handleAddStepNode}
         onDeleteSelectedNode={handleDeleteSelectedNode}
         onZoomIn={() => setZoom(prev => Math.min(prev * 1.15, 2.0))}
@@ -1344,8 +1817,8 @@ export function KitchenCanvas({
         }}
       />
 
-      {/* Collapsible Live JSON Preview Drawer */}
-      <JsonDrawer graph={activeGraph} />
+      {/* Collapsible Live Multi-Mode Preview Drawer */}
+      <PreviewDrawer graph={activeGraph} workspace={workspace} />
 
       {/* Recipe Settings & Metadata Modal with Obsidian Editor */}
       <RecipeMetadataModal
@@ -1425,6 +1898,33 @@ export function KitchenCanvas({
             });
           }
         }}
+      />
+
+      {/* Export Recipe Modal */}
+      <ExportRecipeModal
+        isOpen={isExportModalOpen}
+        workspace={workspace}
+        finalGraph={exportStudioWorkspaceToRecipeGraph(workspace)}
+        onClose={() => setIsExportModalOpen(false)}
+        onExportSuccess={(slug, filePath) => {
+          showToast(`Saved to ${filePath || `src/recipes/${slug}.json`}!`);
+          updateWorkspaceState({
+            ...workspace,
+            graph: {
+              ...workspace.graph,
+              id: slug
+            }
+          });
+        }}
+      />
+
+      {/* Reparent / Change Hierarchy Modal */}
+      <ReparentSectionModal
+        isOpen={isReparentModalOpen}
+        section={selectedSection}
+        sections={currentSections}
+        onClose={() => setIsReparentModalOpen(false)}
+        onReparent={handleReparentSection}
       />
     </div>
   );

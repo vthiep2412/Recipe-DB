@@ -36,6 +36,15 @@ export function StudioHub({ onOpenWorkspace }: StudioHubProps) {
 
   const handleCreateNew = (rawText = '') => {
     const newWs = parseTextToStudioWorkspace(rawText);
+    if (!rawText.trim()) {
+      const existingUntitled = workspaces
+        .map(w => w.title || '')
+        .filter(t => /^Untitled Recipe(\s+\d+)?$/i.test(t));
+      if (existingUntitled.length > 0) {
+        newWs.title = `Untitled Recipe ${existingUntitled.length + 1}`;
+        newWs.graph.title = newWs.title;
+      }
+    }
     const updated = [newWs, ...workspaces];
     saveWorkspaces(updated);
     setIsNewModalOpen(false);

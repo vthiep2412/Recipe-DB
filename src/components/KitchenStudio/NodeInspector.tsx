@@ -63,6 +63,9 @@ export function NodeInspector({
 
   // Collect previous yields created in steps before this one
   const previousYields: { stepId: string; stepTitle: string; name: string; vesselId: string }[] = [];
+  // Collect declared ingredients from steps strictly before this one for backward re-mention
+  const previousIngredientsMap = new Map<string, { name: string; sourceStepTitle: string; originalId: string }>();
+
   const currentStepIdx = workspace.canvasNodes.findIndex(n => n.id === activeStep.id);
   for (let i = 0; i < currentStepIdx; i++) {
     const prev = workspace.canvasNodes[i];
@@ -73,6 +76,47 @@ export function NodeInspector({
         name: prev.producesYield.name,
         vesselId: prev.producesYield.vesselId
       });
+    }
+
+    for (const m of prev.mentions) {
+      if (m.type === 'ingredient' && !m.data?.isRemention && !m.data?.yieldId && !m.data?.ingredientId?.startsWith('yield-')) {
+        const ingId = m.data?.ingredientId || m.displayText.toLowerCase();
+        if (!previousIngredientsMap.has(ingId)) {
+          previousIngredientsMap.set(ingId, {
+            name: m.displayText,
+            sourceStepTitle: prev.title || `Step ${i + 1}`,
+            originalId: ingId
+          });
+        }
+      }
+    }
+  }
+
+  // Also collect ingredients declared in the current step BEFORE this active mention
+  if (activeMention) {
+    const currentStepMentions = activeStep.mentions || [];
+    const activeMentionIdx = currentStepMentions.findIndex(m => m.id === activeMention.id);
+    const mentionsBeforeCurrent = activeMentionIdx !== -1
+      ? currentStepMentions.slice(0, activeMentionIdx)
+      : currentStepMentions;
+
+    for (const m of mentionsBeforeCurrent) {
+      if (
+        m.id !== activeMention.id &&
+        m.type === 'ingredient' &&
+        !m.data?.isRemention &&
+        !m.data?.yieldId &&
+        !m.data?.ingredientId?.startsWith('yield-')
+      ) {
+        const ingId = m.data?.ingredientId || m.displayText.toLowerCase();
+        if (!previousIngredientsMap.has(ingId)) {
+          previousIngredientsMap.set(ingId, {
+            name: m.displayText,
+            sourceStepTitle: 'Earlier in this step',
+            originalId: ingId
+          });
+        }
+      }
     }
   }
 
@@ -144,6 +188,18 @@ export function NodeInspector({
   if (activeMention.type === 'ingredient') {
     const dropdownItems: DropdownItem[] = [];
 
+    // 0. Backward Re-mentions strictly from earlier steps and earlier in current step
+    if (previousIngredientsMap.size > 0) {
+      for (const [key, item] of previousIngredientsMap.entries()) {
+        dropdownItems.push({
+          id: `remention-${key}`,
+          label: item.name,
+          group: 'Re-mention (From earlier in recipe)',
+          subtitle: `Declared in ${item.sourceStepTitle}`
+        });
+      }
+    }
+
     // 1. Ingredients created in earlier steps (placed at top for immediate access)
     for (const y of previousYields) {
       dropdownItems.push({
@@ -172,7 +228,9 @@ export function NodeInspector({
       });
     }
 
-    const currentIngId = activeMention.data?.ingredientId || activeMention.displayText.toLowerCase();
+    const currentIngId = activeMention.data?.isRemention
+      ? `remention-${activeMention.data?.ingredientId || activeMention.displayText.toLowerCase()}`
+      : (activeMention.data?.ingredientId || activeMention.displayText.toLowerCase());
     const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId);
     const availableUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
 
@@ -192,190 +250,203 @@ export function NodeInspector({
               items={dropdownItems}
               selectedId={currentIngId}
               placeholder="Pick ingredient..."
-                  onSelect={id => {
-                    const picked = dropdownItems.find(item => item.id === id);
-                    if (picked) {
-                      const yieldMatch = previousYields.find(y => `yield-${y.stepId}` === id);
-                      const cleanName = yieldMatch ? yieldMatch.name : picked.label;
-                      const isYieldItem = Boolean(yieldMatch);
+              onSelect={id => {
+                const picked = dropdownItems.find(item => item.id === id);
+                if (picked) {
+                  const isRemention = id.startsWith('remention-');
+                  const yieldMatch = previousYields.find(y => `yield-${y.stepId}` === id);
+                  const cleanName = yieldMatch ? yieldMatch.name : picked.label;
+                  const isYieldItem = Boolean(yieldMatch);
 
-                      onUpdateMention(activeMention.id, {
-                        displayText: cleanName,
-                        data: {
-                          ...activeMention.data,
-                          ingredientId: id,
-                          yieldId: yieldMatch ? yieldMatch.stepId : undefined,
-                          yieldName: yieldMatch ? yieldMatch.name : undefined,
-                          yieldStepTitle: yieldMatch ? yieldMatch.stepTitle : undefined,
-                          amount: isYieldItem
-                            ? (activeMention.data?.amount && activeMention.data.amount !== 1 ? activeMention.data.amount : 'all')
-                            : (activeMention.data?.amount ?? 1),
-                          unit: isYieldItem ? undefined : (activeMention.data?.unit || 'g')
-                        }
-                      });
+                  const actualIngId = isRemention ? id.replace(/^remention-/, '') : id;
+
+                  onUpdateMention(activeMention.id, {
+                    displayText: cleanName,
+                    data: {
+                      ...activeMention.data,
+                      ingredientId: actualIngId,
+                      isRemention: isRemention ? true : undefined,
+                      originalMentionId: isRemention ? actualIngId : undefined,
+                      yieldId: yieldMatch ? yieldMatch.stepId : undefined,
+                      yieldName: yieldMatch ? yieldMatch.name : undefined,
+                      yieldStepTitle: yieldMatch ? yieldMatch.stepTitle : undefined,
+                      amount: isRemention
+                        ? undefined
+                        : isYieldItem
+                        ? (activeMention.data?.amount && activeMention.data.amount !== 1 ? activeMention.data.amount : 'all')
+                        : (activeMention.data?.amount ?? 1),
+                      unit: (isYieldItem || isRemention) ? undefined : (activeMention.data?.unit || 'g')
                     }
-                  }}
+                  });
+                }
+              }}
                   onAddNew={() => onOpenCustomItemModal('ingredient')}
                   addNewLabel="+ Add Custom Ingredient"
                 />
               </div>
 
-              <div className="inspector-field">
-                <label className="inspector-label">How much to use?</label>
-                {(() => {
-                  const isYield = Boolean(
-                    activeMention.data?.yieldId ||
-                    (currentIngId && currentIngId.startsWith('yield-'))
-                  );
+              {!activeMention.data?.isRemention ? (
+                <div className="inspector-field">
+                  <label className="inspector-label">How much to use?</label>
+                  {(() => {
+                    const isYield = Boolean(
+                      activeMention.data?.yieldId ||
+                      (currentIngId && currentIngId.startsWith('yield-'))
+                    );
 
-                  const PORTION_PRESETS = [
-                    { id: 'all', label: 'All' },
-                    { id: 'half', label: 'Half' },
-                    { id: '1/3', label: '1/3' },
-                    { id: '1/4', label: '1/4' },
-                    { id: 'custom', label: 'Custom' }
-                  ];
+                    const PORTION_PRESETS = [
+                      { id: 'all', label: 'All' },
+                      { id: 'half', label: 'Half' },
+                      { id: '1/3', label: '1/3' },
+                      { id: '1/4', label: '1/4' },
+                      { id: 'custom', label: 'Custom' }
+                    ];
 
-                  let activePortion = 'custom';
-                  const currentAmountStr = activeMention.data?.amount !== undefined ? String(activeMention.data.amount).toLowerCase().trim() : '';
-                  if (currentAmountStr === 'all') {
-                    activePortion = 'all';
-                  } else if (currentAmountStr === 'half' || currentAmountStr === '1/2') {
-                    activePortion = 'half';
-                  } else if (currentAmountStr === '1/3') {
-                    activePortion = '1/3';
-                  } else if (currentAmountStr === '1/4') {
-                    activePortion = '1/4';
-                  } else {
-                    activePortion = 'custom';
-                  }
-
-                  const isMetricUnit = activeMention.data?.unit === 'g' || activeMention.data?.unit === 'ml';
-
-                  const handleAmountChange = (raw: string) => {
-                    if (isMetricUnit) {
-                      if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
-                        setAmountInput(raw);
-                        const val = parseFloat(raw);
-                        if (!isNaN(val) && val > 0) {
-                          onUpdateMention(activeMention.id, {
-                            data: { ...activeMention.data, amount: val }
-                          });
-                        }
-                      }
+                    let activePortion = 'custom';
+                    const currentAmountStr = activeMention.data?.amount !== undefined ? String(activeMention.data.amount).toLowerCase().trim() : '';
+                    if (currentAmountStr === 'all') {
+                      activePortion = 'all';
+                    } else if (currentAmountStr === 'half' || currentAmountStr === '1/2') {
+                      activePortion = 'half';
+                    } else if (currentAmountStr === '1/3') {
+                      activePortion = '1/3';
+                    } else if (currentAmountStr === '1/4') {
+                      activePortion = '1/4';
                     } else {
-                      if (raw === '' || /^[\d\s\.\/]*$/.test(raw)) {
-                        setAmountInput(raw);
-                        const parsed = parseFraction(raw);
-                        if (parsed !== null && parsed > 0) {
-                          onUpdateMention(activeMention.id, {
-                            data: { ...activeMention.data, amount: raw }
-                          });
-                        }
-                      }
+                      activePortion = 'custom';
                     }
-                  };
 
-                  const handleAmountBlur = () => {
-                    const trimmed = amountInput.trim();
-                    const parsed = parseFraction(trimmed);
-                    if (parsed === null || parsed <= 0) {
-                      setAmountInput('1');
-                      onUpdateMention(activeMention.id, {
-                        data: { ...activeMention.data, amount: 1 }
-                      });
-                    } else {
+                    const isMetricUnit = activeMention.data?.unit === 'g' || activeMention.data?.unit === 'ml';
+
+                    const handleAmountChange = (raw: string) => {
                       if (isMetricUnit) {
-                        const num = parseFloat(trimmed);
-                        const safeNum = isNaN(num) || num <= 0 ? 1 : num;
-                        setAmountInput(String(safeNum));
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                          setAmountInput(raw);
+                          const val = parseFloat(raw);
+                          if (!isNaN(val) && val > 0) {
+                            onUpdateMention(activeMention.id, {
+                              data: { ...activeMention.data, amount: val }
+                            });
+                          }
+                        }
+                      } else {
+                        if (raw === '' || /^[\d\s\.\/]*$/.test(raw)) {
+                          setAmountInput(raw);
+                          const parsed = parseFraction(raw);
+                          if (parsed !== null && parsed > 0) {
+                            onUpdateMention(activeMention.id, {
+                              data: { ...activeMention.data, amount: raw }
+                            });
+                          }
+                        }
+                      }
+                    };
+
+                    const handleAmountBlur = () => {
+                      const trimmed = amountInput.trim();
+                      const parsed = parseFraction(trimmed);
+                      if (parsed === null || parsed <= 0) {
+                        setAmountInput('1');
                         onUpdateMention(activeMention.id, {
-                          data: { ...activeMention.data, amount: safeNum }
+                          data: { ...activeMention.data, amount: 1 }
                         });
                       } else {
-                        setAmountInput(trimmed);
-                        onUpdateMention(activeMention.id, {
-                          data: { ...activeMention.data, amount: trimmed }
-                        });
+                        if (isMetricUnit) {
+                          const num = parseFloat(trimmed);
+                          const safeNum = isNaN(num) || num <= 0 ? 1 : num;
+                          setAmountInput(String(safeNum));
+                          onUpdateMention(activeMention.id, {
+                            data: { ...activeMention.data, amount: safeNum }
+                          });
+                        } else {
+                          setAmountInput(trimmed);
+                          onUpdateMention(activeMention.id, {
+                            data: { ...activeMention.data, amount: trimmed }
+                          });
+                        }
                       }
-                    }
-                  };
+                    };
 
-                  return (
-                    <>
-                      {isYield && (
-                        <div className="inspector-portion-group">
-                          {PORTION_PRESETS.map(preset => (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              className={`inspector-portion-btn ${activePortion === preset.id ? 'is-active' : ''}`}
-                              onClick={() => {
-                                if (preset.id === 'custom') {
-                                  const parsedNum = parseFloat(String(activeMention.data?.amount));
-                                  const safeAmt = !isNaN(parsedNum) && parsedNum > 0 ? parsedNum : 1;
-                                  setAmountInput(String(safeAmt));
-                                  onUpdateMention(activeMention.id, {
-                                    data: {
-                                      ...activeMention.data,
-                                      amount: safeAmt,
-                                      unit: activeMention.data?.unit || 'g'
-                                    }
-                                  });
-                                } else {
-                                  onUpdateMention(activeMention.id, {
-                                    data: {
-                                      ...activeMention.data,
-                                      amount: preset.id,
-                                      unit: undefined
-                                    }
-                                  });
+                    return (
+                      <>
+                        {isYield && (
+                          <div className="inspector-portion-group">
+                            {PORTION_PRESETS.map(preset => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                className={`inspector-portion-btn ${activePortion === preset.id ? 'is-active' : ''}`}
+                                onClick={() => {
+                                  if (preset.id === 'custom') {
+                                    const parsedNum = parseFloat(String(activeMention.data?.amount));
+                                    const safeAmt = !isNaN(parsedNum) && parsedNum > 0 ? parsedNum : 1;
+                                    setAmountInput(String(safeAmt));
+                                    onUpdateMention(activeMention.id, {
+                                      data: {
+                                        ...activeMention.data,
+                                        amount: safeAmt,
+                                        unit: activeMention.data?.unit || 'g'
+                                      }
+                                    });
+                                  } else {
+                                    onUpdateMention(activeMention.id, {
+                                      data: {
+                                        ...activeMention.data,
+                                        amount: preset.id,
+                                        unit: undefined
+                                      }
+                                    });
+                                  }
+                                }}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {(!isYield || activePortion === 'custom') && (
+                          <div className="inspector-amount-row">
+                            <input
+                              type="text"
+                              inputMode={isMetricUnit ? 'decimal' : 'text'}
+                              className="inspector-amount-input"
+                              placeholder={isMetricUnit ? 'Amount' : 'e.g. 2/3'}
+                              value={amountInput}
+                              onInput={e => handleAmountChange((e.target as HTMLInputElement).value)}
+                              onBlur={handleAmountBlur}
+                            />
+
+                            <CompactDropdown
+                              className="inspector-unit-compact-select"
+                              value={activeMention.data?.unit || availableUnits[0]}
+                              options={availableUnits}
+                              onChange={newUnit => {
+                                const targetIsMetric = newUnit === 'g' || newUnit === 'ml';
+                                let updatedAmount = activeMention.data?.amount;
+                                if (targetIsMetric && typeof updatedAmount === 'string' && updatedAmount.includes('/')) {
+                                  const parsed = parseFraction(updatedAmount);
+                                  if (parsed !== null && parsed > 0) {
+                                    updatedAmount = Math.round(parsed * 100) / 100;
+                                    setAmountInput(String(updatedAmount));
+                                  }
                                 }
+                                onUpdateMention(activeMention.id, {
+                                  data: { ...activeMention.data, unit: newUnit, amount: updatedAmount }
+                                });
                               }}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {(!isYield || activePortion === 'custom') && (
-                        <div className="inspector-amount-row">
-                          <input
-                            type="text"
-                            inputMode={isMetricUnit ? 'decimal' : 'text'}
-                            className="inspector-amount-input"
-                            placeholder={isMetricUnit ? 'Amount' : 'e.g. 2/3'}
-                            value={amountInput}
-                            onInput={e => handleAmountChange((e.target as HTMLInputElement).value)}
-                            onBlur={handleAmountBlur}
-                          />
-
-                          <CompactDropdown
-                            className="inspector-unit-compact-select"
-                            value={activeMention.data?.unit || availableUnits[0]}
-                            options={availableUnits}
-                            onChange={newUnit => {
-                              const targetIsMetric = newUnit === 'g' || newUnit === 'ml';
-                              let updatedAmount = activeMention.data?.amount;
-                              if (targetIsMetric && typeof updatedAmount === 'string' && updatedAmount.includes('/')) {
-                                const parsed = parseFraction(updatedAmount);
-                                if (parsed !== null && parsed > 0) {
-                                  updatedAmount = Math.round(parsed * 100) / 100;
-                                  setAmountInput(String(updatedAmount));
-                                }
-                              }
-                              onUpdateMention(activeMention.id, {
-                                data: { ...activeMention.data, unit: newUnit, amount: updatedAmount }
-                              });
-                            }}
-                          />
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
+                            />
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="inspector-field" style={{ opacity: 0.85, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <span>Re-mention of previously declared ingredient. Quantity is aggregated in shopping list.</span>
+                </div>
+              )}
 
           <div className="inspector-field">
             <div className="inspector-field-header">

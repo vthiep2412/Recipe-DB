@@ -1,4 +1,4 @@
-import { Plus, Trash2, Minus, RotateCcw } from 'lucide-preact';
+import { Plus, Trash2, Minus, RotateCcw, FolderTree } from 'lucide-preact';
 import type { CanvasStepNode, CanvasSection } from '../../types/orchestration';
 
 interface SidebarToolboxProps {
@@ -8,6 +8,7 @@ interface SidebarToolboxProps {
   zoom: number;
   onAddSectionNode: () => void;
   onAddSubsectionNode: () => void;
+  onChangeParentSection?: () => void;
   onAddStepNode: () => void;
   onDeleteSelectedNode: () => void;
   onZoomIn: () => void;
@@ -22,14 +23,13 @@ export function SidebarToolbox({
   zoom,
   onAddSectionNode,
   onAddSubsectionNode,
+  onChangeParentSection,
   onAddStepNode,
   onDeleteSelectedNode,
   onZoomIn,
   onZoomOut,
   onResetZoom
 }: SidebarToolboxProps) {
-  const canAddSubsection = selectedSection && !selectedSection.parentSectionId;
-
   return (
     <aside className="studio-sidebar-toolbox" aria-label="Canvas Properties and Actions">
       <div className="toolbox-section">
@@ -63,16 +63,36 @@ export function SidebarToolbox({
           <span>Add Section Node</span>
         </button>
 
-        {canAddSubsection && (
+        {selectedSection && (
           <button
             type="button"
-            className="toolbox-action-btn toolbox-btn-secondary"
-            style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-            onClick={onAddSubsectionNode}
-            title="Add a subsection (depth 1 max) under active section"
+            className={`toolbox-action-btn toolbox-btn-secondary ${selectedSection.parentSectionId ? 'is-disabled' : ''}`}
+            disabled={Boolean(selectedSection.parentSectionId)}
+            onClick={selectedSection.parentSectionId ? undefined : onAddSubsectionNode}
+            title={
+              selectedSection.parentSectionId
+                ? 'Subsections cannot add child subsections (strict depth 1)'
+                : 'Add a subsection under active section'
+            }
           >
             <Plus size={14} />
             <span>Add Subsection</span>
+          </button>
+        )}
+
+        {selectedSection && onChangeParentSection && (
+          <button
+            type="button"
+            className="toolbox-action-btn toolbox-btn-secondary"
+            onClick={onChangeParentSection}
+            title={
+              selectedSection.parentSectionId
+                ? 'Change parent section or promote to root section'
+                : 'Nest this root section under another section'
+            }
+          >
+            <FolderTree size={14} />
+            <span>Change Parent Section</span>
           </button>
         )}
 

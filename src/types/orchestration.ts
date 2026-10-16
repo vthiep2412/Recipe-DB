@@ -147,7 +147,7 @@ export interface StepTimer {
 
 export type RecipeToken =
   | { type: 'text'; text: string }
-  | { type: 'ingredient'; inputId: string; displayText: string; amount?: number | string; unit?: string; note?: string }
+  | { type: 'ingredient'; inputId: string; displayText: string; amount?: number | string; unit?: string; note?: string; isRemention?: boolean }
   | { type: 'cookware'; vesselId: string; displayText: string }
   | { type: 'yield'; yieldId: string; sourceStepId: string; displayText: string; partition?: string }
   | { type: 'timer'; timerId: string; displayText: string };
@@ -172,6 +172,8 @@ export interface StepMentionToken {
     yieldStepTitle?: string;
     yieldVesselId?: string;
     yieldPartition?: string;
+    isRemention?: boolean;
+    originalMentionId?: string;
   };
 }
 

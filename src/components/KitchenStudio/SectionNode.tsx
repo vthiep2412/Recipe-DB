@@ -7,6 +7,8 @@ interface SectionNodeProps {
   isFirst: boolean;
   isLast: boolean;
   isSelected: boolean;
+  accentColor?: string;
+  parentName?: string;
   onSelect: () => void;
   onChange: (updated: Partial<CanvasSection>) => void;
   onMoveLeft: () => void;
@@ -20,6 +22,8 @@ export function SectionNode({
   isFirst,
   isLast,
   isSelected,
+  accentColor,
+  parentName,
   onSelect,
   onChange,
   onMoveLeft,
@@ -33,6 +37,7 @@ export function SectionNode({
   return (
     <div
       className={`section-node-card ${isSelected ? 'is-selected' : ''} ${isSubsection ? 'is-subsection' : ''}`}
+      style={isSubsection && accentColor ? { borderLeftColor: accentColor } : undefined}
       onPointerDownCapture={() => {
         if (!isSelected) onSelect();
       }}
@@ -86,7 +91,12 @@ export function SectionNode({
       <div className="section-node-header">
         <div className="section-node-title-wrap">
           {isSubsection && (
-            <span className="section-badge-subsection">SUBSECTION</span>
+            <span
+              className="section-badge-subsection"
+              style={accentColor ? { borderColor: `${accentColor}88`, color: accentColor, backgroundColor: `${accentColor}18` } : undefined}
+            >
+              {parentName ? `SUB OF ${parentName.toUpperCase()}` : 'SUBSECTION'}
+            </span>
           )}
           {isEditingTitle ? (
             <input

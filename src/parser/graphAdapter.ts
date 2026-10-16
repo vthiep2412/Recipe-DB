@@ -43,6 +43,10 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
   });
 
   const sections: RecipeSection[] = graph.components.map(comp => {
+    const rawSecId = comp.id.replace(/^component-/, '');
+    const sectionMeta = graph.sections?.find(s => s.id === rawSecId || s.name === comp.name);
+    const sectionShowInline = sectionMeta?.showInlineTools ?? false;
+
     const steps: RecipeStep[] = comp.steps.map((node, stepIdx) => {
       const tokens: StepToken[] = [];
 
@@ -59,7 +63,9 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
             displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
           }
           const unitStr = tok.unit ? ` ${tok.unit}` : '';
-          const quantityText = displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined;
+          const quantityText = tok.isRemention
+            ? undefined
+            : (displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined);
 
           tokens.push({
             type: 'ingredient',
@@ -98,13 +104,14 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
         producesYield: node.producesYield,
         image: node.media?.galleryUrls?.[0],
         media: node.media,
-        showInlineTools: node.showInlineTools
+        showInlineTools: node.showInlineTools ?? sectionShowInline
       };
     });
 
     return {
       id: comp.id,
       name: comp.name || 'Instructions',
+      description: sectionMeta?.description,
       steps
     };
   });
