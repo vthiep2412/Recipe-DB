@@ -652,7 +652,8 @@ export function RecipeMetadataModal({
   const renderedMarkdownHtml = useMemo(() => {
     if (!isReadingMode) return '';
     const raw = description || '*No description entered yet. Switch to Source Mode to write.*';
-    const processed = raw.replace(/\[\[(.*?)\]\]/g, '<span class="obsidian-reading-link">$1</span>');
+    const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const processed = escaped.replace(/\[\[(.*?)\]\]/g, '<span class="obsidian-reading-link">$1</span>');
     return marked.parse(processed, { async: false }) as string;
   }, [description, isReadingMode]);
 

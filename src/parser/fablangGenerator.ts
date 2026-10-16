@@ -26,7 +26,7 @@ export function generateFablang(
 
   // 1. YAML Frontmatter
   lines.push('---');
-  lines.push(`title: ${graph.title || 'Untitled Recipe'}`);
+  lines.push(`title: "${escapeRawYamlString(graph.title || 'Untitled Recipe')}"`);
 
   if (graph.difficulty) {
     const diff = graph.difficulty.charAt(0).toUpperCase() + graph.difficulty.slice(1);
@@ -41,12 +41,12 @@ export function generateFablang(
 
   if (graph.author?.name) {
     lines.push('author:');
-    lines.push(`  name: ${graph.author.name}`);
+    lines.push(`  name: "${escapeRawYamlString(graph.author.name)}"`);
   }
 
   if (graph.source?.url) {
     lines.push('source:');
-    lines.push(`  url: ${graph.source.url}`);
+    lines.push(`  url: "${escapeRawYamlString(graph.source.url)}"`);
   }
 
   if (graph.description) {
@@ -78,7 +78,7 @@ export function generateFablang(
         lines.push('  custom:');
         for (const c of times.custom) {
           const durSec = typeof c.seconds === 'number' ? c.seconds : 0;
-          lines.push(`    - label: ${c.label}`);
+          lines.push(`    - label: "${escapeRawYamlString(c.label)}"`);
           lines.push(`      duration: ${formatSecondsToDuration(durSec)}`);
         }
       }
@@ -89,12 +89,12 @@ export function generateFablang(
   const media = graph.media;
   if (media && (media.pictureUrl || media.videoUrl || (media.galleryUrls && media.galleryUrls.length > 0))) {
     lines.push('media:');
-    if (media.pictureUrl) lines.push(`  image: ${media.pictureUrl}`);
-    if (media.videoUrl) lines.push(`  video: ${media.videoUrl}`);
+    if (media.pictureUrl) lines.push(`  image: "${escapeRawYamlString(media.pictureUrl)}"`);
+    if (media.videoUrl) lines.push(`  video: "${escapeRawYamlString(media.videoUrl)}"`);
     if (media.galleryUrls && media.galleryUrls.length > 0) {
       lines.push('  gallery:');
       for (const g of media.galleryUrls) {
-        lines.push(`    - ${g}`);
+        lines.push(`    - "${escapeRawYamlString(g)}"`);
       }
     }
   }

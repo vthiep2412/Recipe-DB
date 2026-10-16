@@ -20,7 +20,7 @@ import { ReparentSectionModal } from './ReparentSectionModal';
 
 interface KitchenCanvasProps {
   workspace: StudioWorkspace;
-  onUpdateWorkspace: (workspace: StudioWorkspace) => void;
+  onUpdateWorkspace: (workspace: StudioWorkspace) => boolean | void;
   onBackToHub: () => void;
 }
 
@@ -252,12 +252,16 @@ export function KitchenCanvas({
   const transformLayerRef = useRef<HTMLDivElement>(null);
 
   // Auto save state
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
 
   const updateWorkspaceState = (updated: StudioWorkspace) => {
     setSaveStatus('saving');
-    onUpdateWorkspace(updated);
-    setTimeout(() => setSaveStatus('saved'), 300);
+    const result = onUpdateWorkspace(updated);
+    if (result === false) {
+      setSaveStatus('error');
+    } else {
+      setTimeout(() => setSaveStatus('saved'), 300);
+    }
   };
 
   // Backfill explicit sectionId on any unassigned canvas nodes
@@ -1240,15 +1244,17 @@ export function KitchenCanvas({
       targetSectionId = selectedStep.sectionId || currentSections[0].id;
       parentId = selectedStep.id;
 
-      let depth = 1;
+      let noteDepth = selectedStep.isCountedStep ? 0 : 1;
       let curr: CanvasStepNode | undefined = selectedStep;
       while (curr && curr.parentId && curr.parentId !== targetSectionId && !currentSections.some(s => s.id === curr?.parentId)) {
-        depth++;
         const nextParent = workspace.canvasNodes.find(n => n.id === curr?.parentId);
         if (!nextParent) break;
+        if (!nextParent.isCountedStep) {
+          noteDepth++;
+        }
         curr = nextParent;
       }
-      if (depth >= 2) {
+      if (noteDepth >= 2) {
         showToast('Maximum nesting depth 2 reached');
         return;
       }
@@ -1516,7 +1522,7 @@ export function KitchenCanvas({
               <span>Recipe Settings</span>
             </button>
             <span className={`canvas-save-status is-${saveStatus}`}>
-              {saveStatus === 'saved' ? '● Saved' : '○ Saving...'}
+              {saveStatus === 'saved' ? '● Saved' : saveStatus === 'error' ? '▲ Save Error' : '○ Saving...'}
             </span>
           </div>
         </div>
@@ -1821,22 +1827,24 @@ export function KitchenCanvas({
       <PreviewDrawer graph={activeGraph} workspace={workspace} />
 
       {/* Recipe Settings & Metadata Modal with Obsidian Editor */}
-      <RecipeMetadataModal
-        isOpen={isMetadataModalOpen}
-        graph={workspace.graph}
-        onClose={() => setIsMetadataModalOpen(false)}
-        onOpenMediaModal={type => setMediaModalType(type)}
-        onSave={updatedGraph => {
-          updateWorkspaceState({
-            ...workspace,
-            title: updatedGraph.title ?? workspace.title,
-            graph: {
-              ...workspace.graph,
-              ...updatedGraph
-            }
-          });
-        }}
-      />
+      {isMetadataModalOpen && (
+        <RecipeMetadataModal
+          isOpen={isMetadataModalOpen}
+          graph={workspace.graph}
+          onClose={() => setIsMetadataModalOpen(false)}
+          onOpenMediaModal={type => setMediaModalType(type)}
+          onSave={updatedGraph => {
+            updateWorkspaceState({
+              ...workspace,
+              title: updatedGraph.title ?? workspace.title,
+              graph: {
+                ...workspace.graph,
+                ...updatedGraph
+              }
+            });
+          }}
+        />
+      )}
 
       {/* Cascade Deletion Confirmation Dialog */}
       <CascadeDeleteModal

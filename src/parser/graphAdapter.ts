@@ -148,38 +148,35 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
   });
 
   const totalTime = formatSecondsToDisplay(graph.times.totalSec)
-    || formatSecondsToDisplay(graph.times.cookSec)
-    || '20 minutes';
+    || formatSecondsToDisplay(graph.times.cookSec);
 
   const diffStr = graph.difficulty
     ? graph.difficulty.charAt(0).toUpperCase() + graph.difficulty.slice(1)
-    : 'Medium';
+    : undefined;
 
   return {
     id: graph.id,
     title: graph.title,
     description: graph.description || '',
-    image: graph.media?.pictureUrl || 'https://bakewithzoha.com/wp-content/uploads/2025/11/smores-cookie-featured2.jpg',
+    image: graph.media?.pictureUrl || '',
     gallery: graph.media?.galleryUrls || [],
     video: graph.media?.videoUrl,
     importantNotes: graph.importantNotes,
-    author: {
-      name: graph.author?.name || 'anonymous'
-    },
+    author: graph.author?.name ? { name: graph.author.name } : undefined,
     source: graph.source?.url ? { url: graph.source.url } : undefined,
     servings: {
-      base: graph.servings || 5,
-      unitName: 'large cookies'
+      base: graph.servings || 1,
+      unitName: 'servings'
     },
     difficulty: diffStr,
     times: {
       total: totalTime,
-      prep: formatSecondsToDisplay(graph.times.prepSec) || '20 minutes',
-      cook: formatSecondsToDisplay(graph.times.cookSec) || '20 minutes',
+      prep: formatSecondsToDisplay(graph.times.prepSec),
+      cook: formatSecondsToDisplay(graph.times.cookSec),
       bake: formatSecondsToDisplay(graph.times.bakeSec),
       rest: formatSecondsToDisplay(graph.times.restSec)
     },
-    tags: ['cookies', 'dessert', 'smores', 'baking'],
+    tags: [],
     metadata: {},
     ingredients,
     sections,

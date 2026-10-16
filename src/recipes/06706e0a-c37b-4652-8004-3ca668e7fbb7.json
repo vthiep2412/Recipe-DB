@@ -4,11 +4,11 @@
   "title": "Thick And Chewy S'mores Cookies Recipe",
   "servings": 5,
   "difficulty": "medium",
-  "description": "**hallo** hehe *mann*",
+  "description": "Thick, chewy, and gooey homemade s'mores cookies packed with chocolate, graham crackers, and marshmallows.",
   "tips": "",
   "media": {
     "galleryUrls": [],
-    "videoUrl": "e"
+    "videoUrl": ""
   },
   "times": {
     "totalSec": 0,
@@ -34,12 +34,6 @@
       "amount": "2/3",
       "unit": "cup",
       "notes": "packed"
-    },
-    {
-      "id": "m-1790511342536",
-      "name": "Ingredient",
-      "amount": 1,
-      "unit": "g"
     },
     {
       "id": "large-egg",
@@ -139,7 +133,7 @@
           "componentId": "component-main",
           "isCountedStep": true,
           "isLinkedToPrevious": false,
-          "instructionText": "Add [unsalted butter] , [granulated sugar] , and [light brown sugar] to a [bowl] and whisk on mediu[Ingredient] m high speed for [2-3 minutes] until the mixture turns fluffy and light in color. Keep scraping the bowl along the way.",
+          "instructionText": "Add [unsalted butter] , [granulated sugar] , and [light brown sugar] to a [bowl] and whisk on medium high speed for [2-3 minutes] until the mixture turns fluffy and light in color. Keep scraping the bowl along the way.",
           "tokens": [
             {
               "type": "text",
@@ -187,18 +181,7 @@
             },
             {
               "type": "text",
-              "text": " and whisk on mediu"
-            },
-            {
-              "type": "ingredient",
-              "inputId": "m-1790511342536",
-              "displayText": "Ingredient",
-              "amount": 1,
-              "unit": "g"
-            },
-            {
-              "type": "text",
-              "text": " m high speed for "
+              "text": " and whisk on medium high speed for "
             },
             {
               "type": "timer",
@@ -304,7 +287,7 @@
           "producesYield": {
             "id": "yield-step-3",
             "name": "Coffee diping!",
-            "vesselId": "sheet-pan"
+            "vesselId": "baking-sheet"
           }
         },
         {

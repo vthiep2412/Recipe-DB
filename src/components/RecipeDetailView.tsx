@@ -22,6 +22,12 @@ import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
 
+function sanitizeMarkdown(raw?: string): string {
+  if (!raw) return '';
+  const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return marked.parse(escaped, { async: false }) as string;
+}
+
 export function parseDurationToSeconds(text: string): number {
   if (!text) return 300;
   const clean = text.trim().toLowerCase();
@@ -212,17 +218,19 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const hasRunning = timers.some(t => !t.isPaused && !t.isFinished && t.remainingSeconds > 0);
     if (!hasRunning) return;
 
-    const interval = setInterval(() => {
+    const tick = () => {
+      const now = Date.now();
       setTimers(prev => {
         let triggerAlarm = false;
         const next = prev.map(t => {
-          if (t.isPaused || t.isFinished || t.remainingSeconds <= 0) return t;
-          const nextSec = t.remainingSeconds - 1;
+          if (t.isPaused || t.isFinished) return t;
+          const endsAt = t.endsAt || (now + t.remainingSeconds * 1000);
+          const nextSec = Math.max(0, Math.ceil((endsAt - now) / 1000));
           if (nextSec <= 0) {
             triggerAlarm = true;
-            return { ...t, remainingSeconds: 0, isFinished: true };
+            return { ...t, remainingSeconds: 0, isFinished: true, endsAt: undefined };
           }
-          return { ...t, remainingSeconds: nextSec };
+          return { ...t, remainingSeconds: nextSec, endsAt };
         });
 
         if (triggerAlarm) {
@@ -230,9 +238,26 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         }
         return next;
       });
-    }, 1000);
+    };
 
-    return () => clearInterval(interval);
+    const interval = setInterval(tick, 500);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        tick();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
   }, [timers]);
 
   const finishedTimers = timers.filter(t => t.isFinished);
@@ -266,6 +291,9 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       });
     }
 
+    const now = Date.now();
+    const duration = Math.max(1, config.seconds);
+
     setTimers(prev => {
       if (prev.length >= 9) {
         return prev;
@@ -276,10 +304,11 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         label: config.label,
         stepTitle: config.stepTitle,
         creatorCue: config.creatorCue || config.label,
-        totalSeconds: Math.max(1, config.seconds),
-        remainingSeconds: Math.max(1, config.seconds),
+        totalSeconds: duration,
+        remainingSeconds: duration,
         isPaused: false,
         isFinished: false,
+        endsAt: now + duration * 1000,
         originRect: config.originRect
       };
 
@@ -306,8 +335,26 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   };
 
   const handleTogglePause = (timerId: string) => {
+    const now = Date.now();
     setTimers(prev =>
-      prev.map(t => (t.id === timerId ? { ...t, isPaused: !t.isPaused } : t))
+      prev.map(t => {
+        if (t.id !== timerId || t.isFinished) return t;
+        if (t.isPaused) {
+          return {
+            ...t,
+            isPaused: false,
+            endsAt: now + t.remainingSeconds * 1000
+          };
+        } else {
+          const remaining = t.endsAt ? Math.max(0, Math.ceil((t.endsAt - now) / 1000)) : t.remainingSeconds;
+          return {
+            ...t,
+            isPaused: true,
+            remainingSeconds: remaining,
+            endsAt: undefined
+          };
+        }
+      })
     );
   };
 
@@ -322,6 +369,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const handleSaveTimePicker = (newSeconds: number) => {
     if (!editingTimer) return;
     const targetId = editingTimer.id;
+    const now = Date.now();
     setTimers(prev =>
       prev.map(t => {
         if (t.id === targetId) {
@@ -330,7 +378,8 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             totalSeconds: newSeconds,
             remainingSeconds: newSeconds,
             isFinished: false,
-            isPaused: false
+            isPaused: false,
+            endsAt: now + newSeconds * 1000
           };
         }
         return t;
@@ -377,8 +426,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       for (const step of section.steps) {
         if (
           (step.producesYield && step.producesYield.id === yieldId) ||
-          (step.id && (step.id === yieldId || `yield-${step.id}` === yieldId)) ||
-          yieldId.includes(String(step.index))
+          (step.id && (step.id === yieldId || `yield-${step.id}` === yieldId))
         ) {
           return { stepIndex: step.index, sectionName: section.name };
         }
@@ -388,8 +436,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           for (const step of sub.steps) {
             if (
               (step.producesYield && step.producesYield.id === yieldId) ||
-              (step.id && (step.id === yieldId || `yield-${step.id}` === yieldId)) ||
-              yieldId.includes(String(step.index))
+              (step.id && (step.id === yieldId || `yield-${step.id}` === yieldId))
             ) {
               return { stepIndex: step.index, sectionName: sub.name };
             }
@@ -1173,7 +1220,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 className="cook-desc-text cook-desc-markdown"
                 style={!isDescExpanded ? { WebkitLineClamp: 3 } : {}}
                 dangerouslySetInnerHTML={{
-                  __html: marked.parse(recipe.description, { async: false }) as string
+                  __html: sanitizeMarkdown(recipe.description)
                 }}
               />
 
@@ -1400,7 +1447,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             <div
               className="important-notes-body"
               dangerouslySetInnerHTML={{
-                __html: marked.parse(recipe.importantNotes, { async: false }) as string
+                __html: sanitizeMarkdown(recipe.importantNotes)
               }}
             />
           </div>
@@ -1460,25 +1507,50 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
       {/* Lightbox Modal */}
       {isLightboxOpen && lightboxImage && (
-        <div
-          className="cook-lightbox-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Full size recipe photo"
-          onClick={() => setIsLightboxOpen(false)}
-        >
-          <button
-            type="button"
-            className="cook-lightbox-close"
+        typeof document !== 'undefined' ? (
+          createPortal(
+            <div
+              className="cook-lightbox-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Full size recipe photo"
+              onClick={() => setIsLightboxOpen(false)}
+            >
+              <button
+                type="button"
+                className="cook-lightbox-close"
+                onClick={() => setIsLightboxOpen(false)}
+                aria-label="Close image"
+              >
+                <X size={20} />
+              </button>
+              <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
+                <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+              </div>
+            </div>,
+            document.body
+          )
+        ) : (
+          <div
+            className="cook-lightbox-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Full size recipe photo"
             onClick={() => setIsLightboxOpen(false)}
-            aria-label="Close image"
           >
-            <X size={20} />
-          </button>
-          <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-            <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+            <button
+              type="button"
+              className="cook-lightbox-close"
+              onClick={() => setIsLightboxOpen(false)}
+              aria-label="Close image"
+            >
+              <X size={20} />
+            </button>
+            <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
+              <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Timer Alarm Modal when countdown reaches 0 */}

@@ -7,5 +7,6 @@ export interface ActiveTimer {
   remainingSeconds: number;
   isPaused: boolean;
   isFinished: boolean;
+  endsAt?: number;
   originRect?: { left: number; top: number; width: number; height: number };
 }

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { AlertTriangle, X } from 'lucide-preact';
 
@@ -18,6 +19,32 @@ export function CascadeDeleteModal({
   onConfirm,
   onCancel
 }: CascadeDeleteModalProps) {
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+  const prevFocusedRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (typeof document !== 'undefined') {
+      prevFocusedRef.current = document.activeElement as HTMLElement | null;
+      cancelBtnRef.current?.focus();
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      };
+
+      document.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        prevFocusedRef.current?.focus?.();
+      };
+    }
+  }, [isOpen, onCancel]);
+
   if (!isOpen) return null;
 
   const heading = type === 'section'
@@ -59,6 +86,7 @@ export function CascadeDeleteModal({
 
         <footer className="delete-modal-footer">
           <button
+            ref={cancelBtnRef}
             type="button"
             className="delete-modal-btn-cancel"
             onClick={onCancel}

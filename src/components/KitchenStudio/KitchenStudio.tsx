@@ -44,20 +44,25 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
     }
   }, [activeWorkspaceId]);
 
-  const handleUpdateWorkspace = (updated: StudioWorkspace) => {
-    setActiveWorkspace(updated);
+  const handleUpdateWorkspace = (updated: StudioWorkspace): boolean => {
+    const timestamped: StudioWorkspace = {
+      ...updated,
+      updatedAt: new Date().toISOString()
+    };
+    setActiveWorkspace(timestamped);
     try {
       const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
       const list: StudioWorkspace[] = raw ? JSON.parse(raw) : [];
-      const idx = list.findIndex(w => w.id === updated.id);
+      const idx = list.findIndex(w => w.id === timestamped.id);
       if (idx !== -1) {
-        list[idx] = updated;
+        list[idx] = timestamped;
       } else {
-        list.unshift(updated);
+        list.unshift(timestamped);
       }
       localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(list));
+      return true;
     } catch {
-      // Storage fallback
+      return false;
     }
   };
 

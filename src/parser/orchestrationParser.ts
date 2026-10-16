@@ -183,13 +183,14 @@ Please repair the syntax errors while preserving all recipe ingredients, instruc
 
 function parseRawYamlValue(val: string): string {
   const trimmed = val.trim();
+  const decodeEscaped = (s: string) => s.replace(/\\(\\|n|"|')/g, (_, ch) => ch === 'n' ? '\n' : ch);
   if ((trimmed.startsWith('r"') && trimmed.endsWith('"')) || (trimmed.startsWith("r'") && trimmed.endsWith("'"))) {
     const inner = trimmed.slice(2, -1);
-    return inner.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\'/g, "'");
+    return decodeEscaped(inner);
   }
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     const inner = trimmed.slice(1, -1);
-    return inner.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\'/g, "'");
+    return decodeEscaped(inner);
   }
   return trimmed;
 }
@@ -343,6 +344,7 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
   const canvasNodes: CanvasStepNode[] = [];
   const inputsMap = new Map<string, RecipeInput>();
   const vesselsMap = new Map<string, RecipeVessel>();
+  const yieldProducerMap = new Map<string, string>();
 
   let currentRootSectionId = 'sec-main';
   let currentSectionId = 'sec-main';
@@ -383,9 +385,10 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
     // Check Section or Subsection
     if (/^\s*!?=/.test(rawLine)) {
       const isSub = /^\s*!=/.test(rawLine);
-      const cleanHeader = trimmed.replace(/^!*=+\s*|\s*=+$/g, '').trim();
-      const hasToolsDirective = cleanHeader.includes('[tools]');
-      const sectionName = cleanHeader.replace(/\[tools\]/g, '').trim() || (isSub ? 'Subsection' : 'Section');
+      const hasToolsDirective = trimmed.includes('[tools]');
+      const withoutTools = trimmed.replace(/\[tools\]/g, '').trim();
+      const cleanHeader = withoutTools.replace(/^!*=+\s*|\s*=+$/g, '').trim();
+      const sectionName = cleanHeader || (isSub ? 'Subsection' : 'Section');
 
       if (!isSub) {
         const secId = `sec-${sections.length + 1}`;
@@ -470,6 +473,9 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
         prose = prose.replace(/\[tools\]/gi, '').trim();
       }
 
+      const stepIdx = canvasNodes.length + 1;
+      const stepId = `step-${stepIdx}`;
+
       // Extract Yield production directive: -> *yieldName*{#vesselName}
       let producesYield: { name: string; vesselId: string } | undefined;
       const yieldProdMatch = prose.match(/->\s*\*([^*]+)\*\{#([^}]+)\}\s*$/);
@@ -481,6 +487,7 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
           name: yieldName,
           vesselId: vesselSlug
         };
+        yieldProducerMap.set(yieldName.toLowerCase(), stepId);
         if (!vesselsMap.has(vesselSlug)) {
           vesselsMap.set(vesselSlug, {
             id: vesselSlug,
@@ -494,11 +501,10 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
       // Parse tokens from prose
       const segments: StepInstructionSegment[] = [];
       const mentions: StepMentionToken[] = [];
-      const stepIdx = canvasNodes.length + 1;
       let tokenCounter = 1;
       let lastIdx = 0;
 
-      const tokenRegex = /(@@?[^@#~*,\s;{}()]+\{[^}]*\}(?:\([^)]*\))?|@@?[^@#~*,\s;{}()]+\([^)]*\)|@@?[^\s,.;:!?()[\]{}]+|#[^@#~*,\s;{}()]+\{[^}]*\}(?:\([^)]*\))?|#[^@#~*,\s;{}()]+\([^)]*\)|#[^\s,.;:!?()[\]{}]+|\*[^*]+\*(?:\{[^}]*\})?(?:\([^)]*\))?|~\{[^}]*\}(?:\([^)]*\))?|~[^@#~*,\s;{}()]+\([^)]*\))/g;
+      const tokenRegex = /(@@?[^@#~*,;{}\r\n]+?\{[^}\r\n]*\}(?:\([^)\r\n]*\))?|@@?[^@#~*,\s;{}()]+\([^)]*\)|@@?[^\s,.;:!?()[\]{}]+|#[^@#~*,;{}\r\n]+?\{[^}\r\n]*\}(?:\([^)\r\n]*\))?|#[^@#~*,\s;{}()]+\([^)]*\)|#[^\s,.;:!?()[\]{}]+|\*[^*]+\*(?:\{[^}]*\})?(?:\([^)]*\))?|~\{[^}]*\}(?:\([^)]*\))?|~[^@#~*,\s;{}()]+\([^)]*\))/g;
       let match: RegExpExecArray | null;
 
       while ((match = tokenRegex.exec(prose)) !== null) {
@@ -681,7 +687,6 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
         });
       }
 
-      const stepId = `step-${stepIdx}`;
       const parentId = isLinked && previousStepId ? previousStepId : (previousStepId || currentSectionId);
       const activeSection = sections.find(s => s.id === currentSectionId);
 
@@ -706,6 +711,19 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
       canvasNodes.push(stepNode);
       previousStepId = stepId;
       pendingStepDirectives = { galleryUrls: [] };
+    }
+  }
+
+  // Resolve consumer yieldId values to yield-${producerStepId}
+  for (const node of canvasNodes) {
+    for (const mention of node.mentions) {
+      if (mention.type === 'yield' && mention.data) {
+        const targetName = (mention.data.yieldName || mention.displayText).toLowerCase();
+        const producerStepId = yieldProducerMap.get(targetName);
+        if (producerStepId) {
+          mention.data.yieldId = `yield-${producerStepId}`;
+        }
+      }
     }
   }
 
@@ -1143,7 +1161,7 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
               yieldId: fullYieldId,
               sourceStepId: rawYieldId,
               displayText: m.displayText,
-              partition: m.data?.amount !== undefined ? String(m.data.amount) : 'all'
+              partition: m.data?.yieldPartition ?? (m.data?.amount !== undefined ? String(m.data.amount) : 'all')
             });
           } else if (m.type === 'ingredient') {
             tokens.push({
@@ -1184,7 +1202,7 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
       if (isYieldMention) {
         const rawYieldId = mention.data?.yieldId || (mention.data?.ingredientId ? mention.data.ingredientId.replace(/^yield-/, '') : mention.id);
         const fullYieldId = rawYieldId.startsWith('yield-') ? rawYieldId : `yield-${rawYieldId}`;
-        const partition = mention.data?.amount !== undefined ? String(mention.data.amount) : 'all';
+        const partition = mention.data?.yieldPartition ?? (mention.data?.amount !== undefined ? String(mention.data.amount) : 'all');
         if (!consumedYieldsList.some(c => c.yieldId === fullYieldId)) {
           consumedYieldsList.push({ yieldId: fullYieldId, partition });
         }

@@ -16,12 +16,22 @@ function getAudioContext(): AudioContext | null {
 
 if (typeof window !== 'undefined') {
   const unlockAudio = () => {
-    if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => {});
+    const ctx = getAudioContext();
+    if (ctx) {
+      if (ctx.state === 'running') {
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+      } else {
+        ctx.resume().then(() => {
+          if (ctx.state === 'running') {
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+          }
+        }).catch(() => {});
+      }
     }
-    window.removeEventListener('click', unlockAudio);
-    window.removeEventListener('keydown', unlockAudio);
-    window.removeEventListener('touchstart', unlockAudio);
   };
   window.addEventListener('click', unlockAudio, { passive: true });
   window.addEventListener('keydown', unlockAudio, { passive: true });
