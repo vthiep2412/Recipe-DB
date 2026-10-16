@@ -654,7 +654,14 @@ export function RecipeMetadataModal({
     const raw = description || '*No description entered yet. Switch to Source Mode to write.*';
     const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const processed = escaped.replace(/\[\[(.*?)\]\]/g, '<span class="obsidian-reading-link">$1</span>');
-    return marked.parse(processed, { async: false }) as string;
+    const renderer = new marked.Renderer();
+    renderer.link = ({ href, title, text }) => {
+      const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
+      const safeHref = isSafe ? href : '#';
+      const titleAttr = title ? ` title="${title}"` : '';
+      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${text}</a>`;
+    };
+    return marked.parse(processed, { renderer, async: false }) as string;
   }, [description, isReadingMode]);
 
   const modalElement = (

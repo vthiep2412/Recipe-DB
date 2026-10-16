@@ -22,10 +22,26 @@ import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
 
+export function isSafeUrl(url?: string): boolean {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  return (
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('mailto:')
+  );
+}
+
 function sanitizeMarkdown(raw?: string): string {
   if (!raw) return '';
   const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return marked.parse(escaped, { async: false }) as string;
+  const renderer = new marked.Renderer();
+  renderer.link = ({ href, title, text }) => {
+    const safeHref = isSafeUrl(href) ? href : '#';
+    const titleAttr = title ? ` title="${title}"` : '';
+    return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${text}</a>`;
+  };
+  return marked.parse(escaped, { renderer, async: false }) as string;
 }
 
 export function parseDurationToSeconds(text: string): number {
@@ -1181,7 +1197,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         <div className="cook-hero-body">
           <div className="cook-title-row">
             <h1 className="cook-hero-title">{recipe.title}</h1>
-            {recipe.source?.url && (
+            {recipe.source?.url && isSafeUrl(recipe.source.url) && (
               <a
                 href={recipe.source.url}
                 target="_blank"

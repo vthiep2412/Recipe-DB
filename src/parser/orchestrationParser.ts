@@ -206,7 +206,14 @@ function parseTimestampToSeconds(ts: string): number {
   return parseInt(ts, 10) || 0;
 }
 
-export function parseFablang(rawText: string, workspaceId: string = crypto.randomUUID()): {
+function generateWorkspaceId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `ws-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function parseFablang(rawText: string, workspaceId: string = generateWorkspaceId()): {
   workspace: StudioWorkspace;
   errors: FablangSyntaxError[];
 } {
@@ -714,14 +721,29 @@ export function parseFablang(rawText: string, workspaceId: string = crypto.rando
     }
   }
 
-  // Resolve consumer yieldId values to yield-${producerStepId}
+  // Resolve consumer yieldId values to yield-${producerStepId} and normalize to ingredient mentions
   for (const node of canvasNodes) {
     for (const mention of node.mentions) {
-      if (mention.type === 'yield' && mention.data) {
+      if ((mention.type === 'yield' || mention.type === 'ingredient') && mention.data) {
         const targetName = (mention.data.yieldName || mention.displayText).toLowerCase();
         const producerStepId = yieldProducerMap.get(targetName);
         if (producerStepId) {
-          mention.data.yieldId = `yield-${producerStepId}`;
+          const producerNode = canvasNodes.find(n => n.id === producerStepId);
+          mention.type = 'ingredient';
+          mention.data.yieldId = producerStepId;
+          mention.data.ingredientId = `yield-${producerStepId}`;
+          mention.data.yieldStepTitle = producerNode?.title;
+          mention.data.amount = mention.data.yieldPartition || 'all';
+        }
+      }
+    }
+    if (node.segments) {
+      for (const seg of node.segments) {
+        if (seg.type === 'mention' && seg.mention) {
+          const updated = node.mentions.find(m => m.id === seg.mention.id);
+          if (updated) {
+            seg.mention = updated;
+          }
         }
       }
     }
@@ -795,7 +817,7 @@ export function detectInputFormat(text: string): IngestFormat {
 /**
  * Parses raw text into a StudioWorkspace with auto-connected canvas nodes
  */
-export function parseTextToStudioWorkspace(rawText: string, workspaceId: string = crypto.randomUUID()): StudioWorkspace {
+export function parseTextToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
   const trimmed = rawText.trim();
   const format = detectInputFormat(trimmed);
 

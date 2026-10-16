@@ -67,7 +67,7 @@ bun run tunnel
   - `#cookware{quantity}`: Kitchen tools and equipment.
   - `~timer{duration%unit}`: Active timers with countdowns.
 - **Cooking vs. Prepare Modes**:
-  - **Prepare Mode**: Checklists for all ingredients and cookware with checkboxes and clear-all actions for advance mis-en-place.
+  - **Prepare Mode**: Checklists for all ingredients and cookware with checkboxes and clear-all actions for advance mise-en-place.
   - **Cooking Mode**: Grouped by section, presenting section cookware on top with checkboxes separated by a hairline divider from step ingredients.
 - **Unified Checklist & Focus Persistence**: Automatically saves checklist states, active mode, and section focus to `localStorage`.
 - **Scoped Step Dimming & Focus Memory**: Active step stays at full brightness with an orange indicator, sibling steps dim to 0.65 opacity, and other sections retain their last remembered step with a muted amber indicator.
@@ -86,6 +86,5 @@ src/
 ├── recipes/             # Recipe markdown files and dynamic loader
 ├── styles/              # Theme variables and component styles
 ├── types/               # TypeScript interfaces (RecipeJSON, tokens, AST)
-├── App.tsx              # Root application component and router
-└── main.tsx             # Entry point
+└── main.tsx             # Root application component, router, and entry point
 ```

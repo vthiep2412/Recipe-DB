@@ -85,8 +85,11 @@ function updateTokenContent(span: HTMLElement, mention: StepMentionToken, allNod
           }
         }
       }
-      if (!sourceStepText && mention.data?.yieldId && !mention.data.yieldId.startsWith('step-17')) {
-        sourceStepText = `Step ${mention.data.yieldId.replace(/^step-/, '')}`;
+      if (!sourceStepText && mention.data?.yieldId) {
+        const stepNumMatch = mention.data.yieldId.match(/^(?:yield-)?step-(\d{1,4})$/);
+        if (stepNumMatch) {
+          sourceStepText = `Step ${stepNumMatch[1]}`;
+        }
       }
 
       if (sourceStepText) {

@@ -29,24 +29,20 @@ export function generateFablang(
   lines.push(`title: "${escapeRawYamlString(graph.title || 'Untitled Recipe')}"`);
 
   if (graph.difficulty) {
-    const diff = graph.difficulty.charAt(0).toUpperCase() + graph.difficulty.slice(1);
+    const diff = graph.difficulty.toLowerCase();
     lines.push(`difficulty: ${diff}`);
   }
 
   if (typeof graph.servings === 'number') {
-    lines.push('servings:');
-    lines.push(`  base: ${graph.servings}`);
-    lines.push('  unit: servings');
+    lines.push(`servings: ${graph.servings}`);
   }
 
   if (graph.author?.name) {
-    lines.push('author:');
-    lines.push(`  name: "${escapeRawYamlString(graph.author.name)}"`);
+    lines.push(`author: "${escapeRawYamlString(graph.author.name)}"`);
   }
 
   if (graph.source?.url) {
-    lines.push('source:');
-    lines.push(`  url: "${escapeRawYamlString(graph.source.url)}"`);
+    lines.push(`source: "${escapeRawYamlString(graph.source.url)}"`);
   }
 
   if (graph.description) {
@@ -264,11 +260,14 @@ export function generateFablang(
 
           if (m.type === 'timer') {
             const sec = m.data?.timerSec || 60;
-            const mins = Math.max(1, Math.round(sec / 60));
             const noteStr = m.data?.creatorNote || m.data?.donenessDescription
               ? `(${m.data.creatorNote || m.data.donenessDescription})`
               : '';
-            return `~{${mins}%minutes}${noteStr}`;
+            if (sec % 60 === 0) {
+              const mins = Math.max(1, sec / 60);
+              return `~{${mins}%minutes}${noteStr}`;
+            }
+            return `~{${sec}%seconds}${noteStr}`;
           }
 
           return `[${m.displayText}]`;

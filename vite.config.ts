@@ -9,23 +9,32 @@ function recipeStudioApiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.url === '/api/save-recipe' && req.method === 'POST') {
-          const host = req.headers.host;
           const origin = req.headers.origin;
-          if (origin) {
-            try {
-              const originHost = new URL(origin).host;
-              if (originHost !== host) {
-                res.statusCode = 403;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ ok: false, error: 'Origin does not match request host' }));
-                return;
-              }
-            } catch {
+          if (!origin) {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: 'Origin header is required' }));
+            return;
+          }
+
+          try {
+            const originHostname = new URL(origin).hostname;
+            const trustedHosts = ['localhost', '127.0.0.1', '.trycloudflare.com'];
+            const isAllowed = trustedHosts.some(trusted =>
+              trusted.startsWith('.') ? originHostname.endsWith(trusted) : originHostname === trusted
+            );
+
+            if (!isAllowed) {
               res.statusCode = 403;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ ok: false, error: 'Invalid origin header' }));
+              res.end(JSON.stringify({ ok: false, error: 'Origin is not permitted' }));
               return;
             }
+          } catch {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: 'Invalid origin header' }));
+            return;
           }
 
           const contentType = req.headers['content-type'] || '';
@@ -93,6 +102,6 @@ export default defineConfig({
   server: {
     port: 5176,
     host: '0.0.0.0',
-    allowedHosts: true
+    allowedHosts: ['.trycloudflare.com']
   }
 });
