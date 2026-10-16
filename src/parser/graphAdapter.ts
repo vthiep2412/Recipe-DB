@@ -1,5 +1,5 @@
 import type { RecipeGraph } from '../types/orchestration';
-import type { RecipeJSON, RecipeIngredient, RecipeSection, RecipeStep, StepToken } from '../types/recipe';
+import type { RecipeJSON, RecipeIngredient, RecipeSection, RecipeSubsection, RecipeStep, StepToken } from '../types/recipe';
 import { parseFraction, formatFraction } from './cooklangParser';
 
 function formatSecondsToDisplay(sec?: number): string | undefined {
@@ -42,77 +42,108 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
     };
   });
 
-  const sections: RecipeSection[] = graph.components.map(comp => {
+  let globalStepCounter = 0;
+
+  function convertStepNode(node: import('../types/orchestration').RecipeStepNode, sectionShowInline: boolean): RecipeStep {
+    globalStepCounter++;
+    const tokens: StepToken[] = [];
+
+    for (const tok of node.tokens) {
+      if (tok.type === 'text') {
+        tokens.push({ type: 'text', value: tok.text });
+      } else if (tok.type === 'ingredient') {
+        const rawAmt = tok.amount;
+        let displayAmt = '';
+        if (typeof rawAmt === 'number') {
+          displayAmt = formatFraction(rawAmt);
+        } else if (typeof rawAmt === 'string') {
+          const parsed = parseFraction(rawAmt);
+          displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
+        }
+        const unitStr = tok.unit ? ` ${tok.unit}` : '';
+        const quantityText = tok.isRemention
+          ? undefined
+          : (displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined);
+
+        tokens.push({
+          type: 'ingredient',
+          name: tok.displayText,
+          quantityText,
+          note: tok.note,
+          isHidden: false
+        });
+      } else if (tok.type === 'cookware') {
+        tokens.push({
+          type: 'cookware',
+          name: tok.displayText
+        });
+      } else if (tok.type === 'timer') {
+        tokens.push({
+          type: 'timer',
+          durationText: tok.displayText.replace('⏱', '').trim(),
+          timerId: tok.timerId
+        });
+      } else if (tok.type === 'yield') {
+        tokens.push({
+          type: 'yield',
+          yieldId: tok.yieldId,
+          displayText: tok.displayText,
+          partition: tok.partition
+        });
+      }
+    }
+
+    return {
+      index: globalStepCounter,
+      rawText: node.instructionText,
+      tokens,
+      stepId: node.id,
+      title: node.title,
+      isCountedStep: node.isCountedStep,
+      isLinkedToPrevious: node.isLinkedToPrevious,
+      producesYield: node.producesYield,
+      image: node.media?.galleryUrls?.[0],
+      media: node.media,
+      showInlineTools: node.showInlineTools ?? sectionShowInline
+    };
+  }
+
+  const allCompMetas = graph.components.map(comp => {
     const rawSecId = comp.id.replace(/^component-/, '');
     const sectionMeta = graph.sections?.find(s => s.id === rawSecId || s.name === comp.name);
-    const sectionShowInline = sectionMeta?.showInlineTools ?? false;
+    return {
+      comp,
+      rawSecId,
+      sectionMeta,
+      parentSectionId: sectionMeta?.parentSectionId
+    };
+  });
 
-    const steps: RecipeStep[] = comp.steps.map((node, stepIdx) => {
-      const tokens: StepToken[] = [];
+  const knownSecIds = new Set(allCompMetas.map(m => m.rawSecId));
+  const rootCompMetas = allCompMetas.filter(m => !m.parentSectionId || !knownSecIds.has(m.parentSectionId));
 
-      for (const tok of node.tokens) {
-        if (tok.type === 'text') {
-          tokens.push({ type: 'text', value: tok.text });
-        } else if (tok.type === 'ingredient') {
-          const rawAmt = tok.amount;
-          let displayAmt = '';
-          if (typeof rawAmt === 'number') {
-            displayAmt = formatFraction(rawAmt);
-          } else if (typeof rawAmt === 'string') {
-            const parsed = parseFraction(rawAmt);
-            displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
-          }
-          const unitStr = tok.unit ? ` ${tok.unit}` : '';
-          const quantityText = tok.isRemention
-            ? undefined
-            : (displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined);
+  const sections: RecipeSection[] = rootCompMetas.map(rootMeta => {
+    const rootShowInline = rootMeta.sectionMeta?.showInlineTools ?? false;
+    const rootSteps = rootMeta.comp.steps.map(stepNode => convertStepNode(stepNode, rootShowInline));
 
-          tokens.push({
-            type: 'ingredient',
-            name: tok.displayText,
-            quantityText,
-            note: tok.note,
-            isHidden: false
-          });
-        } else if (tok.type === 'cookware') {
-          tokens.push({
-            type: 'cookware',
-            name: tok.displayText
-          });
-        } else if (tok.type === 'timer') {
-          tokens.push({
-            type: 'timer',
-            durationText: tok.displayText.replace('⏱', '').trim(),
-            timerId: tok.timerId
-          });
-        } else if (tok.type === 'yield') {
-          tokens.push({
-            type: 'yield',
-            yieldId: tok.yieldId,
-            displayText: tok.displayText,
-            partition: tok.partition
-          });
-        }
-      }
-
+    const childMetas = allCompMetas.filter(m => m.parentSectionId === rootMeta.rawSecId);
+    const subsections: RecipeSubsection[] = childMetas.map(childMeta => {
+      const childShowInline = childMeta.sectionMeta?.showInlineTools ?? false;
+      const childSteps = childMeta.comp.steps.map(stepNode => convertStepNode(stepNode, childShowInline));
       return {
-        index: stepIdx + 1,
-        rawText: node.instructionText,
-        tokens,
-        stepId: node.id,
-        isCountedStep: node.isCountedStep,
-        producesYield: node.producesYield,
-        image: node.media?.galleryUrls?.[0],
-        media: node.media,
-        showInlineTools: node.showInlineTools ?? sectionShowInline
+        id: childMeta.comp.id,
+        name: childMeta.comp.name || 'Subsection',
+        description: childMeta.sectionMeta?.description,
+        steps: childSteps
       };
     });
 
     return {
-      id: comp.id,
-      name: comp.name || 'Instructions',
-      description: sectionMeta?.description,
-      steps
+      id: rootMeta.comp.id,
+      name: rootMeta.comp.name || 'Instructions',
+      description: rootMeta.sectionMeta?.description,
+      steps: rootSteps,
+      subsections: subsections.length > 0 ? subsections : undefined
     };
   });
 

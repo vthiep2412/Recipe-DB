@@ -104,6 +104,7 @@ export interface RecipeComponent {
 export interface RecipeStepNode {
   id: string;
   componentId: string;
+  title?: string;
   isCountedStep: boolean;
   isLinkedToPrevious?: boolean;
   instructionText: string;

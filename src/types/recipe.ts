@@ -22,8 +22,10 @@ export interface RecipeStep {
   tokens: StepToken[];
   id?: string;
   stepId?: string;
+  title?: string;
   sectionId?: string;
   isCountedStep?: boolean;
+  isLinkedToPrevious?: boolean;
   image?: string;
   media?: {
     galleryUrls?: string[];

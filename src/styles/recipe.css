@@ -2168,3 +2168,215 @@
   color: var(--interactive-accent);
 }
 
+/* Section descriptions */
+.cook-section-desc {
+  margin-bottom: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* Subsection hierarchy */
+.cook-subsections-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--background-modifier-border);
+}
+
+.cook-subsection-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.cook-subsection-header {
+  margin-top: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.cook-subsection-band {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08rem;
+  color: var(--interactive-accent);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  background-color: rgba(245, 158, 11, 0.1);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-s);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.cook-subsection-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  line-height: 1.45;
+}
+
+.cook-sidebar-subsection {
+  margin-top: 0.65rem;
+  padding-left: 0.5rem;
+  border-left: 1.5px solid var(--background-modifier-border);
+}
+
+.cook-sidebar-subsection-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+/* Step titles */
+.cook-step-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.01rem;
+}
+
+/* Linked steps */
+.cook-step.is-linked-step {
+  position: relative;
+  margin-top: -0.25rem;
+  padding-top: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--interactive-accent);
+  background-color: rgba(245, 158, 11, 0.02);
+}
+
+.cook-step-link-rail {
+  position: absolute;
+  top: 0.5rem;
+  left: -0.65rem;
+  color: var(--interactive-accent);
+  background-color: var(--background-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--interactive-accent);
+  z-index: 2;
+}
+
+/* Uncounted note steps */
+.cook-step.cook-step-note-callout {
+  background-color: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: var(--radius-m);
+  padding: 0.75rem 0.85rem;
+  margin: 0.5rem 0;
+}
+
+.cook-step-note-tag {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cook-step-note-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-s);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Step media and clips */
+.cook-step-gallery-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.cook-step-gallery-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cook-step-gallery-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.35);
+}
+
+.cook-step-gallery-thumb {
+  width: 6.5rem;
+  height: 4.8rem;
+  object-fit: cover;
+  border-radius: var(--radius-s);
+  display: block;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.cook-step-single-img-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  margin-top: 0.65rem;
+}
+
+.cook-step-clip-wrapper {
+  margin-top: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.cook-step-clip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: rgba(245, 158, 11, 0.12);
+  color: var(--text-normal);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-s);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.cook-step-clip-btn:hover {
+  background-color: rgba(245, 158, 11, 0.22);
+  border-color: var(--interactive-accent);
+}
+
+.video-player-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000;
+}
+
+.cook-media-video-player {
+  width: 100%;
+  height: 100%;
+  max-height: 24rem;
+  object-fit: contain;
+  background-color: #000000;
+}
+

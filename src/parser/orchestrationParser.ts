@@ -1226,6 +1226,7 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
     const stepNode: RecipeStepNode = {
       id: node.id,
       componentId: 'component-main',
+      title: node.title,
       isCountedStep: node.isCountedStep,
       isLinkedToPrevious: node.isLinkedToPrevious,
       instructionText: node.instructionText,

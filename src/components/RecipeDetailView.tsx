@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import {
   ChefHat,
@@ -10,10 +10,11 @@ import {
   X,
   Check,
   CookingPot,
-  AlertTriangle
+  AlertTriangle,
+  Play
 } from 'lucide-preact';
 import { marked } from 'marked';
-import type { RecipeJSON, StepToken } from '../types/recipe';
+import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
 import type { ActiveTimer } from '../types/timer';
 import { formatFraction, parseFraction } from '../parser/cooklangParser';
 import { startAlarmLoop, stopAlarmLoop, isRinging } from '../services/timerAudio';
@@ -69,6 +70,19 @@ function extractDonenessCue(stepText: string, fallbackLabel: string): string {
     return `Until ${match[1].trim()}`;
   }
   return fallbackLabel;
+}
+
+function formatClipTime(startSec: number, endSec?: number): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fmt = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = Math.floor(s % 60);
+    return `${mins}:${pad(secs)}`;
+  };
+  if (typeof endSec === 'number' && endSec > startSec) {
+    return `${fmt(startSec)} - ${fmt(endSec)}`;
+  }
+  return fmt(startSec);
 }
 
 interface Props {
@@ -127,6 +141,25 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [highlightedStepIndex, setHighlightedStepIndex] = useState<number | null>(null);
   const [deletedNoticeYieldId, setDeletedNoticeYieldId] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string>(recipe.image || '');
+
+  useEffect(() => {
+    if (recipe.image) {
+      setLightboxImage(recipe.image);
+    }
+  }, [recipe.image]);
+
+  const handlePlayVideoClip = (startSec: number, _endSec?: number, e?: MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsMediaExpanded(true);
+    if (videoRef.current) {
+      videoRef.current.currentTime = startSec;
+      videoRef.current.play().catch(() => {});
+      const videoEl = videoRef.current;
+      videoEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -350,6 +383,19 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           return { stepIndex: step.index, sectionName: section.name };
         }
       }
+      if (section.subsections) {
+        for (const sub of section.subsections) {
+          for (const step of sub.steps) {
+            if (
+              (step.producesYield && step.producesYield.id === yieldId) ||
+              (step.id && (step.id === yieldId || `yield-${step.id}` === yieldId)) ||
+              yieldId.includes(String(step.index))
+            ) {
+              return { stepIndex: step.index, sectionName: sub.name };
+            }
+          }
+        }
+      }
     }
     return null;
   };
@@ -551,6 +597,32 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         if (tok.type === 'cookware') cookwareNames.add(tok.name);
       });
     });
+    sec.subsections?.forEach(sub => {
+      sub.steps.forEach(step => {
+        step.tokens.forEach(tok => {
+          if (tok.type === 'cookware') cookwareNames.add(tok.name);
+        });
+      });
+    });
+  });
+
+  const stepNumberMap = new Map<number, number>();
+  let currentCountedNumber = 0;
+  recipe.sections.forEach(sec => {
+    sec.steps.forEach(st => {
+      if (st.isCountedStep !== false) {
+        currentCountedNumber++;
+        stepNumberMap.set(st.index, currentCountedNumber);
+      }
+    });
+    sec.subsections?.forEach(sub => {
+      sub.steps.forEach(st => {
+        if (st.isCountedStep !== false) {
+          currentCountedNumber++;
+          stepNumberMap.set(st.index, currentCountedNumber);
+        }
+      });
+    });
   });
 
   const breakdownTimes = [
@@ -569,28 +641,477 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     ? 'diff-hard'
     : 'diff-medium';
 
+  const renderSidebarStepItem = (step: RecipeStep, secName: string) => {
+    const stepCookware = step.tokens.filter(
+      (t): t is Extract<StepToken, { type: 'cookware' }> => t.type === 'cookware'
+    );
+    const stepIngs = step.tokens.filter(
+      (t): t is Extract<StepToken, { type: 'ingredient' }> =>
+        t.type === 'ingredient' && !t.isHidden
+    );
+    const stepYields = step.tokens.filter(
+      (t): t is Extract<StepToken, { type: 'yield' }> =>
+        t.type === 'yield'
+    );
+    const hasCookware = stepCookware.length > 0;
+    const hasIngredientsOrYields = stepIngs.length > 0 || stepYields.length > 0 || Boolean(step.producesYield);
+    const isSecActive = activeSectionId === secName;
+    const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
+    const isStepActive = isSecActive && rememberedStepInSec === step.index;
+    const isStepDimmed = rememberedStepInSec !== -1 && step.index < rememberedStepInSec;
+    const isCounted = step.isCountedStep !== false;
+    const countedNum = stepNumberMap.get(step.index) || step.index;
+    const stepLabel = !isCounted ? (step.title || 'Note') : `Step ${countedNum}${step.title ? `: ${step.title}` : ''}`;
+
+    return (
+      <div
+        key={`step-ing-subgroup-${step.index}`}
+        id={`sidebar-step-${step.index}`}
+        className={`cook-step-ing-subgroup ${isStepActive ? 'is-active-step' : ''} ${isStepDimmed ? 'is-dimmed-step' : ''}`}
+      >
+        <div className={`cook-step-subgroup-title ${isStepActive ? 'is-active' : ''}`}>
+          <span className="cook-step-title-base">
+            {stepLabel}
+          </span>
+          <span className="cook-step-title-pill" aria-hidden="true">
+            <span className="cook-step-title-text">
+              {stepLabel}
+            </span>
+          </span>
+        </div>
+
+        <div className="cook-step-spine-body">
+          {hasCookware && (
+            <>
+              {hasIngredientsOrYields && (
+                <div className="cook-step-divider-line">
+                  <span>Cookware</span>
+                </div>
+              )}
+              <ul className="cook-ing-list">
+                {stepCookware.map((tok, idx) => {
+                  const checkKey = `cook:step:${step.index}:cw:${tok.name.toLowerCase()}`;
+                  const isDone = checkedCookingItems.has(checkKey);
+                  return (
+                    <li
+                      key={`step-cw-${step.index}-${idx}-${tok.name}`}
+                      className={`cook-ing ${isDone ? 'done' : ''}`}
+                      onClick={() => toggleCookingItem(checkKey)}
+                    >
+                      <div className="cook-ing-box">
+                        {isDone && <Check size={11} strokeWidth={3.5} />}
+                      </div>
+                      <span className="cook-ing-name">{tok.name}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+
+          {hasCookware && hasIngredientsOrYields && (
+            <div className="cook-step-divider-line">
+              <span>Ingredients</span>
+            </div>
+          )}
+
+          {hasIngredientsOrYields && (
+            <ul className="cook-ing-list">
+              {stepIngs.map((tok, idx) => {
+                const checkKey = `cook:step:${step.index}:${tok.name.toLowerCase()}`;
+                const isDone = checkedCookingItems.has(checkKey);
+                const matchedIng = recipe.ingredients.find(
+                  i => i.name.toLowerCase() === tok.name.toLowerCase()
+                );
+                const displayQty = tok.quantityText
+                  ? scaleTokenQty(tok.quantityText)
+                  : matchedIng && matchedIng.quantityValue !== null
+                  ? scaleQuantity(matchedIng.quantityValue, matchedIng.unit)
+                  : '';
+
+                return (
+                  <li
+                    key={`${step.index}-${idx}-${tok.name}`}
+                    className={`cook-ing ${isDone ? 'done' : ''}`}
+                    onClick={() => toggleCookingItem(checkKey)}
+                  >
+                    <div className="cook-ing-box">
+                      {isDone && <Check size={11} strokeWidth={3.5} />}
+                    </div>
+                    <span className="cook-ing-name">
+                      {tok.name}
+                      {tok.note && (
+                        <span style={{ color: 'var(--text-muted)' }}> ({tok.note})</span>
+                      )}
+                    </span>
+                    {displayQty && <span className="cook-ing-qty">{displayQty}</span>}
+                  </li>
+                );
+              })}
+
+              {stepYields.map((yTok, yIdx) => {
+                const checkKey = `cook:step:${step.index}:yield:${yTok.yieldId}`;
+                const isDone = checkedCookingItems.has(checkKey);
+                const yOrigin = findYieldOrigin(yTok.yieldId);
+
+                return (
+                  <li
+                    key={`step-yield-${step.index}-${yIdx}`}
+                    className={`cook-ing ${isDone ? 'done' : ''}`}
+                    onClick={() => toggleCookingItem(checkKey)}
+                  >
+                    <div className="cook-ing-box">
+                      {isDone && <Check size={11} strokeWidth={3.5} />}
+                    </div>
+                    <span className="cook-ing-name">
+                      {yTok.displayText}
+                      {yTok.partition && (
+                        <span className="cook-yield-partition-badge"> ({yTok.partition})</span>
+                      )}
+                      {yOrigin ? (
+                        <button
+                          type="button"
+                          className="cook-yield-provenance-tag"
+                          title={`View origin step ${yOrigin.stepIndex}`}
+                          onClick={(e) => handleYieldBadgeClick(yTok.yieldId, e)}
+                        >
+                          (From step {yOrigin.stepIndex}, <span className="yield-section-chip">{yOrigin.sectionName}</span>)
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cook-yield-provenance-tag"
+                          onClick={(e) => handleYieldBadgeClick(yTok.yieldId, e)}
+                        >
+                          (Deleted Step)
+                        </button>
+                      )}
+                      {deletedNoticeYieldId === yTok.yieldId && (
+                        <span className="cook-deleted-yield-notice">Origin step deleted</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+
+              {step.producesYield && (
+                <li className="cook-ing cook-yield-produced-item">
+                  <div className="cook-yield-produced-badge">
+                    <CookingPot size={13} />
+                    <span>Yield:</span>
+                    <span className="cook-yield-produced-name">{step.producesYield.name}</span>
+                  </div>
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderStepCard = (step: RecipeStep, secName: string) => {
+    const isSecActive = activeSectionId === secName;
+    const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
+    const isStepSelected = rememberedStepInSec === step.index;
+
+    let stepStatusClass = '';
+    if (rememberedStepInSec !== -1) {
+      if (isStepSelected) {
+        stepStatusClass = isSecActive ? 'is-section-active' : 'is-remembered-step';
+      } else if (step.index < rememberedStepInSec) {
+        stepStatusClass = 'is-section-dimmed';
+      }
+    }
+
+    const isCur = isSecActive && isStepSelected;
+    const isHighlighted = highlightedStepIndex === step.index;
+    const isCounted = step.isCountedStep !== false;
+    const countedNum = stepNumberMap.get(step.index) || step.index;
+    const isLinked = Boolean(step.isLinkedToPrevious);
+
+    return (
+      <div
+        key={step.index}
+        id={`step-node-${step.index}`}
+        className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${!isCounted ? 'cook-step-note-callout' : ''} ${isLinked ? 'is-linked-step' : ''}`}
+        onClick={() => handleStepClick(secName, step.index)}
+      >
+        {isLinked && (
+          <div className="cook-step-link-rail" title="Linked to previous step">
+            <LinkIcon size={12} />
+          </div>
+        )}
+
+        <span className={`cook-step-n ${!isCounted ? 'cook-step-note-tag' : ''}`}>
+          {!isCounted ? (
+            <span className="cook-step-note-badge">
+              <AlertTriangle size={12} />
+              <span>Note</span>
+            </span>
+          ) : (
+            `${countedNum}.`
+          )}
+        </span>
+
+        <div className="cook-step-bodywrap">
+          {step.title && (
+            <div className="cook-step-title">{step.title}</div>
+          )}
+
+          <div className="cook-step-text">
+            {step.tokens.map((token, idx) => {
+              if (token.type === 'text') {
+                return <span key={idx}>{token.value}</span>;
+              }
+              if (token.type === 'ingredient') {
+                return (
+                  <span key={idx} className="cook-ig">
+                    <span className="cook-ig-name">{token.name}</span>
+                    {token.quantityText && (
+                      <span className="cook-amt">{scaleTokenQty(token.quantityText)}</span>
+                    )}
+                    {token.note && (
+                      <span className="cook-ig-note">{token.note}</span>
+                    )}
+                  </span>
+                );
+              }
+              if (token.type === 'cookware') {
+                return (
+                  <span key={idx} className="cook-cw">
+                    {token.name}
+                  </span>
+                );
+              }
+              if (token.type === 'yield') {
+                const origin = findYieldOrigin(token.yieldId);
+                return (
+                  <span key={idx} className="cook-yield-wrapper">
+                    <button
+                      type="button"
+                      className="cook-yield-badge"
+                      title={origin ? `View step ${origin.stepIndex} where this yield was made` : 'Yield origin step'}
+                      onClick={(e) => handleYieldBadgeClick(token.yieldId, e)}
+                    >
+                      <span className="cook-yield-badge-name">
+                        <CookingPot size={13} />
+                        <span>{token.displayText}</span>
+                      </span>
+                      {token.partition && (
+                        <span className="cook-yield-badge-amt">{token.partition}</span>
+                      )}
+                      {!origin && (
+                        <span style={{ opacity: 0.75, fontStyle: 'italic', paddingRight: '0.35rem' }}>
+                          (Deleted Step)
+                        </span>
+                      )}
+                    </button>
+                    {deletedNoticeYieldId === token.yieldId && (
+                      <span className="cook-deleted-yield-notice">Origin step deleted</span>
+                    )}
+                  </span>
+                );
+              }
+              if (token.type === 'timer') {
+                const timerId = token.timerId || `step-${step.index}-${idx}`;
+                const activeTimer = timers.find(t => t.id === timerId && !t.isFinished);
+                const isTimerActive = Boolean(activeTimer || pendingPills[timerId]);
+                const pillText = activeTimer
+                  ? formatTimerDigits(activeTimer.remainingSeconds)
+                  : pendingPills[timerId] || token.durationText;
+
+                return (
+                  <span key={idx} className="cook-timer">
+                    <button
+                      type="button"
+                      className={`cook-timer-btn ${isTimerActive ? 'active' : ''}`}
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (isTimerActive) return;
+                        const btn = e.currentTarget as HTMLElement;
+                        const rect = btn.getBoundingClientRect();
+                        btn.style.minWidth = `${rect.width}px`;
+
+                        const sec = parseDurationToSeconds(token.durationText);
+                        const cue = extractDonenessCue(step.rawText, token.durationText);
+                        setPendingPills(prev => ({ ...prev, [timerId]: formatTimerDigits(sec) }));
+
+                        const glowDuration = Math.round(150 / (animSpeed || 1));
+                        const flightDuration = Math.round(900 / (animSpeed || 1));
+
+                        btn.style.transition = `box-shadow ${glowDuration}ms ease-out, border-color ${glowDuration}ms ease-out`;
+                        btn.style.boxShadow = '0 0 0.8rem 0.15rem rgba(245, 158, 11, 0.7)';
+                        btn.style.borderColor = '#f59e0b';
+
+                        setTimeout(() => {
+                          btn.style.transition = `box-shadow ${flightDuration}ms ease-out, border-color ${flightDuration}ms ease-out`;
+                          btn.style.boxShadow = '0 0 0.2rem rgba(245, 158, 11, 0.2)';
+                          btn.style.borderColor = 'rgba(245, 158, 11, 0.45)';
+
+                          handleStartTimer({
+                            id: timerId,
+                            label: token.durationText,
+                            seconds: sec,
+                            stepTitle: !isCounted ? (step.title || 'Note') : `Step ${countedNum}`,
+                            creatorCue: cue,
+                            originRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+                          });
+
+                          setPendingPills(prev => {
+                            const next = { ...prev };
+                            delete next[timerId];
+                            return next;
+                          });
+                        }, glowDuration);
+                      }}
+                    >
+                      ⏱ {pillText}
+                    </button>
+                  </span>
+                );
+              }
+              return null;
+            })}
+          </div>
+
+          {step.showInlineTools && (
+            <div className="cook-inline-tools-bar">
+              {step.tokens
+                .filter((t): t is Extract<StepToken, { type: 'ingredient' | 'cookware' }> =>
+                  (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
+                )
+                .map((toolTok, toolIdx) => (
+                  <span
+                    key={toolIdx}
+                    className={`cook-inline-tool-chip ${toolTok.type === 'ingredient' ? 'chip-ingredient' : 'chip-cookware'}`}
+                  >
+                    {toolTok.type === 'ingredient' ? (
+                      <>
+                        <span className="tool-chip-name">{toolTok.name}</span>
+                        {toolTok.quantityText && (
+                          <span className="tool-chip-amt">{scaleTokenQty(toolTok.quantityText)}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="tool-chip-name">{toolTok.name}</span>
+                    )}
+                  </span>
+                ))}
+            </div>
+          )}
+
+          {step.media?.videoClip && typeof step.media.videoClip.startSec === 'number' && (
+            <div className="cook-step-clip-wrapper">
+              <button
+                type="button"
+                className="cook-step-clip-btn"
+                onClick={(e) => handlePlayVideoClip(step.media!.videoClip!.startSec, step.media!.videoClip!.endSec, e)}
+                title="Play step video clip"
+              >
+                <Play size={11} fill="currentColor" />
+                <span>Clip {formatClipTime(step.media.videoClip.startSec, step.media.videoClip.endSec)}</span>
+              </button>
+            </div>
+          )}
+
+          {step.media?.galleryUrls && step.media.galleryUrls.length > 0 && (
+            <div className="cook-step-gallery-grid">
+              {step.media.galleryUrls.map((url, gIdx) => (
+                <button
+                  key={gIdx}
+                  type="button"
+                  className="cook-step-gallery-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxImage(url);
+                    setIsLightboxOpen(true);
+                  }}
+                  aria-label={`View step image ${gIdx + 1}`}
+                >
+                  <img
+                    src={url}
+                    alt={`Step media ${gIdx + 1}`}
+                    className="cook-step-gallery-thumb"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {step.image && (!step.media?.galleryUrls || step.media.galleryUrls.length === 0) && (
+            <button
+              type="button"
+              className="cook-step-single-img-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxImage(step.image!);
+                setIsLightboxOpen(true);
+              }}
+            >
+              <img
+                src={step.image}
+                alt={step.title || `Step ${step.index}`}
+                className="step-media-banner"
+                loading="lazy"
+              />
+            </button>
+          )}
+
+          {step.producesYield && (
+            <div className="cook-step-yield-banner">
+              <span className="cook-yield-tag">
+                <CookingPot size={13} />
+                <span>Yield</span>
+              </span>
+              <span className="cook-step-yield-name">{step.producesYield.name}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`cook-preview-view cook-rich ${timers.length > 0 ? 'timer-active' : ''}`}>
       {/* 1. MEDIA HEADER (grid-area: media) */}
-      {recipe.image && (
+      {(recipe.image || recipe.video) && (
         <div className={`cook-media-header ${isMediaExpanded ? 'expanded' : 'collapsed'}`}>
           <div className="cook-media-content single">
-            <div className="cook-media-item">
-              <img
-                src={recipe.image}
-                alt={recipe.title}
-                tabIndex={0}
-                role="button"
-                aria-label="View full size image"
-                onClick={() => setIsLightboxOpen(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+            {recipe.video ? (
+              <div className="cook-media-item video-player-wrap">
+                <video
+                  ref={videoRef}
+                  src={recipe.video}
+                  poster={recipe.image}
+                  controls
+                  playsInline
+                  className="cook-media-video-player"
+                />
+              </div>
+            ) : (
+              <div className="cook-media-item">
+                <img
+                  src={recipe.image}
+                  alt={recipe.title}
+                  tabIndex={0}
+                  role="button"
+                  aria-label="View full size image"
+                  onClick={() => {
+                    setLightboxImage(recipe.image || '');
                     setIsLightboxOpen(true);
-                  }
-                }}
-              />
-            </div>
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setLightboxImage(recipe.image || '');
+                      setIsLightboxOpen(true);
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {!isMediaExpanded ? (
@@ -828,11 +1349,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           ) : (
             <div className="cook-cooking-mode-groups">
               {recipe.sections.map(section => {
-                const sectionStepsWithItems = section.steps.filter(step =>
+                const filterSteps = (steps: RecipeStep[]) => steps.filter(step =>
                   step.tokens.some(t => (t.type === 'ingredient' && !t.isHidden) || t.type === 'yield' || t.type === 'cookware') || Boolean(step.producesYield)
                 );
+                const sectionStepsWithItems = filterSteps(section.steps);
+                const subHasItems = section.subsections?.some(sub => filterSteps(sub.steps).length > 0);
 
-                if (sectionStepsWithItems.length === 0) {
+                if (sectionStepsWithItems.length === 0 && !subHasItems) {
                   return null;
                 }
 
@@ -846,170 +1369,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                       <div className="cook-ing-group-title">{section.name}</div>
                     )}
 
-                    {sectionStepsWithItems.map(step => {
-                      const stepCookware = step.tokens.filter(
-                        (t): t is Extract<StepToken, { type: 'cookware' }> => t.type === 'cookware'
-                      );
-                      const stepIngs = step.tokens.filter(
-                        (t): t is Extract<StepToken, { type: 'ingredient' }> =>
-                          t.type === 'ingredient' && !t.isHidden
-                      );
-                      const stepYields = step.tokens.filter(
-                        (t): t is Extract<StepToken, { type: 'yield' }> =>
-                          t.type === 'yield'
-                      );
-                      const hasCookware = stepCookware.length > 0;
-                      const hasIngredientsOrYields = stepIngs.length > 0 || stepYields.length > 0 || Boolean(step.producesYield);
-                      const isSecActive = activeSectionId === section.name;
-                      const rememberedStepInSec = sectionActiveSteps[section.name] ?? -1;
-                      const isStepActive = isSecActive && rememberedStepInSec === step.index;
-                      const isStepDimmed = rememberedStepInSec !== -1 && step.index < rememberedStepInSec;
+                    {sectionStepsWithItems.map(step => renderSidebarStepItem(step, section.name))}
 
+                    {section.subsections?.map(sub => {
+                      const subStepsWithItems = filterSteps(sub.steps);
+                      if (subStepsWithItems.length === 0) return null;
                       return (
-                        <div
-                          key={`step-ing-subgroup-${step.index}`}
-                          id={`sidebar-step-${step.index}`}
-                          className={`cook-step-ing-subgroup ${isStepActive ? 'is-active-step' : ''} ${isStepDimmed ? 'is-dimmed-step' : ''}`}
-                        >
-                          <div className={`cook-step-subgroup-title ${isStepActive ? 'is-active' : ''}`}>
-                            <span className="cook-step-title-base">
-                              {step.isCountedStep === false ? 'Note' : `Step ${step.index}`}
-                            </span>
-                            <span className="cook-step-title-pill" aria-hidden="true">
-                              <span className="cook-step-title-text">
-                                {step.isCountedStep === false ? 'Note' : `Step ${step.index}`}
-                              </span>
-                            </span>
-                          </div>
-
-                          <div className="cook-step-spine-body">
-                            {/* Cookware items in this step */}
-                          {hasCookware && (
-                            <>
-                              {hasIngredientsOrYields && (
-                                <div className="cook-step-divider-line">
-                                  <span>Cookware</span>
-                                </div>
-                              )}
-                              <ul className="cook-ing-list">
-                                {stepCookware.map((tok, idx) => {
-                                  const checkKey = `cook:step:${step.index}:cw:${tok.name.toLowerCase()}`;
-                                  const isDone = checkedCookingItems.has(checkKey);
-                                  return (
-                                    <li
-                                      key={`step-cw-${step.index}-${idx}-${tok.name}`}
-                                      className={`cook-ing ${isDone ? 'done' : ''}`}
-                                      onClick={() => toggleCookingItem(checkKey)}
-                                    >
-                                      <div className="cook-ing-box">
-                                        {isDone && <Check size={11} strokeWidth={3.5} />}
-                                      </div>
-                                      <span className="cook-ing-name">{tok.name}</span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </>
-                          )}
-
-                          {/* Ingredient label only shown if this step also has cookware */}
-                          {hasCookware && hasIngredientsOrYields && (
-                            <div className="cook-step-divider-line">
-                              <span>Ingredients</span>
-                            </div>
-                          )}
-
-                          {hasIngredientsOrYields && (
-                            <ul className="cook-ing-list">
-                              {stepIngs.map((tok, idx) => {
-                                const checkKey = `cook:step:${step.index}:${tok.name.toLowerCase()}`;
-                                const isDone = checkedCookingItems.has(checkKey);
-                                const matchedIng = recipe.ingredients.find(
-                                  i => i.name.toLowerCase() === tok.name.toLowerCase()
-                                );
-                                const displayQty = tok.quantityText
-                                  ? scaleTokenQty(tok.quantityText)
-                                  : matchedIng && matchedIng.quantityValue !== null
-                                  ? scaleQuantity(matchedIng.quantityValue, matchedIng.unit)
-                                  : '';
-
-                                return (
-                                  <li
-                                    key={`${step.index}-${idx}-${tok.name}`}
-                                    className={`cook-ing ${isDone ? 'done' : ''}`}
-                                    onClick={() => toggleCookingItem(checkKey)}
-                                  >
-                                    <div className="cook-ing-box">
-                                      {isDone && <Check size={11} strokeWidth={3.5} />}
-                                    </div>
-                                    <span className="cook-ing-name">
-                                      {tok.name}
-                                      {tok.note && (
-                                        <span style={{ color: 'var(--text-muted)' }}> ({tok.note})</span>
-                                      )}
-                                    </span>
-                                    {displayQty && <span className="cook-ing-qty">{displayQty}</span>}
-                                  </li>
-                                );
-                              })}
-
-                              {stepYields.map((yTok, yIdx) => {
-                                const checkKey = `cook:step:${step.index}:yield:${yTok.yieldId}`;
-                                const isDone = checkedCookingItems.has(checkKey);
-                                const yOrigin = findYieldOrigin(yTok.yieldId);
-
-                                return (
-                                  <li
-                                    key={`step-yield-${step.index}-${yIdx}`}
-                                    className={`cook-ing ${isDone ? 'done' : ''}`}
-                                    onClick={() => toggleCookingItem(checkKey)}
-                                  >
-                                    <div className="cook-ing-box">
-                                      {isDone && <Check size={11} strokeWidth={3.5} />}
-                                    </div>
-                                    <span className="cook-ing-name">
-                                      {yTok.displayText}
-                                      {yTok.partition && (
-                                        <span className="cook-yield-partition-badge"> ({yTok.partition})</span>
-                                      )}
-                                      {yOrigin ? (
-                                        <button
-                                          type="button"
-                                          className="cook-yield-provenance-tag"
-                                          title={`View origin step ${yOrigin.stepIndex}`}
-                                          onClick={(e) => handleYieldBadgeClick(yTok.yieldId, e)}
-                                        >
-                                          (From step {yOrigin.stepIndex}, <span className="yield-section-chip">{yOrigin.sectionName}</span>)
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          className="cook-yield-provenance-tag"
-                                          onClick={(e) => handleYieldBadgeClick(yTok.yieldId, e)}
-                                        >
-                                          (Deleted Step)
-                                        </button>
-                                      )}
-                                      {deletedNoticeYieldId === yTok.yieldId && (
-                                        <span className="cook-deleted-yield-notice">Origin step deleted</span>
-                                      )}
-                                    </span>
-                                  </li>
-                                );
-                              })}
-
-                              {step.producesYield && (
-                                <li className="cook-ing cook-yield-produced-item">
-                                  <div className="cook-yield-produced-badge">
-                                    <CookingPot size={13} />
-                                    <span>Yield:</span>
-                                    <span className="cook-yield-produced-name">{step.producesYield.name}</span>
-                                  </div>
-                                </li>
-                              )}
-                            </ul>
-                          )}
-                          </div>
+                        <div key={`sidebar-sub-${sub.id || sub.name}`} className="cook-sidebar-subsection">
+                          <div className="cook-sidebar-subsection-tag">{sub.name}</div>
+                          {subStepsWithItems.map(step => renderSidebarStepItem(step, sub.name))}
                         </div>
                       );
                     })}
@@ -1042,7 +1410,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           <h2 className="cook-section-title">Method</h2>
 
           {recipe.sections.map(section => (
-            <div key={section.name}>
+            <div key={section.id || section.name} className="cook-section-block">
               {section.name !== 'Instructions' && (
                 <div className="cook-section-band">{section.name}</div>
               )}
@@ -1057,229 +1425,41 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               )}
 
               {section.description && (
-                <div
-                  className="cook-section-desc"
-                  style={{ marginBottom: '0.75rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}
-                >
+                <div className="cook-section-desc">
                   {section.description}
                 </div>
               )}
 
-              {section.steps.map(step => {
-                const isSecActive = activeSectionId === section.name;
-                const rememberedStepInSec = sectionActiveSteps[section.name] ?? -1;
-                const isStepSelected = rememberedStepInSec === step.index;
+              <div className="cook-section-steps">
+                {section.steps.map(step => renderStepCard(step, section.name))}
+              </div>
 
-                let stepStatusClass = '';
-                if (rememberedStepInSec !== -1) {
-                  if (isStepSelected) {
-                    stepStatusClass = isSecActive ? 'is-section-active' : 'is-remembered-step';
-                  } else if (step.index < rememberedStepInSec) {
-                    stepStatusClass = 'is-section-dimmed';
-                  }
-                }
-
-                const isCur = isSecActive && isStepSelected;
-                const isHighlighted = highlightedStepIndex === step.index;
-
-
-                return (
-                  <div
-                    key={step.index}
-                    id={`step-node-${step.index}`}
-                    className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''}`}
-                    onClick={() => handleStepClick(section.name, step.index)}
-                  >
-                    <span className="cook-step-n">
-                      {step.isCountedStep === false ? 'Note:' : `${step.index}.`}
-                    </span>
-
-                    <div className="cook-step-bodywrap">
-                      <div className="cook-step-text">
-                        {step.tokens.map((token, idx) => {
-                          if (token.type === 'text') {
-                            return <span key={idx}>{token.value}</span>;
-                          }
-                          if (token.type === 'ingredient') {
-                            return (
-                              <span key={idx} className="cook-ig">
-                                <span className="cook-ig-name">{token.name}</span>
-                                {token.quantityText && (
-                                  <span className="cook-amt">{scaleTokenQty(token.quantityText)}</span>
-                                )}
-                                {token.note && (
-                                  <span className="cook-ig-note">{token.note}</span>
-                                )}
-                              </span>
-                            );
-                          }
-                          if (token.type === 'cookware') {
-                            return (
-                              <span key={idx} className="cook-cw">
-                                {token.name}
-                              </span>
-                            );
-                          }
-                          if (token.type === 'yield') {
-                            const origin = findYieldOrigin(token.yieldId);
-                            return (
-                              <span key={idx} className="cook-yield-wrapper">
-                                <button
-                                  type="button"
-                                  className="cook-yield-badge"
-                                  title={origin ? `View step ${origin.stepIndex} where this yield was made` : 'Yield origin step'}
-                                  onClick={(e) => handleYieldBadgeClick(token.yieldId, e)}
-                                >
-                                  <span className="cook-yield-badge-name">
-                                    <CookingPot size={13} />
-                                    <span>{token.displayText}</span>
-                                  </span>
-                                  {token.partition && (
-                                    <span className="cook-yield-badge-amt">{token.partition}</span>
-                                  )}
-                                  {!origin && (
-                                    <span style={{ opacity: 0.75, fontStyle: 'italic', paddingRight: '0.35rem' }}>
-                                      (Deleted Step)
-                                    </span>
-                                  )}
-                                </button>
-                                {deletedNoticeYieldId === token.yieldId && (
-                                  <span className="cook-deleted-yield-notice">Origin step deleted</span>
-                                )}
-                              </span>
-                            );
-                          }
-                          if (token.type === 'timer') {
-                            const timerId = token.timerId || `step-${step.index}-${idx}`;
-                            const activeTimer = timers.find(t => t.id === timerId && !t.isFinished);
-                            const isTimerActive = Boolean(activeTimer || pendingPills[timerId]);
-                            const pillText = activeTimer
-                              ? formatTimerDigits(activeTimer.remainingSeconds)
-                              : pendingPills[timerId] || token.durationText;
-
-                            return (
-                              <span key={idx} className="cook-timer">
-                                <button
-                                  type="button"
-                                  className={`cook-timer-btn ${isTimerActive ? 'active' : ''}`}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    if (isTimerActive) return;
-                                    const btn = e.currentTarget as HTMLElement;
-                                    const rect = btn.getBoundingClientRect();
-                                    btn.style.minWidth = `${rect.width}px`;
-
-                                    const sec = parseDurationToSeconds(token.durationText);
-                                    const cue = extractDonenessCue(step.rawText, token.durationText);
-                                    setPendingPills(prev => ({ ...prev, [timerId]: formatTimerDigits(sec) }));
-
-                                    const glowDuration = Math.round(150 / (animSpeed || 1));
-                                    const flightDuration = Math.round(900 / (animSpeed || 1));
-
-                                    btn.style.transition = `box-shadow ${glowDuration}ms ease-out, border-color ${glowDuration}ms ease-out`;
-                                    btn.style.boxShadow = '0 0 0.8rem 0.15rem rgba(245, 158, 11, 0.7)';
-                                    btn.style.borderColor = '#f59e0b';
-
-                                    setTimeout(() => {
-                                      btn.style.transition = `box-shadow ${flightDuration}ms ease-out, border-color ${flightDuration}ms ease-out`;
-                                      btn.style.boxShadow = '0 0 0.2rem rgba(245, 158, 11, 0.2)';
-                                      btn.style.borderColor = 'rgba(245, 158, 11, 0.45)';
-
-                                      handleStartTimer({
-                                        id: timerId,
-                                        label: token.durationText,
-                                        seconds: sec,
-                                        stepTitle: step.isCountedStep === false ? 'Advance Prep' : `Step ${step.index}`,
-                                        creatorCue: cue,
-                                        originRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-                                      });
-
-                                      setPendingPills(prev => {
-                                        const next = { ...prev };
-                                        delete next[timerId];
-                                        return next;
-                                      });
-                                    }, glowDuration);
-                                  }}
-                                >
-                                  ⏱ {pillText}
-                                </button>
-                              </span>
-                            );
-                          }
-                          return null;
-                        })}
+              {section.subsections && section.subsections.length > 0 && (
+                <div className="cook-subsections-container">
+                  {section.subsections.map(sub => (
+                    <div key={sub.id || sub.name} className="cook-subsection-block">
+                      <div className="cook-subsection-header">
+                        <span className="cook-subsection-band">{sub.name}</span>
                       </div>
-
-                      {step.showInlineTools && (
-                        <div className="cook-inline-tools-bar">
-                          {step.tokens
-                            .filter((t): t is Extract<StepToken, { type: 'ingredient' | 'cookware' }> =>
-                              (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
-                            )
-                            .map((toolTok, toolIdx) => (
-                              <span
-                                key={toolIdx}
-                                className={`cook-inline-tool-chip ${toolTok.type === 'ingredient' ? 'chip-ingredient' : 'chip-cookware'}`}
-                              >
-                                {toolTok.type === 'ingredient' ? (
-                                  <>
-                                    <span className="tool-chip-name">{toolTok.name}</span>
-                                    {toolTok.quantityText && (
-                                      <span className="tool-chip-amt">{scaleTokenQty(toolTok.quantityText)}</span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="tool-chip-name">{toolTok.name}</span>
-                                )}
-                              </span>
-                            ))}
+                      {sub.description && (
+                        <div className="cook-subsection-desc">
+                          {sub.description}
                         </div>
                       )}
-
-                      {step.media?.galleryUrls && step.media.galleryUrls.length > 0 && (
-                        <div className="step-media-gallery" style={{ marginTop: '0.65rem' }}>
-                          {step.media.galleryUrls.map((url, gIdx) => (
-                            <img
-                              key={gIdx}
-                              src={url}
-                              alt={`Step media ${gIdx + 1}`}
-                              className="step-media-banner"
-                              loading="lazy"
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {step.image && (!step.media?.galleryUrls || step.media.galleryUrls.length === 0) && (
-                        <img
-                          src={step.image}
-                          alt={`Step ${step.index}`}
-                          className="step-media-banner"
-                          loading="lazy"
-                        />
-                      )}
-
-                      {step.producesYield && (
-                        <div className="cook-step-yield-banner">
-                          <span className="cook-yield-tag">
-                            <CookingPot size={13} />
-                            <span>Yield</span>
-                          </span>
-                          <span className="cook-step-yield-name">{step.producesYield.name}</span>
-                        </div>
-                      )}
+                      <div className="cook-subsection-steps">
+                        {sub.steps.map(step => renderStepCard(step, sub.name))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </main>
 
       {/* Lightbox Modal */}
-      {isLightboxOpen && recipe.image && (
+      {isLightboxOpen && lightboxImage && (
         <div
           className="cook-lightbox-overlay"
           role="dialog"
@@ -1296,7 +1476,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             <X size={20} />
           </button>
           <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-            <img src={recipe.image} alt={recipe.title} className="cook-lightbox-img" />
+            <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
           </div>
         </div>
       )}
