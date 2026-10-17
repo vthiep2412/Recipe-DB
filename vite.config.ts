@@ -1,0 +1,114 @@
+import { defineConfig, Plugin } from 'vite';
+import preact from '@preact/preset-vite';
+import fs from 'node:fs';
+import path from 'node:path';
+
+function recipeStudioApiPlugin(): Plugin {
+  return {
+    name: 'recipe-studio-api',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url === '/api/save-recipe' && req.method === 'POST') {
+          const origin = req.headers.origin;
+          if (!origin) {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: 'Origin header is required' }));
+            return;
+          }
+
+          try {
+            const originHostname = new URL(origin).hostname;
+            const trustedHosts = ['localhost', '127.0.0.1', '.trycloudflare.com'];
+            const isAllowed = trustedHosts.some(trusted =>
+              trusted.startsWith('.') ? originHostname.endsWith(trusted) : originHostname === trusted
+            );
+
+            if (!isAllowed) {
+              res.statusCode = 403;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: false, error: 'Origin is not permitted' }));
+              return;
+            }
+          } catch {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: 'Invalid origin header' }));
+            return;
+          }
+
+          const contentType = req.headers['content-type'] || '';
+          if (!contentType.includes('application/json')) {
+            res.statusCode = 415;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: false, error: 'Content-Type must be application/json' }));
+            return;
+          }
+
+          const MAX_BODY_SIZE = 5 * 1024 * 1024;
+          let body = '';
+          let bodyLength = 0;
+          let isOversized = false;
+
+          req.on('data', chunk => {
+            if (isOversized) return;
+            bodyLength += chunk.length;
+            if (bodyLength > MAX_BODY_SIZE) {
+              isOversized = true;
+              res.statusCode = 413;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: false, error: 'Payload too large. Maximum size is 5MB' }));
+              req.destroy();
+              return;
+            }
+            body += chunk;
+          });
+
+          req.on('end', () => {
+            if (isOversized) return;
+            try {
+              const data = JSON.parse(body);
+              if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: 'Request body must be a JSON object' }));
+                return;
+              }
+              const rawId = data.id !== undefined && data.id !== null ? String(data.id) : '';
+              const recipeId = (rawId || 'recipe-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-');
+              const recipesDir = path.resolve(__dirname, 'src/recipes');
+              if (!fs.existsSync(recipesDir)) {
+                fs.mkdirSync(recipesDir, { recursive: true });
+              }
+              const filePath = path.join(recipesDir, `${recipeId}.json`);
+              if (fs.existsSync(filePath)) {
+                res.statusCode = 409;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: `Recipe "${recipeId}" already exists. Overwrite is not allowed.` }));
+                return;
+              }
+              fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true, filePath, id: recipeId }));
+            } catch (err: any) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: false, error: err.message }));
+            }
+          });
+          return;
+        }
+        next();
+      });
+    }
+  };
+}
+
+export default defineConfig({
+  plugins: [preact(), recipeStudioApiPlugin()],
+  server: {
+    port: 5176,
+    host: '0.0.0.0',
+    allowedHosts: ['.trycloudflare.com']
+  }
+});

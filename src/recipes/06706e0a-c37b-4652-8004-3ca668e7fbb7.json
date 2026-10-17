@@ -1,0 +1,743 @@
+{
+  "schemaVersion": 2,
+  "id": "06706e0a-c37b-4652-8004-3ca668e7fbb7",
+  "title": "Thick And Chewy S'mores Cookies Recipe",
+  "servings": 5,
+  "difficulty": "medium",
+  "description": "Thick, chewy, and gooey homemade s'mores cookies packed with chocolate, graham crackers, and marshmallows.",
+  "tips": "",
+  "media": {
+    "galleryUrls": [],
+    "videoUrl": ""
+  },
+  "times": {
+    "totalSec": 0,
+    "custom": []
+  },
+  "inputs": [
+    {
+      "id": "unsalted-butter",
+      "name": "unsalted butter",
+      "amount": 12,
+      "unit": "tbsp",
+      "notes": "room temperature"
+    },
+    {
+      "id": "granulated-sugar",
+      "name": "granulated sugar",
+      "amount": "1/3",
+      "unit": "cup"
+    },
+    {
+      "id": "light-brown-sugar",
+      "name": "light brown sugar",
+      "amount": "2/3",
+      "unit": "cup",
+      "notes": "packed"
+    },
+    {
+      "id": "large-egg",
+      "name": "large egg",
+      "amount": 1,
+      "unit": "piece"
+    },
+    {
+      "id": "egg-yolk",
+      "name": "egg yolk",
+      "amount": 1,
+      "unit": "piece"
+    },
+    {
+      "id": "vanilla",
+      "name": "vanilla",
+      "amount": "1 1/2",
+      "unit": "tsp"
+    },
+    {
+      "id": "crushed-graham-crackers",
+      "name": "crushed graham crackers",
+      "amount": "1/2",
+      "unit": "cup"
+    },
+    {
+      "id": "all-purpose-flour",
+      "name": "all purpose flour",
+      "amount": "1 3/4",
+      "unit": "cups"
+    },
+    {
+      "id": "baking-powder",
+      "name": "baking powder",
+      "amount": "3/4",
+      "unit": "tsp"
+    },
+    {
+      "id": "baking-soda",
+      "name": "baking soda",
+      "amount": "1/4",
+      "unit": "tsp"
+    },
+    {
+      "id": "salt",
+      "name": "salt",
+      "amount": "1/2",
+      "unit": "tsp"
+    },
+    {
+      "id": "dark-chocolate-chips",
+      "name": "dark chocolate chips",
+      "amount": "1/2",
+      "unit": "cup",
+      "notes": "or chopped chocolate"
+    },
+    {
+      "id": "mini-marshmallows",
+      "name": "mini marshmallows",
+      "amount": "1/2",
+      "unit": "cup"
+    },
+    {
+      "id": "giant-marshmallows",
+      "name": "giant marshmallows",
+      "amount": 5,
+      "unit": "piece"
+    },
+    {
+      "id": "dark-chocolate",
+      "name": "dark chocolate",
+      "amount": 50,
+      "unit": "g"
+    }
+  ],
+  "vessels": [
+    {
+      "id": "bowl",
+      "name": "bowl",
+      "type": "bowl",
+      "size": "Normal"
+    },
+    {
+      "id": "baking-sheet",
+      "name": "baking sheet",
+      "type": "bowl",
+      "size": "Normal"
+    }
+  ],
+  "components": [
+    {
+      "id": "component-sec-main",
+      "name": "Full step",
+      "steps": [
+        {
+          "id": "step-1",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Add [unsalted butter] , [granulated sugar] , and [light brown sugar] to a [bowl] and whisk on medium high speed for [2-3 minutes] until the mixture turns fluffy and light in color. Keep scraping the bowl along the way.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Add "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "unsalted-butter",
+              "displayText": "unsalted butter",
+              "amount": 12,
+              "unit": "tbsp",
+              "note": "room temperature"
+            },
+            {
+              "type": "text",
+              "text": " , "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "granulated-sugar",
+              "displayText": "granulated sugar",
+              "amount": "1/3",
+              "unit": "cup"
+            },
+            {
+              "type": "text",
+              "text": " , and "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "light-brown-sugar",
+              "displayText": "light brown sugar",
+              "amount": "2/3",
+              "unit": "cup",
+              "note": "packed"
+            },
+            {
+              "type": "text",
+              "text": " to a "
+            },
+            {
+              "type": "cookware",
+              "vesselId": "bowl",
+              "displayText": "bowl"
+            },
+            {
+              "type": "text",
+              "text": " and whisk on medium high speed for "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-1-10",
+              "displayText": "2-3 minutes"
+            },
+            {
+              "type": "text",
+              "text": " until the mixture turns fluffy and light in color. Keep scraping the bowl along the way."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-1",
+            "label": "2-3 minutes",
+            "minSec": 180,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-2",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Add large egg , egg yolk , and vanilla. Whisk for another 1 minute until a creamy mixture forms.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Add "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "large-egg",
+              "displayText": "large egg",
+              "amount": 1,
+              "unit": "piece"
+            },
+            {
+              "type": "text",
+              "text": " , "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "egg-yolk",
+              "displayText": "egg yolk",
+              "amount": 1,
+              "unit": "piece"
+            },
+            {
+              "type": "text",
+              "text": " , and "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "vanilla",
+              "displayText": "vanilla",
+              "amount": "1 1/2",
+              "unit": "tsp"
+            },
+            {
+              "type": "text",
+              "text": ". Whisk for another "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-2-8",
+              "displayText": "1 minute"
+            },
+            {
+              "type": "text",
+              "text": " until a creamy mixture forms."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-2",
+            "label": "1 minute",
+            "minSec": 60,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-3",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Add crushed graham crackers and whisk until just combined.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Add "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "crushed-graham-crackers",
+              "displayText": "crushed graham crackers",
+              "amount": "1/2",
+              "unit": "cup"
+            },
+            {
+              "type": "text",
+              "text": " and whisk until just combined."
+            }
+          ],
+          "producesYield": {
+            "id": "yield-step-3",
+            "name": "Coffee diping!",
+            "vesselId": "baking-sheet"
+          }
+        },
+        {
+          "id": "step-4",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Now sift [all purpose flour] , [baking powder] , [baking soda] , and [salt] in a separate bowl and mix to combine. Add the dry ingredients to the cookie dough in 2 additions, and use a rubber spatula to gently fold until the flour is almost mixed into the dough.[Coffee diping!] ",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Now sift "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "all-purpose-flour",
+              "displayText": "all purpose flour",
+              "amount": "1 3/4",
+              "unit": "cups"
+            },
+            {
+              "type": "text",
+              "text": " , "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "baking-powder",
+              "displayText": "baking powder",
+              "amount": "3/4",
+              "unit": "tsp"
+            },
+            {
+              "type": "text",
+              "text": " , "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "baking-soda",
+              "displayText": "baking soda",
+              "amount": "1/4",
+              "unit": "tsp"
+            },
+            {
+              "type": "text",
+              "text": " , and "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "salt",
+              "displayText": "salt",
+              "amount": "1/2",
+              "unit": "tsp"
+            },
+            {
+              "type": "text",
+              "text": " in a separate bowl and mix to combine. Add the dry ingredients to the cookie dough in 2 additions, and use a rubber spatula to gently fold until the flour is almost mixed into the dough."
+            },
+            {
+              "type": "yield",
+              "yieldId": "yield-step-3",
+              "sourceStepId": "step-3",
+              "displayText": "Coffee diping!",
+              "partition": "half"
+            },
+            {
+              "type": "text",
+              "text": " "
+            }
+          ],
+          "consumesYields": [
+            {
+              "yieldId": "yield-step-3",
+              "partition": "half"
+            }
+          ]
+        },
+        {
+          "id": "step-5",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Add dark chocolate chips and mini marshmallows , and continue folding until no more streaks of flour remain and the add-ins are evenly dispersed. Don't overmix.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Add "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "dark-chocolate-chips",
+              "displayText": "dark chocolate chips",
+              "amount": "1/2",
+              "unit": "cup",
+              "note": "or chopped chocolate"
+            },
+            {
+              "type": "text",
+              "text": " and "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "mini-marshmallows",
+              "displayText": "mini marshmallows",
+              "amount": "1/2",
+              "unit": "cup"
+            },
+            {
+              "type": "text",
+              "text": " , and continue folding until no more streaks of flour remain and the add-ins are evenly dispersed. Don't overmix."
+            }
+          ]
+        },
+        {
+          "id": "step-6",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "The cookie dough should be soft and easy to work with. If it feels too sticky, refrigerate it for 10-15 minutes until it becomes easier to shape with your hands.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "The cookie dough should be soft and easy to work with. If it feels too sticky, refrigerate it for "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-6-2",
+              "displayText": "10-15 minutes"
+            },
+            {
+              "type": "text",
+              "text": " until it becomes easier to shape with your hands."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-6",
+            "label": "10-15 minutes",
+            "minSec": 900,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-7",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Divide the cookie dough into 5 portions, each should be about 5.5oz in weight. Working one piece at a time, gently shape into a ball, then lightly flatten so they form a 2.5-3\" disc. Repeat with all portions.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Divide the cookie dough into 5 portions, each should be about 5.5oz in weight. Working one piece at a time, gently shape into a ball, then lightly flatten so they form a 2.5-3\" disc. Repeat with all portions."
+            }
+          ]
+        },
+        {
+          "id": "step-8",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Place the cookie dough balls on a plate/tray and refrigerate overnight (minimum 6 hours, overnight recommended).",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Place the cookie dough balls on a plate/tray and refrigerate overnight (minimum "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-8-2",
+              "displayText": "6 hours"
+            },
+            {
+              "type": "text",
+              "text": ", overnight recommended)."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-8",
+            "label": "6 hours",
+            "minSec": 21600,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-9",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "When you're ready to bake after chilling, pre-heat the oven to 375F (conventional / no fan) and line a large light colored baking sheet with parchment paper.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "When you're ready to bake after chilling, pre-heat the oven to 375F (conventional / no fan) and line a large light colored "
+            },
+            {
+              "type": "cookware",
+              "vesselId": "baking-sheet",
+              "displayText": "baking sheet"
+            },
+            {
+              "type": "text",
+              "text": " with parchment paper."
+            }
+          ]
+        },
+        {
+          "id": "step-10",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Place the chilled cookie dough balls on the baking sheet, keeping at least 3\" between each.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Place the chilled cookie dough balls on the baking sheet, keeping at least 3\" between each."
+            }
+          ]
+        },
+        {
+          "id": "step-11",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Transfer to the oven and bake at 375F for 8 minutes, then drop the temperature to 350F and bake for another 7 minutes.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Transfer to the oven and bake at 375F for "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-11-2",
+              "displayText": "8 minutes"
+            },
+            {
+              "type": "text",
+              "text": ", then drop the temperature to 350F and bake for another "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-11-4",
+              "displayText": "7 minutes"
+            },
+            {
+              "type": "text",
+              "text": "."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-11",
+            "label": "8 minutes",
+            "minSec": 480,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-12",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Remove the tray from the oven, and use the back of a measuring spoon to press down the middles of the cookies and create a pocket/indent. Place giant marshmallows into the pocket on each cookie, and quickly return the cookie tray to the oven. Try to do this step as quickly as you can so the cookies remain hot.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Remove the tray from the oven, and use the back of a measuring spoon to press down the middles of the cookies and create a pocket/indent. Place "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "giant-marshmallows",
+              "displayText": "giant marshmallows",
+              "amount": 5,
+              "unit": "piece"
+            },
+            {
+              "type": "text",
+              "text": " into the pocket on each cookie, and quickly return the cookie tray to the oven. Try to do this step as quickly as you can so the cookies remain hot."
+            }
+          ]
+        },
+        {
+          "id": "step-13",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Bake for another 2-4 minutes until the cookies are golden, look set on the edges but still soft in the middle, and the marshmallows on top have started to get a light golden color on them.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Bake for another "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-13-2",
+              "displayText": "2-4 minutes"
+            },
+            {
+              "type": "text",
+              "text": " until the cookies are golden, look set on the edges but still soft in the middle, and the marshmallows on top have started to get a light golden color on them."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-13",
+            "label": "2-4 minutes",
+            "minSec": 240,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-14",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Remove the cookies from the oven, and let them cool at room temperature for 20 minutes.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Remove the cookies from the oven, and let them cool at room temperature for "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-14-2",
+              "displayText": "20 minutes"
+            },
+            {
+              "type": "text",
+              "text": "."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-14",
+            "label": "20 minutes",
+            "minSec": 1200,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-15",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "In the meanwhile, melt dark chocolate in the microwave in 20 seconds increments, stirring in between. Transfer it to a piping bag and snip a small hole at the tip.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "In the meanwhile, melt "
+            },
+            {
+              "type": "ingredient",
+              "inputId": "dark-chocolate",
+              "displayText": "dark chocolate",
+              "amount": 50,
+              "unit": "g"
+            },
+            {
+              "type": "text",
+              "text": " in the microwave in "
+            },
+            {
+              "type": "timer",
+              "timerId": "m-15-4",
+              "displayText": "20 seconds"
+            },
+            {
+              "type": "text",
+              "text": " increments, stirring in between. Transfer it to a piping bag and snip a small hole at the tip."
+            }
+          ],
+          "timer": {
+            "id": "timer-step-15",
+            "label": "20 seconds",
+            "minSec": 20,
+            "creatorNote": ""
+          }
+        },
+        {
+          "id": "step-16",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Once the cookies have rested, take a blowtorch and quickly torch the marshmallows so they become warm and toasted. Then drizzle the chocolate on top of the cookies generously.",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Once the cookies have rested, take a blowtorch and quickly torch the marshmallows so they become warm and toasted. Then drizzle the chocolate on top of the cookies generously."
+            }
+          ]
+        },
+        {
+          "id": "step-17",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Serve warm and enjoy!",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Serve warm and enjoy!"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "component-sec-1790514747107",
+      "name": "Very good section 2",
+      "steps": [
+        {
+          "id": "step-1790514766024",
+          "componentId": "component-main",
+          "isCountedStep": true,
+          "isLinkedToPrevious": false,
+          "instructionText": "Huh? oh yea [Coffee diping!] ",
+          "tokens": [
+            {
+              "type": "text",
+              "text": "Huh? oh yea "
+            },
+            {
+              "type": "yield",
+              "yieldId": "yield-step-3",
+              "sourceStepId": "step-3",
+              "displayText": "Coffee diping!",
+              "partition": "half"
+            },
+            {
+              "type": "text",
+              "text": " "
+            }
+          ],
+          "consumesYields": [
+            {
+              "yieldId": "yield-step-3",
+              "partition": "half"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "importantNotes": "",
+  "sections": [
+    {
+      "id": "sec-main",
+      "name": "Full step",
+      "order": 0,
+      "showInlineTools": false
+    },
+    {
+      "id": "sec-1790514747107",
+      "name": "Very good section 2",
+      "order": 1,
+      "showInlineTools": false
+    }
+  ]
+}
