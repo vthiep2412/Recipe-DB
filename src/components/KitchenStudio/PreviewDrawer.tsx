@@ -46,8 +46,12 @@ export function PreviewDrawer({ graph, workspace }: PreviewDrawerProps) {
 
   // Height resize handling with vertical cursor
   const handleStartResize = (e: PointerEvent) => {
-    e.preventDefault();
     e.stopPropagation();
+    if (e.detail === 2) {
+      handleDoubleClickBar(e as unknown as MouseEvent);
+      return;
+    }
+
     const target = e.currentTarget as HTMLElement;
     try {
       target.setPointerCapture(e.pointerId);
@@ -62,12 +66,16 @@ export function PreviewDrawer({ graph, workspace }: PreviewDrawerProps) {
 
     const cleanup = () => {
       setIsResizing(false);
+      try {
+        target.releasePointerCapture(e.pointerId);
+      } catch (_) {}
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       pointerCleanupRef.current = null;
     };
 
     const handlePointerMove = (ev: PointerEvent) => {
+      ev.preventDefault();
       const deltaY = startY - ev.clientY;
       const newH = Math.min(maxAvailable, Math.max(160, startH + deltaY));
       setDrawerHeightPx(newH);

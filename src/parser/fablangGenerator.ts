@@ -46,11 +46,11 @@ export function generateFablang(
   }
 
   if (graph.description) {
-    lines.push(`description: r"${escapeRawYamlString(graph.description)}"`);
+    lines.push(`description: "${escapeRawYamlString(graph.description)}"`);
   }
 
   if (graph.importantNotes) {
-    lines.push(`important_notes: r"${escapeRawYamlString(graph.importantNotes)}"`);
+    lines.push(`important_notes: "${escapeRawYamlString(graph.importantNotes)}"`);
   }
 
   // Times

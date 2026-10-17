@@ -68,7 +68,14 @@ function recipeStudioApiPlugin(): Plugin {
             if (isOversized) return;
             try {
               const data = JSON.parse(body);
-              const recipeId = (data.id || 'recipe-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-');
+              if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: 'Request body must be a JSON object' }));
+                return;
+              }
+              const rawId = data.id !== undefined && data.id !== null ? String(data.id) : '';
+              const recipeId = (rawId || 'recipe-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-');
               const recipesDir = path.resolve(__dirname, 'src/recipes');
               if (!fs.existsSync(recipesDir)) {
                 fs.mkdirSync(recipesDir, { recursive: true });

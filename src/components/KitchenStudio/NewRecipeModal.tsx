@@ -23,6 +23,26 @@ export function NewRecipeModal({
   const [text, setText] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (msg: string, duration = 3500) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(msg);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, duration);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -52,9 +72,17 @@ export function NewRecipeModal({
 
   const handleFixWithAi = () => {
     const prompt = generateAiRepairPrompt(text, syntaxErrors);
-    navigator.clipboard.writeText(prompt).catch(() => {});
-    setToastMessage('AI not implemented =(, but you can use the prompt =D, Copied');
-    setTimeout(() => setToastMessage(null), 4000);
+    if (!navigator.clipboard?.writeText) {
+      showToast('Clipboard access unavailable to copy prompt', 3500);
+      return;
+    }
+    navigator.clipboard.writeText(prompt)
+      .then(() => {
+        showToast('AI not implemented =(, but you can use the prompt =D, Copied', 4000);
+      })
+      .catch(() => {
+        showToast('Failed to copy repair prompt to clipboard', 3500);
+      });
   };
 
   const handleAction = () => {
@@ -64,14 +92,12 @@ export function NewRecipeModal({
     }
 
     if (syntaxErrors.length > 0) {
-      setToastMessage('Please resolve the F&Blang syntax errors above or click "Fix With AI"');
-      setTimeout(() => setToastMessage(null), 3500);
+      showToast('Please resolve the F&Blang syntax errors above or click "Fix With AI"', 3500);
       return;
     }
 
     if (format === 'plain_text') {
-      setToastMessage('NO AI yet "big sad" :(');
-      setTimeout(() => setToastMessage(null), 3500);
+      showToast('NO AI yet "big sad" :(', 3500);
       return;
     }
 

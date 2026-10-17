@@ -443,14 +443,21 @@ function ObsidianSourceEditor({ value, onChange, placeholder }: ObsidianSourceEd
   );
 }
 
+function escapeHtmlAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export function RecipeMetadataModal({
   isOpen,
   graph,
   onClose,
   onSave
 }: RecipeMetadataModalProps) {
-  if (!isOpen) return null;
-
   // Title, difficulty, servings
   const [title, setTitle] = useState(graph.title || 'Untitled Recipe');
   const [originUrl, setOriginUrl] = useState(graph.source?.url || '');
@@ -653,16 +660,20 @@ export function RecipeMetadataModal({
     if (!isReadingMode) return '';
     const raw = description || '*No description entered yet. Switch to Source Mode to write.*';
     const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const processed = escaped.replace(/\[\[(.*?)\]\]/g, '<span class="obsidian-reading-link">$1</span>');
+    const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
+      return `<span class="obsidian-reading-link">${escapeHtmlAttr(linkText)}</span>`;
+    });
     const renderer = new marked.Renderer();
     renderer.link = ({ href, title, text }) => {
       const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
-      const safeHref = isSafe ? href : '#';
-      const titleAttr = title ? ` title="${title}"` : '';
-      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${text}</a>`;
+      const safeHref = isSafe ? escapeHtmlAttr(href.trim()) : '#';
+      const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
+      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
     };
     return marked.parse(processed, { renderer, async: false }) as string;
   }, [description, isReadingMode]);
+
+  if (!isOpen) return null;
 
   const modalElement = (
     <div className="studio-modal-backdrop" onClick={onClose}>
