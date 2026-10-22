@@ -17,6 +17,8 @@ import { marked } from 'marked';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
 import type { ActiveTimer } from '../types/timer';
 import { formatFraction, parseFraction } from '../parser/cooklangParser';
+import { convertUnit } from '../parser/unitConverter';
+import { useSettings } from '../services/settingsStore';
 import { startAlarmLoop, stopAlarmLoop, isRinging } from '../services/timerAudio';
 import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
@@ -147,6 +149,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     return {};
   };
 
+  const [settings] = useSettings();
   const isMobileScreen = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   const [savedState] = useState<RecipeViewState>(loadInitialState);
   const [servings, setServings] = useState(recipe.servings.base || 1);
@@ -172,6 +175,41 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     }
   }, [recipe.image]);
 
+  const getScrollContainer = (target: HTMLElement | null): HTMLElement | null => {
+    if (!target) return null;
+    const drawerContainer = target.closest('.preview-drawer-viewer-scroll') as HTMLElement | null;
+    if (drawerContainer) return drawerContainer;
+    return (target.closest('.app-main') as HTMLElement | null) || (document.querySelector('.app-main') as HTMLElement | null);
+  };
+
+  const smoothScrollToTarget = (container: HTMLElement, targetY: number, duration = 650, onComplete?: () => void) => {
+    const startY = container.scrollTop;
+    const diff = targetY - startY;
+    if (Math.abs(diff) < 2) {
+      if (onComplete) onComplete();
+      return;
+    }
+    const startTime = performance.now();
+
+    const stepAnimation = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      container.scrollTop = startY + diff * ease;
+
+      if (progress < 1) {
+        requestAnimationFrame(stepAnimation);
+      } else {
+        if (onComplete) onComplete();
+      }
+    };
+
+    requestAnimationFrame(stepAnimation);
+  };
+
   const handlePlayVideoClip = (startSec: number, _endSec?: number, e?: MouseEvent) => {
     if (e) e.stopPropagation();
     setIsMediaExpanded(true);
@@ -179,7 +217,16 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       videoRef.current.currentTime = startSec;
       videoRef.current.play().catch(() => {});
       const videoEl = videoRef.current;
-      videoEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const container = getScrollContainer(videoEl);
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const videoRect = videoEl.getBoundingClientRect();
+        const offset = videoRect.top - containerRect.top;
+        const targetScrollTop = Math.max(0, container.scrollTop + offset - 20);
+        smoothScrollToTarget(container, targetScrollTop, 450);
+      } else if (!videoEl.closest('.studio-preview-drawer')) {
+        videoEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   };
 
@@ -471,7 +518,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       setSectionActiveSteps(prev => ({ ...prev, [origin.sectionName]: origin.stepIndex }));
       const el = document.getElementById(`step-node-${origin.stepIndex}`);
       if (el) {
-        const container = (el.closest('.app-main') as HTMLElement) || (document.querySelector('.app-main') as HTMLElement | null);
+        const container = getScrollContainer(el);
         const triggerHighlight = () => {
           setTimeout(() => {
             setHighlightedStepIndex(origin.stepIndex);
@@ -485,7 +532,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           const offset = elRect.top - containerRect.top;
           const targetScrollTop = Math.max(0, container.scrollTop + offset - (container.clientHeight / 2) + (elRect.height / 2));
           smoothScrollToTarget(container, targetScrollTop, 550, triggerHighlight);
-        } else {
+        } else if (!el.closest('.studio-preview-drawer')) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           setTimeout(triggerHighlight, 450);
         }
@@ -494,35 +541,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       setDeletedNoticeYieldId(yieldId);
       setTimeout(() => setDeletedNoticeYieldId(null), 3000);
     }
-  };
-
-  const smoothScrollToTarget = (container: HTMLElement, targetY: number, duration = 650, onComplete?: () => void) => {
-    const startY = container.scrollTop;
-    const diff = targetY - startY;
-    if (Math.abs(diff) < 2) {
-      if (onComplete) onComplete();
-      return;
-    }
-    const startTime = performance.now();
-
-    const stepAnimation = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      // easeInOutCubic easing function for graceful, slower glide
-      const ease = progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-
-      container.scrollTop = startY + diff * ease;
-
-      if (progress < 1) {
-        requestAnimationFrame(stepAnimation);
-      } else {
-        if (onComplete) onComplete();
-      }
-    };
-
-    requestAnimationFrame(stepAnimation);
   };
 
   const handleStepClick = (secName: string, stepIndex: number) => {
@@ -607,49 +625,68 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     });
   };
 
-  const scaleQuantity = (baseVal: number | null, unit: string | null) => {
-    if (baseVal === null) return '';
-    let val = baseVal * scaleRatio;
-    let u = unit || '';
+  const scaleQuantity = (baseVal: number | null, unit: string | null, ingredientName?: string) => {
+    if (baseVal === null) return ''
+    let val = baseVal * scaleRatio
+    let u = unit || ''
 
-    if (u === 'g' && val >= 1000) {
-      val = Math.round((val / 1000) * 100) / 100;
-      u = 'kg';
-    } else if (u === 'ml' && val >= 1000) {
-      val = Math.round((val / 1000) * 100) / 100;
-      u = 'l';
-    } else if (u === 'oz' && val >= 16) {
-      val = Math.round((val / 16) * 100) / 100;
-      u = 'lb';
-    }
-
-    const formatted = formatFraction(val);
-    return u ? `${formatted} ${u}` : formatted;
-  };
-
-  const scaleTokenQty = (qtyText?: string) => {
-    if (!qtyText) return '';
-    if (scaleRatio === 1) return qtyText;
-
-    const fullNum = parseFraction(qtyText);
-    if (fullNum !== null) {
-      return formatFraction(fullNum * scaleRatio);
-    }
-
-    const match = qtyText.trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(\.\d+)?)\s*(.*)$/);
-    if (match) {
-      const numPart = match[1];
-      const unitPart = match[3];
-      const num = parseFraction(numPart);
-      if (num !== null) {
-        const scaled = num * scaleRatio;
-        const formatted = formatFraction(scaled);
-        return unitPart ? `${formatted} ${unitPart}` : formatted;
+    if (settings.standardUnit !== 'off') {
+      const converted = convertUnit(val, u, {
+        unitConversionMode: settings.standardUnit,
+        convertVolumeUnits: settings.convertVolumeUnits
+      }, ingredientName)
+      val = converted.value
+      u = converted.unit
+    } else {
+      if (u === 'g' && val >= 1000) {
+        val = Math.round((val / 1000) * 100) / 100
+        u = 'kg'
+      } else if (u === 'ml' && val >= 1000) {
+        val = Math.round((val / 1000) * 100) / 100
+        u = 'l'
+      } else if (u === 'oz' && val >= 16) {
+        val = Math.round((val / 16) * 100) / 100
+        u = 'lb'
       }
     }
 
-    return qtyText;
-  };
+    const formatted = formatFraction(val)
+    return u ? `${formatted} ${u}` : formatted
+  }
+
+  const scaleTokenQty = (qtyText?: string, ingredientName?: string) => {
+    if (!qtyText) return ''
+
+    const match = qtyText.trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(\.\d+)?)\s*(.*)$/)
+    if (match) {
+      const numPart = match[1]
+      const unitPart = match[3]
+      const num = parseFraction(numPart)
+      if (num !== null) {
+        let scaled = num * scaleRatio
+        let u = unitPart
+        if (settings.standardUnit !== 'off' && u) {
+          const converted = convertUnit(scaled, u, {
+            unitConversionMode: settings.standardUnit,
+            convertVolumeUnits: settings.convertVolumeUnits
+          }, ingredientName)
+          scaled = converted.value
+          u = converted.unit
+        }
+        const formatted = formatFraction(scaled)
+        return u ? `${formatted} ${u}` : formatted
+      }
+    }
+
+    if (scaleRatio === 1) return qtyText
+
+    const fullNum = parseFraction(qtyText)
+    if (fullNum !== null) {
+      return formatFraction(fullNum * scaleRatio)
+    }
+
+    return qtyText
+  }
 
   const listableIngredients = recipe.ingredients.filter(ing => !ing.isHidden);
 
@@ -670,19 +707,20 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   });
 
   const stepNumberMap = new Map<number, number>();
-  let currentCountedNumber = 0;
   recipe.sections.forEach(sec => {
+    let secCount = 0;
     sec.steps.forEach(st => {
       if (st.isCountedStep !== false) {
-        currentCountedNumber++;
-        stepNumberMap.set(st.index, currentCountedNumber);
+        secCount++;
+        stepNumberMap.set(st.index, secCount);
       }
     });
     sec.subsections?.forEach(sub => {
+      let subCount = 0;
       sub.steps.forEach(st => {
         if (st.isCountedStep !== false) {
-          currentCountedNumber++;
-          stepNumberMap.set(st.index, currentCountedNumber);
+          subCount++;
+          stepNumberMap.set(st.index, subCount);
         }
       });
     });
@@ -787,10 +825,10 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                   i => i.name.toLowerCase() === tok.name.toLowerCase()
                 );
                 const displayQty = tok.quantityText
-                  ? scaleTokenQty(tok.quantityText)
+                  ? scaleTokenQty(tok.quantityText, tok.name)
                   : matchedIng && matchedIng.quantityValue !== null
-                  ? scaleQuantity(matchedIng.quantityValue, matchedIng.unit)
-                  : '';
+                  ? scaleQuantity(matchedIng.quantityValue, matchedIng.unit, matchedIng.name)
+                  : ''
 
                 return (
                   <li
@@ -893,6 +931,19 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const countedNum = stepNumberMap.get(step.index) || step.index;
     const isLinked = Boolean(step.isLinkedToPrevious);
 
+    const allStepImages = [
+      ...(step.image ? [step.image] : []),
+      ...(step.media?.galleryUrls || [])
+    ].filter((url, idx, arr) => arr.indexOf(url) === idx);
+
+    const primaryImage = allStepImages[0];
+    const extraGalleryUrls = allStepImages.slice(1);
+
+    const inlineToolTokens = step.tokens.filter(
+      (t): t is Extract<StepToken, { type: 'ingredient' | 'cookware' }> =>
+        (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
+    );
+
     return (
       <div
         key={step.index}
@@ -922,6 +973,86 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             <div className="cook-step-title">{step.title}</div>
           )}
 
+          {primaryImage && (
+            <button
+              type="button"
+              className="cook-step-single-img-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxImage(primaryImage);
+                setIsLightboxOpen(true);
+              }}
+            >
+              <img
+                src={primaryImage}
+                alt={step.title || `Step ${step.index}`}
+                className="step-media-banner"
+                loading="lazy"
+              />
+            </button>
+          )}
+
+          {extraGalleryUrls.length > 0 && (
+            <div className="cook-step-gallery-grid">
+              {extraGalleryUrls.map((url, gIdx) => (
+                <button
+                  key={gIdx}
+                  type="button"
+                  className="cook-step-gallery-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLightboxImage(url);
+                    setIsLightboxOpen(true);
+                  }}
+                  aria-label={`View step image ${gIdx + 2}`}
+                >
+                  <img
+                    src={url}
+                    alt={`Step media ${gIdx + 2}`}
+                    className="cook-step-gallery-thumb"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {step.media?.videoClip && typeof step.media.videoClip.startSec === 'number' && (
+            <div className="cook-step-clip-wrapper">
+              <button
+                type="button"
+                className="cook-step-clip-btn"
+                onClick={(e) => handlePlayVideoClip(step.media!.videoClip!.startSec, step.media!.videoClip!.endSec, e)}
+                title="Play step video clip"
+              >
+                <Play size={11} fill="currentColor" />
+                <span>Clip {formatClipTime(step.media.videoClip.startSec, step.media.videoClip.endSec)}</span>
+              </button>
+            </div>
+          )}
+
+          {step.showInlineTools && inlineToolTokens.length > 0 && (
+            <div className="cook-inline-tools-bar">
+              {inlineToolTokens.map((toolTok, toolIdx) => (
+                <span
+                  key={toolIdx}
+                  className={`cook-inline-tool-chip ${toolTok.type === 'ingredient' ? 'chip-ingredient' : 'chip-cookware'}`}
+                >
+                  {toolTok.type === 'ingredient' ? (
+                    <>
+                      <span className="tool-chip-name">{toolTok.name}</span>
+                      {toolTok.quantityText && (
+                        <span className="tool-chip-amt">{scaleTokenQty(toolTok.quantityText, toolTok.name)}</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="tool-chip-name">{toolTok.name}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="cook-step-text">
             {step.tokens.map((token, idx) => {
               if (token.type === 'text') {
@@ -932,7 +1063,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                   <span key={idx} className="cook-ig">
                     <span className="cook-ig-name">{token.name}</span>
                     {token.quantityText && (
-                      <span className="cook-amt">{scaleTokenQty(token.quantityText)}</span>
+                      <span className="cook-amt">{scaleTokenQty(token.quantityText, token.name)}</span>
                     )}
                     {token.note && (
                       <span className="cook-ig-note">{token.note}</span>
@@ -1037,90 +1168,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               return null;
             })}
           </div>
-
-          {step.showInlineTools && (
-            <div className="cook-inline-tools-bar">
-              {step.tokens
-                .filter((t): t is Extract<StepToken, { type: 'ingredient' | 'cookware' }> =>
-                  (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
-                )
-                .map((toolTok, toolIdx) => (
-                  <span
-                    key={toolIdx}
-                    className={`cook-inline-tool-chip ${toolTok.type === 'ingredient' ? 'chip-ingredient' : 'chip-cookware'}`}
-                  >
-                    {toolTok.type === 'ingredient' ? (
-                      <>
-                        <span className="tool-chip-name">{toolTok.name}</span>
-                        {toolTok.quantityText && (
-                          <span className="tool-chip-amt">{scaleTokenQty(toolTok.quantityText)}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="tool-chip-name">{toolTok.name}</span>
-                    )}
-                  </span>
-                ))}
-            </div>
-          )}
-
-          {step.media?.videoClip && typeof step.media.videoClip.startSec === 'number' && (
-            <div className="cook-step-clip-wrapper">
-              <button
-                type="button"
-                className="cook-step-clip-btn"
-                onClick={(e) => handlePlayVideoClip(step.media!.videoClip!.startSec, step.media!.videoClip!.endSec, e)}
-                title="Play step video clip"
-              >
-                <Play size={11} fill="currentColor" />
-                <span>Clip {formatClipTime(step.media.videoClip.startSec, step.media.videoClip.endSec)}</span>
-              </button>
-            </div>
-          )}
-
-          {step.media?.galleryUrls && step.media.galleryUrls.length > 0 && (
-            <div className="cook-step-gallery-grid">
-              {step.media.galleryUrls.map((url, gIdx) => (
-                <button
-                  key={gIdx}
-                  type="button"
-                  className="cook-step-gallery-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLightboxImage(url);
-                    setIsLightboxOpen(true);
-                  }}
-                  aria-label={`View step image ${gIdx + 1}`}
-                >
-                  <img
-                    src={url}
-                    alt={`Step media ${gIdx + 1}`}
-                    className="cook-step-gallery-thumb"
-                    loading="lazy"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {step.image && (!step.media?.galleryUrls || step.media.galleryUrls.length === 0) && (
-            <button
-              type="button"
-              className="cook-step-single-img-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setLightboxImage(step.image!);
-                setIsLightboxOpen(true);
-              }}
-            >
-              <img
-                src={step.image}
-                alt={step.title || `Step ${step.index}`}
-                className="step-media-banner"
-                loading="lazy"
-              />
-            </button>
-          )}
 
           {step.producesYield && (
             <div className="cook-step-yield-banner">
@@ -1356,8 +1403,10 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                     const isDone = checkedPrepItems.has(checkKey);
                     const displayQty =
                       ing.quantityValue !== null
-                        ? scaleQuantity(ing.quantityValue, ing.unit)
-                        : ing.quantityText || '';
+                        ? scaleQuantity(ing.quantityValue, ing.unit, ing.name)
+                        : ing.quantityText
+                        ? scaleTokenQty(ing.quantityText, ing.name)
+                        : ''
 
                     return (
                       <li

@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RecipeDB — Auth Modal & Admin Panel Preview</title>
+<style>
+  /* ── Design tokens ── */
+  :root {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #262626;
+    --bg-secondary-alt: #2b2b2b;
+    --bg-tertiary: #313131;
+    --border: #363636;
+    --border-light: #404040;
+    --accent: #ff7a00;
+    --accent-hover: #ff9029;
+    --text: #dcddde;
+    --text-muted: #999;
+    --text-faint: #666;
+    --green: #33a058;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --radius-s: 4px;
+    --radius-m: 8px;
+    --radius-l: 12px;
+    --radius-full: 9999px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  [data-theme="light"] {
+    --bg-primary: #f8f9fa;
+    --bg-secondary: #ffffff;
+    --bg-secondary-alt: #f1f3f5;
+    --bg-tertiary: #e9ecef;
+    --border: #dee2e6;
+    --border-light: #ced4da;
+    --accent: #ea580c;
+    --accent-hover: #c2410c;
+    --text: #1a1a1a;
+    --text-muted: #555;
+    --text-faint: #888;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: var(--bg-primary);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top nav ── */
+  .top-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 3.5rem;
+    padding: 0 1.5rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 100;
+  }
+  .nav-brand { font-size: 1.4rem; font-weight: 800; color: var(--accent); letter-spacing: -0.03rem; }
+  .nav-controls { display: flex; align-items: center; gap: 0.75rem; }
+  .nav-btn {
+    background: none; border: none; cursor: pointer; color: var(--text-muted);
+    font-size: 0.8125rem; font-family: var(--font); display: flex; align-items: center;
+    gap: 0.4rem; padding: 0.4rem 0.75rem; border-radius: var(--radius-s);
+    border: 1px solid var(--border); transition: background 0.15s;
+  }
+  .nav-btn:hover { background: rgba(255,122,0,0.08); color: var(--accent); border-color: var(--accent); }
+  .nav-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .theme-toggle-label { font-size: 0.8125rem; color: var(--text-muted); }
+
+  /* ── Main area ── */
+  .main { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Tab switcher ── */
+  .view-switcher {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.5rem; padding: 1rem 1.5rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .view-tab {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    font-family: var(--font); font-size: 0.8125rem; padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-s); cursor: pointer; transition: all 0.15s;
+  }
+  .view-tab:hover { border-color: var(--accent); color: var(--accent); }
+  .view-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+
+  /* ── Sections ── */
+  .section-wrapper {
+    display: none; flex-direction: column; width: 100%; height: 100%;
+    overflow: hidden;
+  }
+  .section-wrapper.visible { display: flex; }
+
+  /* ════════════════════════════════
+     AUTH MODAL SECTION
+  ════════════════════════════════ */
+  .auth-scene {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #0d0d0d;
+  }
+  .auth-backdrop {
+    position: absolute; inset: 0;
+    background-image: url("https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/Chef_prepares_red_onion_at_kitchen_counter_for_cooking_in_the_morning.jpg/1200px-Chef_prepares_red_onion_at_kitchen_counter_for_cooking_in_the_morning.jpg");
+    background-size: cover;
+    background-position: center;
+    filter: blur(14px) brightness(0.35);
+    transform: scale(1.08);
+  }
+  .auth-backdrop-tint {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,122,0,0.12) 0%, rgba(0,0,0,0.7) 60%);
+  }
+
+  /* Overflow-hidden container: hides the off-screen card */
+  .auth-viewport {
+    position: relative;
+    z-index: 1;
+    width: min(440px, 92vw);
+    overflow: hidden;
+    border-radius: var(--radius-l);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7);
+  }
+
+  /* Track that holds both cards side by side */
+  .auth-track {
+    display: flex;
+    width: 200%;
+    transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .auth-track.show-signup { transform: translateX(-50%); }
+
+  /* Each card fills half of the 200%-wide track = 100% of viewport */
+  .auth-card {
+    width: 50%;
+    flex-shrink: 0;
+    background: rgba(30,30,30,0.92);
+    backdrop-filter: blur(4px);
+    padding: 2.25rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  [data-theme="light"] .auth-card {
+    background: rgba(255,255,255,0.93);
+    border-color: rgba(0,0,0,0.08);
+  }
+
+  .auth-brand {
+    font-size: 1.5rem; font-weight: 800; color: var(--accent);
+    letter-spacing: -0.04rem;
+  }
+  .auth-heading { font-size: 1.125rem; font-weight: 700; color: var(--text); }
+  .auth-subtext { font-size: 0.8125rem; color: var(--text-muted); line-height: 1.5; }
+
+  .auth-field { display: flex; flex-direction: column; gap: 0.35rem; }
+  .auth-field label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+  .auth-field input {
+    background: var(--bg-secondary-alt); border: 1px solid var(--border);
+    border-radius: var(--radius-s); padding: 0.55rem 0.75rem;
+    color: var(--text); font-family: var(--font); font-size: 0.875rem;
+    outline: none; transition: border-color 0.15s;
+  }
+  .auth-field input:focus { border-color: var(--accent); }
+
+  .auth-submit {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius-s); padding: 0.65rem 1rem;
+    font-family: var(--font); font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; transition: background 0.15s; width: 100%;
+  }
+  .auth-submit:hover { background: var(--accent-hover); }
+
+  .auth-switch-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.4rem; font-size: 0.8125rem; color: var(--text-muted);
+  }
+  .auth-switch-btn {
+    background: none; border: none; color: var(--accent); font-family: var(--font);
+    font-size: 0.8125rem; font-weight: 600; cursor: pointer; padding: 0;
+  }
+  .auth-switch-btn:hover { text-decoration: underline; }
+
+  .auth-divider {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-size: 0.75rem; color: var(--text-faint);
+  }
+  .auth-divider::before, .auth-divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* ════════════════════════════════
+     ADMIN PANEL SECTION
+  ════════════════════════════════ */
+  .admin-shell {
+    display: flex; flex: 1; overflow: hidden; height: 100%;
+  }
+
+  /* Sidebar */
+  .admin-sidebar {
+    width: 13rem; flex-shrink: 0;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 1rem 0;
+    overflow-y: auto;
+  }
+  .sidebar-label {
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06rem;
+    text-transform: uppercase; color: var(--text-faint);
+    padding: 0.4rem 1rem 0.5rem;
+  }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.55rem 1rem; font-size: 0.8125rem; color: var(--text-muted);
+    cursor: pointer; border-left: 2px solid transparent;
+    transition: all 0.12s; background: none; border-top: none; border-right: none; border-bottom: none;
+    text-align: left; width: 100%; font-family: var(--font);
+  }
+  .sidebar-item:hover { background: var(--bg-secondary-alt); color: var(--text); }
+  .sidebar-item.active {
+    color: var(--accent); border-left-color: var(--accent);
+    background: rgba(255,122,0,0.06);
+  }
+  .sidebar-icon { width: 1rem; text-align: center; font-size: 0.9rem; }
+
+  /* Content */
+  .admin-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .admin-header {
+    padding: 1rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; background: var(--bg-primary);
+  }
+  .admin-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+  .admin-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem; }
+
+  .admin-toolbar {
+    padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    background: var(--bg-primary); flex-shrink: 0;
+  }
+  .search-input {
+    flex: 1; min-width: 10rem; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 0.45rem 0.75rem; color: var(--text); font-family: var(--font); font-size: 0.8125rem;
+    outline: none; transition: border-color 0.15s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  .filter-btn {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 0.4rem 0.7rem; font-family: var(--font); font-size: 0.775rem; color: var(--text-muted);
+    cursor: pointer; transition: all 0.12s; white-space: nowrap;
+  }
+  .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .admin-body { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .data-table th {
+    text-align: left; padding: 0.55rem 0.75rem;
+    color: var(--text-faint); font-size: 0.7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04rem;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+    background: var(--bg-secondary);
+  }
+  .data-table td {
+    padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border);
+    color: var(--text); vertical-align: middle;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: var(--bg-secondary-alt); }
+
+  /* Badges */
+  .badge {
+    display: inline-block; padding: 0.2rem 0.5rem; border-radius: var(--radius-full);
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02rem; text-transform: uppercase;
+  }
+  .badge-pending { background: rgba(251,146,60,0.14); color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+  .badge-approved { background: rgba(51,160,88,0.14); color: #4ade80; border: 1px solid rgba(51,160,88,0.3); }
+  .badge-rejected { background: rgba(239,68,68,0.14); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  .badge-user { background: rgba(148,163,184,0.12); color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+  .badge-creator { background: rgba(255,122,0,0.12); color: #fb923c; border: 1px solid rgba(255,122,0,0.28); }
+  .badge-admin { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+  .badge-archived { background: rgba(100,100,100,0.15); color: #888; border: 1px solid #444; }
+
+  /* Action buttons */
+  .action-row { display: flex; gap: 0.3rem; align-items: center; }
+  .act-btn {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-s);
+    padding: 0.3rem 0.55rem; font-size: 0.75rem; color: var(--text-muted);
+    cursor: pointer; font-family: var(--font); transition: all 0.12s; white-space: nowrap;
+  }
+  .act-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+  .act-btn.green:hover { border-color: var(--green); color: var(--green); background: rgba(51,160,88,0.08); }
+  .act-btn.red:hover { border-color: var(--red); color: var(--red); background: rgba(239,68,68,0.08); }
+  .act-btn.accent:hover { border-color: var(--accent); color: var(--accent); background: rgba(255,122,0,0.08); }
+
+  /* Application card */
+  .app-card {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-m); overflow: hidden; margin-bottom: 1rem;
+  }
+  .app-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+  }
+  .app-card-user { display: flex; align-items: center; gap: 0.6rem; }
+  .app-avatar {
+    width: 2rem; height: 2rem; border-radius: var(--radius-full);
+    background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+  }
+  .app-username { font-size: 0.875rem; font-weight: 600; color: var(--text); }
+  .app-handle { font-size: 0.75rem; color: var(--text-muted); }
+  .app-meta { font-size: 0.75rem; color: var(--text-faint); }
+  .app-card-actions { display: flex; gap: 0.4rem; align-items: center; }
+
+  /* Markdown viewer toggle */
+  .source-toggle {
+    display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius-s);
+    overflow: hidden; flex-shrink: 0;
+  }
+  .source-toggle-btn {
+    background: none; border: none; padding: 0.25rem 0.6rem; font-family: var(--font);
+    font-size: 0.7rem; color: var(--text-muted); cursor: pointer; transition: all 0.12s;
+    border-right: 1px solid var(--border);
+  }
+  .source-toggle-btn:last-child { border-right: none; }
+  .source-toggle-btn.active { background: var(--accent); color: #fff; }
+
+  .app-body-rendered {
+    padding: 1rem; font-size: 0.8rem; color: var(--text); line-height: 1.7;
+  }
+  .app-body-rendered h3 { font-size: 0.9rem; margin-bottom: 0.4rem; color: var(--text); }
+  .app-body-rendered p { margin-bottom: 0.75rem; color: var(--text-muted); }
+  .app-body-rendered strong { color: var(--text); }
+
+  .app-body-raw {
+    display: none; padding: 1rem;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 0.775rem; color: #a8b2c0; white-space: pre; overflow-x: auto;
+    background: var(--bg-primary); border-top: 1px solid var(--border);
+    line-height: 1.7;
+  }
+  .app-body-raw.visible { display: block; }
+  .app-body-rendered.hidden { display: none; }
+
+  /* Tag chip */
+  .tag-chip {
+    display: inline-block; padding: 0.15rem 0.5rem;
+    background: rgba(255,122,0,0.1); color: var(--accent);
+    border-radius: var(--radius-full); font-size: 0.7rem; font-weight: 500;
+    border: 1px solid rgba(255,122,0,0.25); margin-right: 0.3rem; margin-bottom: 0.2rem;
+  }
+
+  .recipe-title { font-weight: 600; color: var(--text); }
+  .recipe-slug { font-size: 0.75rem; color: var(--text-faint); margin-top: 0.1rem; }
+
+  /* empty state */
+  .empty-state {
+    text-align: center; padding: 3rem 1rem; color: var(--text-faint); font-size: 0.85rem;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+  /* Admin panel sub-tabs */
+  .admin-subpanel { display: none; }
+  .admin-subpanel.visible { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+  /* Responsive note */
+  .preview-note {
+    font-size: 0.75rem; color: var(--text-faint);
+    padding: 0.5rem 1.5rem; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Top navigation ── -->
+<nav class="top-nav">
+  <span class="nav-brand">recipedb</span>
+  <div class="nav-controls">
+    <span class="theme-toggle-label">Preview:</span>
+    <button class="nav-btn active" onclick="showSection('auth')" id="tab-auth">Auth Modal</button>
+    <button class="nav-btn" onclick="showSection('admin')" id="tab-admin">Admin Panel</button>
+    <button class="nav-btn" onclick="toggleTheme()" id="theme-btn">Light mode</button>
+  </div>
+</nav>
+
+<p class="preview-note">Interactive preview — not connected to live data. Click tabs and buttons to test interactions.</p>
+
+<div class="main">
+
+  <!-- ════════════ AUTH MODAL ════════════ -->
+  <div class="section-wrapper visible" id="section-auth">
+    <div class="auth-scene">
+      <div class="auth-backdrop"></div>
+      <div class="auth-backdrop-tint"></div>
+
+      <div class="auth-viewport">
+        <!-- The sliding track containing Login card + Signup card -->
+        <div class="auth-track" id="auth-track">
+
+          <!-- Card 1: Log In -->
+          <div class="auth-card">
+            <div class="auth-brand">recipedb</div>
+            <div>
+              <div class="auth-heading">Welcome back</div>
+              <div class="auth-subtext" style="margin-top:0.25rem">Log in to your account to continue.</div>
+            </div>
+            <div class="auth-field">
+              <label>Email address</label>
+              <input type="email" placeholder="you@example.com" />
+            </div>
+            <div class="auth-field">
+              <label>Password</label>
+              <input type="password" placeholder="••••••••" />
+            </div>
+            <button class="auth-submit">Log in</button>
+            <div class="auth-switch-row">
+              <span>No account yet?</span>
+              <button class="auth-switch-btn" onclick="document.getElementById('auth-track').classList.add('show-signup')">Sign up</button>
+            </div>
+          </div>
+
+          <!-- Card 2: Sign Up -->
+          <div class="auth-card">
+            <div class="auth-brand">recipedb</div>
+            <div>
+              <div class="auth-heading">Create your account</div>
+              <div class="auth-subtext" style="margin-top:0.25rem">Join to bookmark recipes, share creations, and more.</div>
+            </div>
+            <div class="auth-field">
+              <label>Display name</label>
+              <input type="text" placeholder="Your name" />
+            </div>
+            <div class="auth-field">
+              <label>Username <span style="color:var(--text-faint);font-weight:400">(@handle)</span></label>
+              <input type="text" placeholder="yourhandle" />
+            </div>
+            <div class="auth-field">
+              <label>Email address</label>
+              <input type="email" placeholder="you@example.com" />
+            </div>
+            <div class="auth-field">
+              <label>Password</label>
+              <input type="password" placeholder="At least 8 characters" />
+            </div>
+            <button class="auth-submit">Create account</button>
+            <div class="auth-switch-row">
+              <span>Already have an account?</span>
+              <button class="auth-switch-btn" onclick="document.getElementById('auth-track').classList.remove('show-signup')">Log in</button>
+            </div>
+          </div>
+
+        </div><!-- /auth-track -->
+      </div><!-- /auth-viewport -->
+    </div><!-- /auth-scene -->
+  </div><!-- /section-auth -->
+
+  <!-- ════════════ ADMIN PANEL ════════════ -->
+  <div class="section-wrapper" id="section-admin">
+    <div class="admin-shell">
+
+      <!-- Sidebar -->
+      <aside class="admin-sidebar">
+        <div class="sidebar-label">Moderation</div>
+        <button class="sidebar-item active" onclick="switchAdminTab('recipes', this)">
+          <span class="sidebar-icon">📄</span> Recipe Moderation
+        </button>
+        <button class="sidebar-item" onclick="switchAdminTab('users', this)">
+          <span class="sidebar-icon">👤</span> User Management
+        </button>
+        <button class="sidebar-item" onclick="switchAdminTab('applications', this)">
+          <span class="sidebar-icon">📋</span> Creator Applications
+          <span style="margin-left:auto;background:var(--accent);color:#fff;border-radius:var(--radius-full);font-size:0.65rem;padding:0.1rem 0.4rem;font-weight:700">2</span>
+        </button>
+      </aside>
+
+      <!-- Content area -->
+      <div class="admin-content">
+
+        <!-- ── Recipe Moderation ── -->
+        <div class="admin-subpanel visible" id="tab-recipes">
+          <div class="admin-header">
+            <div>
+              <div class="admin-title">Recipe Moderation</div>
+              <div class="admin-subtitle">Review, approve, or reject submitted recipes</div>
+            </div>
+          </div>
+          <div class="admin-toolbar">
+            <input class="search-input" type="text" placeholder="Search by title or description…" />
+            <button class="filter-btn active" onclick="setFilter(this, 'recipes-filter')">All</button>
+            <button class="filter-btn" onclick="setFilter(this, 'recipes-filter')">Pending</button>
+            <button class="filter-btn" onclick="setFilter(this, 'recipes-filter')">Approved</button>
+            <button class="filter-btn" onclick="setFilter(this, 'recipes-filter')">Rejected</button>
+          </div>
+          <div class="admin-body">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Recipe</th>
+                  <th>Author</th>
+                  <th>Tags</th>
+                  <th>Status</th>
+                  <th>Submitted</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <div class="recipe-title">Chewy S'mores Cookies</div>
+                    <div class="recipe-slug">chewy-smores-cookies</div>
+                  </td>
+                  <td>@mariakuhn</td>
+                  <td><span class="tag-chip">cookies</span><span class="tag-chip">dessert</span></td>
+                  <td><span class="badge badge-pending">Pending</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 20, 2026</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn accent">Edit</button>
+                      <button class="act-btn green">Approve</button>
+                      <button class="act-btn red">Reject</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="recipe-title">Sourdough Focaccia</div>
+                    <div class="recipe-slug">sourdough-focaccia</div>
+                  </td>
+                  <td>@breadlord</td>
+                  <td><span class="tag-chip">bread</span><span class="tag-chip">italian</span></td>
+                  <td><span class="badge badge-approved">Approved</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 18, 2026</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn accent">Edit</button>
+                      <button class="act-btn">Unapprove</button>
+                      <button class="act-btn red">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="recipe-title">Mango Lassi</div>
+                    <div class="recipe-slug">mango-lassi</div>
+                  </td>
+                  <td>@spiceroute</td>
+                  <td><span class="tag-chip">drink</span><span class="tag-chip">indian</span></td>
+                  <td><span class="badge badge-pending">Pending</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 21, 2026</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn accent">Edit</button>
+                      <button class="act-btn green">Approve</button>
+                      <button class="act-btn red">Reject</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="recipe-title">Burnt Basque Cheesecake</div>
+                    <div class="recipe-slug">burnt-basque-cheesecake</div>
+                  </td>
+                  <td>@pastrychef</td>
+                  <td><span class="tag-chip">cake</span><span class="tag-chip">spanish</span></td>
+                  <td><span class="badge badge-rejected">Rejected</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 15, 2026</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn accent">Edit</button>
+                      <button class="act-btn green">Re-approve</button>
+                      <button class="act-btn red">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div><!-- /tab-recipes -->
+
+        <!-- ── User Management ── -->
+        <div class="admin-subpanel" id="tab-users">
+          <div class="admin-header">
+            <div>
+              <div class="admin-title">User Management</div>
+              <div class="admin-subtitle">Manage roles, archive accounts, and schedule deletions</div>
+            </div>
+          </div>
+          <div class="admin-toolbar">
+            <input class="search-input" type="text" placeholder="Search by username or display name…" />
+            <button class="filter-btn active" onclick="setFilter(this, 'users-filter')">All</button>
+            <button class="filter-btn" onclick="setFilter(this, 'users-filter')">Users</button>
+            <button class="filter-btn" onclick="setFilter(this, 'users-filter')">Creators</button>
+            <button class="filter-btn" onclick="setFilter(this, 'users-filter')">Admins</button>
+            <button class="filter-btn" onclick="setFilter(this, 'users-filter')">Archived</button>
+          </div>
+          <div class="admin-body">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <div style="font-weight:600">Maria Kuhn</div>
+                    <div style="font-size:0.75rem;color:var(--text-faint)">@mariakuhn</div>
+                  </td>
+                  <td><span class="badge badge-creator">Creator</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Sep 3, 2026</td>
+                  <td style="color:var(--green);font-size:0.8rem">Active</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn" title="Demote to user">Demote</button>
+                      <button class="act-btn">Archive</button>
+                      <button class="act-btn red">Schedule delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div style="font-weight:600">James Bread</div>
+                    <div style="font-size:0.75rem;color:var(--text-faint)">@breadlord</div>
+                  </td>
+                  <td><span class="badge badge-user">User</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 1, 2026</td>
+                  <td style="color:var(--green);font-size:0.8rem">Active</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn green">Promote</button>
+                      <button class="act-btn">Archive</button>
+                      <button class="act-btn red">Schedule delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div style="font-weight:600">Priya Spice</div>
+                    <div style="font-size:0.75rem;color:var(--text-faint)">@spiceroute</div>
+                  </td>
+                  <td><span class="badge badge-creator">Creator</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Aug 12, 2026</td>
+                  <td style="color:var(--text-faint);font-size:0.8rem">Archived</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn green">Unarchive</button>
+                      <button class="act-btn red">Delete now</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div style="font-weight:600">Antoine Pastry</div>
+                    <div style="font-size:0.75rem;color:var(--text-faint)">@pastrychef</div>
+                  </td>
+                  <td><span class="badge badge-user">User</span></td>
+                  <td style="color:var(--text-faint);white-space:nowrap">Oct 18, 2026</td>
+                  <td style="color:var(--red);font-size:0.8rem">Delete in 14d</td>
+                  <td>
+                    <div class="action-row">
+                      <button class="act-btn green">Cancel delete</button>
+                      <button class="act-btn red">Delete now</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div><!-- /tab-users -->
+
+        <!-- ── Creator Applications ── -->
+        <div class="admin-subpanel" id="tab-applications">
+          <div class="admin-header">
+            <div>
+              <div class="admin-title">Creator Applications</div>
+              <div class="admin-subtitle">Review applicant pitches and grant or deny creator access</div>
+            </div>
+          </div>
+          <div class="admin-toolbar">
+            <input class="search-input" type="text" placeholder="Search applicants…" />
+            <button class="filter-btn active" onclick="setFilter(this, 'app-filter')">All</button>
+            <button class="filter-btn" onclick="setFilter(this, 'app-filter')">Pending</button>
+            <button class="filter-btn" onclick="setFilter(this, 'app-filter')">Reviewed</button>
+          </div>
+          <div class="admin-body">
+
+            <!-- Application card 1 -->
+            <div class="app-card">
+              <div class="app-card-header">
+                <div class="app-card-user">
+                  <div class="app-avatar">JB</div>
+                  <div>
+                    <div class="app-username">James Bread</div>
+                    <div class="app-handle">@breadlord</div>
+                  </div>
+                  <span class="badge badge-pending" style="margin-left:0.5rem">Pending</span>
+                </div>
+                <div class="app-card-actions">
+                  <div class="source-toggle" id="toggle-1">
+                    <button class="source-toggle-btn active" onclick="setSourceView('app1', 'rendered', this)">Preview</button>
+                    <button class="source-toggle-btn" onclick="setSourceView('app1', 'raw', this)">Source</button>
+                  </div>
+                  <button class="act-btn green">Approve</button>
+                  <button class="act-btn red">Reject</button>
+                </div>
+              </div>
+              <div class="app-body-rendered" id="app1-rendered">
+                <h3>Why I want to be a creator</h3>
+                <p>I have been baking sourdough bread for <strong>five years</strong> and recently started a small local delivery service. My goal is to document every variation of my base dough recipe so others can reproduce it reliably at home.</p>
+                <h3>Portfolio proof</h3>
+                <p>I have three recipes ready for upload: my classic sourdough focaccia, a rye-whole-wheat loaf, and a cardamom morning bun that took me 40 iterations to perfect.</p>
+              </div>
+              <pre class="app-body-raw" id="app1-raw">### Why I want to be a creator
+
+I have been baking sourdough bread for **five years** and recently started
+a small local delivery service. My goal is to document every variation of
+my base dough recipe so others can reproduce it reliably at home.
+
+### Portfolio proof
+
+I have three recipes ready for upload: my classic sourdough focaccia,
+a rye-whole-wheat loaf, and a cardamom morning bun that took me 40
+iterations to perfect.</pre>
+              <div style="padding:0.5rem 1rem;font-size:0.75rem;color:var(--text-faint);border-top:1px solid var(--border)">Applied Oct 19, 2026</div>
+            </div>
+
+            <!-- Application card 2 -->
+            <div class="app-card">
+              <div class="app-card-header">
+                <div class="app-card-user">
+                  <div class="app-avatar">AP</div>
+                  <div>
+                    <div class="app-username">Antoine Pastry</div>
+                    <div class="app-handle">@pastrychef</div>
+                  </div>
+                  <span class="badge badge-pending" style="margin-left:0.5rem">Pending</span>
+                </div>
+                <div class="app-card-actions">
+                  <div class="source-toggle" id="toggle-2">
+                    <button class="source-toggle-btn active" onclick="setSourceView('app2', 'rendered', this)">Preview</button>
+                    <button class="source-toggle-btn" onclick="setSourceView('app2', 'raw', this)">Source</button>
+                  </div>
+                  <button class="act-btn green">Approve</button>
+                  <button class="act-btn red">Reject</button>
+                </div>
+              </div>
+              <div class="app-body-rendered" id="app2-rendered">
+                <h3>My culinary background</h3>
+                <p>Professional pastry chef at a bistro in Lyon for three years. I specialize in French regional desserts: tarte Tatin, clafoutis, and financiers. I want to bring <strong>accurate technique notes</strong> to each recipe rather than vague instructions.</p>
+                <h3>Recipes planned</h3>
+                <p>Burnt Basque cheesecake, Paris-Brest, and a step-by-step laminated croissant guide with stage photographs for every fold.</p>
+              </div>
+              <pre class="app-body-raw" id="app2-raw">### My culinary background
+
+Professional pastry chef at a bistro in Lyon for three years.
+I specialize in French regional desserts: tarte Tatin, clafoutis,
+and financiers. I want to bring **accurate technique notes** to each
+recipe rather than vague instructions.
+
+### Recipes planned
+
+Burnt Basque cheesecake, Paris-Brest, and a step-by-step laminated
+croissant guide with stage photographs for every fold.</pre>
+              <div style="padding:0.5rem 1rem;font-size:0.75rem;color:var(--text-faint);border-top:1px solid var(--border)">Applied Oct 20, 2026</div>
+            </div>
+
+          </div>
+        </div><!-- /tab-applications -->
+
+      </div><!-- /admin-content -->
+    </div><!-- /admin-shell -->
+  </div><!-- /section-admin -->
+
+</div><!-- /main -->
+
+<script>
+  function showSection(id) {
+    document.querySelectorAll('.section-wrapper').forEach(el => el.classList.remove('visible'));
+    document.getElementById('section-' + id).classList.add('visible');
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+  }
+
+  function switchAdminTab(tab, btn) {
+    document.querySelectorAll('.admin-subpanel').forEach(el => el.classList.remove('visible'));
+    document.getElementById('tab-' + tab).classList.add('visible');
+    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  function setFilter(btn, group) {
+    btn.closest('.admin-toolbar').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  function toggleTheme() {
+    const html = document.documentElement;
+    const isLight = html.getAttribute('data-theme') === 'light';
+    html.setAttribute('data-theme', isLight ? 'dark' : 'light');
+    document.getElementById('theme-btn').textContent = isLight ? 'Light mode' : 'Dark mode';
+  }
+
+  function setSourceView(appId, mode, btn) {
+    const rendered = document.getElementById(appId + '-rendered');
+    const raw = document.getElementById(appId + '-raw');
+    const toggle = btn.closest('.source-toggle');
+    toggle.querySelectorAll('.source-toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (mode === 'raw') {
+      rendered.classList.add('hidden');
+      raw.classList.add('visible');
+    } else {
+      rendered.classList.remove('hidden');
+      raw.classList.remove('visible');
+    }
+  }
+</script>
+</body>
+</html>

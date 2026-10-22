@@ -1,32 +1,48 @@
-import type { VesselSize } from '../types/orchestration';
+import type { VesselSize } from '../types/orchestration'
+import densityTable from '../data/densityTable.json'
 
 export interface StandardIngredient {
-  id: string;
-  name: string;
-  category: 'produce' | 'dairy' | 'pantry' | 'meat' | 'spice' | 'baking' | 'liquid';
-  allowedUnits: string[];
+  id: string
+  name: string
+  category: 'produce' | 'dairy' | 'pantry' | 'meat' | 'spice' | 'baking' | 'liquid'
+  allowedUnits: string[]
 }
 
-export const ALL_MEASUREMENT_UNITS = [
-  'g',
-  'kg',
-  'oz',
-  'lb',
-  'ml',
-  'l',
-  'tsp',
-  'tbsp',
-  'cup',
-  'pinch',
-  'piece',
-  'slice',
-  'clove',
-  'can',
-  'bunch',
-  'dash'
-];
+interface DensityIngredientSchema {
+  id: string
+  name: string
+  density: number
+  category?: StandardIngredient['category']
+  allowedUnits?: string[]
+  aliases: string[]
+}
 
-export const STANDARD_INGREDIENTS: StandardIngredient[] = [
+function inferCategory(id: string, name: string): StandardIngredient['category'] {
+  const lower = `${id} ${name}`.toLowerCase()
+  if (lower.includes('milk') || lower.includes('cream') || lower.includes('cheese') || lower.includes('butter') || lower.includes('yogurt')) {
+    return 'dairy'
+  }
+  if (lower.includes('pepper') || lower.includes('salt') || lower.includes('cinnamon') || lower.includes('spice') || lower.includes('oregano') || lower.includes('cumin')) {
+    return 'spice'
+  }
+  if (lower.includes('oil') || lower.includes('water') || lower.includes('juice') || lower.includes('syrup') || lower.includes('sauce') || lower.includes('vinegar') || lower.includes('coffee')) {
+    return 'liquid'
+  }
+  if (lower.includes('flour') || lower.includes('sugar') || lower.includes('powder') || lower.includes('soda') || lower.includes('yeast') || lower.includes('starch') || lower.includes('chocolate') || lower.includes('cocoa') || lower.includes('vanilla') || lower.includes('marshmallow') || lower.includes('cracker') || lower.includes('oat')) {
+    return 'baking'
+  }
+  return 'pantry'
+}
+
+function inferAllowedUnits(id: string, name: string): string[] {
+  const lower = `${id} ${name}`.toLowerCase()
+  if (lower.includes('oil') || lower.includes('water') || lower.includes('syrup') || lower.includes('juice') || lower.includes('vinegar') || lower.includes('milk') || lower.includes('extract')) {
+    return ['ml', 'l', 'cup', 'tbsp', 'tsp', 'g']
+  }
+  return ['g', 'kg', 'cup', 'tbsp', 'tsp', 'oz', 'lb']
+}
+
+const BASE_INGREDIENTS: StandardIngredient[] = [
   { id: 'salt', name: 'Salt', category: 'pantry', allowedUnits: ['g', 'tsp', 'tbsp', 'pinch'] },
   { id: 'black-pepper', name: 'Black pepper', category: 'spice', allowedUnits: ['g', 'tsp', 'pinch'] },
   { id: 'olive-oil', name: 'Olive oil', category: 'pantry', allowedUnits: ['ml', 'tbsp', 'tsp', 'cup'] },
@@ -54,7 +70,59 @@ export const STANDARD_INGREDIENTS: StandardIngredient[] = [
   { id: 'chicken-breast', name: 'Chicken breast', category: 'meat', allowedUnits: ['g', 'kg', 'piece'] },
   { id: 'ground-beef', name: 'Ground beef', category: 'meat', allowedUnits: ['g', 'kg'] },
   { id: 'parmesan-cheese', name: 'Parmesan cheese', category: 'dairy', allowedUnits: ['g', 'cup', 'tbsp'] }
-];
+]
+
+function buildStandardIngredients(): StandardIngredient[] {
+  const map = new Map<string, StandardIngredient>()
+  for (const base of BASE_INGREDIENTS) {
+    map.set(base.id, { ...base, allowedUnits: [...base.allowedUnits] })
+  }
+
+  const densityEntries = (densityTable.ingredients || []) as DensityIngredientSchema[]
+  for (const entry of densityEntries) {
+    const existing = map.get(entry.id)
+    if (existing) {
+      if (entry.allowedUnits && Array.isArray(entry.allowedUnits)) {
+        existing.allowedUnits = Array.from(new Set([...existing.allowedUnits, ...entry.allowedUnits]))
+      }
+      if (entry.category) {
+        existing.category = entry.category
+      }
+    } else {
+      const category = entry.category || inferCategory(entry.id, entry.name)
+      const allowedUnits = entry.allowedUnits || inferAllowedUnits(entry.id, entry.name)
+      map.set(entry.id, {
+        id: entry.id,
+        name: entry.name,
+        category,
+        allowedUnits
+      })
+    }
+  }
+
+  return Array.from(map.values())
+}
+
+export const ALL_MEASUREMENT_UNITS = [
+  'g',
+  'kg',
+  'oz',
+  'lb',
+  'ml',
+  'l',
+  'tsp',
+  'tbsp',
+  'cup',
+  'pinch',
+  'piece',
+  'slice',
+  'clove',
+  'can',
+  'bunch',
+  'dash'
+]
+
+export const STANDARD_INGREDIENTS: StandardIngredient[] = buildStandardIngredients()
 
 export interface StandardCookware {
   id: string;

@@ -7,6 +7,7 @@ interface SectionNodeProps {
   isFirst: boolean;
   isLast: boolean;
   isSelected: boolean;
+  canReorder?: boolean;
   accentColor?: string;
   parentName?: string;
   onSelect: () => void;
@@ -22,6 +23,7 @@ export function SectionNode({
   isFirst,
   isLast,
   isSelected,
+  canReorder = true,
   accentColor,
   parentName,
   onSelect,
@@ -52,40 +54,41 @@ export function SectionNode({
         if (!isSelected) onSelect();
       }}
     >
-      {/* Floating Reorder Controls directly on top of the card from sketch */}
-      {(!isFirst || !isLast) && (
-        <div className="section-top-reorder-toolbar" onClick={e => e.stopPropagation()}>
-          <button
-            type="button"
-            className={`section-reorder-btn ${isFirst ? 'is-disabled' : ''}`}
-            onClick={!isFirst ? onMoveLeft : undefined}
-            disabled={isFirst}
-            title={isFirst ? 'First section' : 'Move section left'}
-            aria-label="Move left"
-          >
-            <ArrowLeft size={16} />
-          </button>
+      {/* Floating Reorder Controls directly on top of the card */}
+      <div className="section-top-reorder-toolbar" onClick={e => e.stopPropagation()}>
+        <button
+          type="button"
+          className={`section-reorder-btn ${isFirst ? 'is-disabled' : ''}`}
+          onClick={!isFirst ? onMoveLeft : undefined}
+          disabled={isFirst}
+          title={!canReorder ? 'Only one section in this group' : isFirst ? 'First section' : 'Move section left'}
+          aria-label="Move left"
+        >
+          <ArrowLeft size={16} />
+        </button>
 
-          <div
-            className="section-drag-handle"
-            onPointerDown={onStartDrag}
-            title="Drag to slide column position in real time"
-          >
-            <GripHorizontal size={18} />
-          </div>
-
-          <button
-            type="button"
-            className={`section-reorder-btn ${isLast ? 'is-disabled' : ''}`}
-            onClick={!isLast ? onMoveRight : undefined}
-            disabled={isLast}
-            title={isLast ? 'Last section' : 'Move section right'}
-            aria-label="Move right"
-          >
-            <ArrowRight size={16} />
-          </button>
+        <div
+          className="section-drag-handle"
+          onPointerDown={onStartDrag}
+          title={canReorder ? 'Drag to slide column position in real time' : 'Drag section column'}
+          role="button"
+          tabIndex={0}
+          aria-label="Drag section"
+        >
+          <GripHorizontal size={18} />
         </div>
-      )}
+
+        <button
+          type="button"
+          className={`section-reorder-btn ${isLast ? 'is-disabled' : ''}`}
+          onClick={!isLast ? onMoveRight : undefined}
+          disabled={isLast}
+          title={!canReorder ? 'Only one section in this group' : isLast ? 'Last section' : 'Move section right'}
+          aria-label="Move right"
+        >
+          <ArrowRight size={16} />
+        </button>
+      </div>
 
       {/* Section Header */}
       <div className="section-node-header">

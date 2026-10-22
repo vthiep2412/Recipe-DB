@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import './styles/theme.css';
 import './styles/recipe.css';
 import './styles/timer.css';
+import './styles/ui.css'
+import './services/settingsStore';
 import { Navbar } from './components/Navbar';
 import { SearchPage } from './components/SearchPage';
 import { RecipeDetailView } from './components/RecipeDetailView';

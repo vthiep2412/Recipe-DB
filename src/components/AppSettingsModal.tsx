@@ -1,37 +1,58 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
-import { X } from 'lucide-preact';
+import { useState, useEffect, useRef } from 'preact/hooks'
+import { X, Monitor, Sun, Moon } from 'lucide-preact'
+import { useSettings, StandardUnit, ThemeMode } from '../services/settingsStore'
+import { Dropdown, Switch, SegmentedControl, SegmentedOption } from './ui'
 
 interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen: boolean
+  onClose: () => void
 }
 
 export function AppSettingsModal({ isOpen, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'tab1' | 'tab2'>('tab1');
-  const modalRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
+  const [activeTab, setActiveTab] = useState<'appearance' | 'recipeView'>('appearance')
+  const [settings, updateSettings] = useSettings()
+  const [shouldRender, setShouldRender] = useState(isOpen)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const modalRef = useRef<HTMLDivElement>(null)
+  const previousActiveElement = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (isOpen) {
+      setShouldRender(true)
+      const frame = requestAnimationFrame(() => {
+        setIsAnimating(true)
+      })
+      return () => cancelAnimationFrame(frame)
+    } else if (shouldRender) {
+      setIsAnimating(false)
+      const timer = setTimeout(() => {
+        setShouldRender(false)
+      }, 220)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen, shouldRender])
 
-    previousActiveElement.current = document.activeElement as HTMLElement | null;
+  useEffect(() => {
+    if (!shouldRender) return
 
-    const modalEl = modalRef.current;
+    previousActiveElement.current = document.activeElement as HTMLElement | null
+
+    const modalEl = modalRef.current
     if (modalEl) {
       const focusables = modalEl.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
+      )
       if (focusables.length > 0) {
-        focusables[0].focus();
+        focusables[0].focus()
       } else {
-        modalEl.focus();
+        modalEl.focus()
       }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
-        return;
+        onClose()
+        return
       }
 
       if (e.key === 'Tab' && modalEl) {
@@ -39,48 +60,69 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
           modalEl.querySelectorAll<HTMLElement>(
             'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
           )
-        );
+        )
 
         if (focusables.length === 0) {
-          e.preventDefault();
-          return;
+          e.preventDefault()
+          return
         }
 
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
 
         if (e.shiftKey) {
           if (document.activeElement === first || !modalEl.contains(document.activeElement)) {
-            e.preventDefault();
-            last.focus();
+            e.preventDefault()
+            last.focus()
           }
         } else {
           if (document.activeElement === last || !modalEl.contains(document.activeElement)) {
-            e.preventDefault();
-            first.focus();
+            e.preventDefault()
+            first.focus()
           }
         }
       }
-    };
+    }
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleKeyDown)
       if (previousActiveElement.current && typeof previousActiveElement.current.focus === 'function') {
-        previousActiveElement.current.focus();
+        previousActiveElement.current.focus()
       }
-    };
-  }, [isOpen, onClose]);
+    }
+  }, [isOpen, onClose])
 
-  if (!isOpen) return null;
+  const themeOptions: SegmentedOption<ThemeMode>[] = [
+    {
+      value: 'system',
+      label: 'System',
+      icon: <Monitor size={19} style={{ transform: 'translateY(0.0625rem)' }} />
+    },
+    {
+      value: 'light',
+      label: 'Light',
+      icon: <Sun size={16} />
+    },
+    {
+      value: 'dark',
+      label: 'Dark',
+      icon: <Moon size={16} />
+    }
+  ]
+
+  if (!shouldRender) return null
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      className={`modal-overlay ${isAnimating ? 'is-open' : ''}`}
+      onClick={onClose}
+    >
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="modal-card"
+        className={`modal-card ${isAnimating ? 'is-open' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-settings-title"
@@ -94,40 +136,82 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
         </div>
 
         <div className="modal-body">
-          <div className="modal-sidebar">
+          <div className="modal-sidebar" data-active-tab={activeTab}>
+            <span className="modal-sidebar-slider" aria-hidden="true" />
             <button
-              className={`modal-tab-btn ${activeTab === 'tab1' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tab1')}
+              type="button"
+              className={`modal-tab-btn ${activeTab === 'appearance' ? 'active' : ''}`}
+              onClick={() => setActiveTab('appearance')}
             >
-              Dummy Tab 1
+              Appearance
             </button>
             <button
-              className={`modal-tab-btn ${activeTab === 'tab2' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tab2')}
+              type="button"
+              className={`modal-tab-btn ${activeTab === 'recipeView' ? 'active' : ''}`}
+              onClick={() => setActiveTab('recipeView')}
             >
-              Dummy Tab 2
+              Recipe View
             </button>
           </div>
 
           <div className="modal-content-panel">
-            {activeTab === 'tab1' ? (
-              <div>
-                <h3 style={{ marginBottom: '0.75rem', fontSize: '1.125rem' }}>Dummy Tab 1 Content</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', lineHeight: '1.6' }}>
-                  This is placeholder configuration content for dummy tab 1. You can configure general recipe database preferences and custom unit conversions here in the future.
-                </p>
+            {activeTab === 'appearance' ? (
+              <div className="settings-section">
+                <div className="settings-row">
+                  <div className="settings-info">
+                    <span className="settings-label">Theme</span>
+                    <span className="settings-desc">Choose between light, dark, or system color scheme</span>
+                  </div>
+                  <div style={{ width: '20.5rem', maxWidth: '100%', flexShrink: 0 }}>
+                    <SegmentedControl
+                      options={themeOptions}
+                      value={settings.theme}
+                      onChange={theme => updateSettings({ theme })}
+                      ariaLabel="Theme selection"
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
-              <div>
-                <h3 style={{ marginBottom: '0.75rem', fontSize: '1.125rem' }}>Dummy Tab 2 Content</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', lineHeight: '1.6' }}>
-                  This is placeholder configuration content for dummy tab 2. Advanced sync settings and database integrations can be hooked up here later.
-                </p>
+              <div className="settings-section">
+                <div className="settings-row">
+                  <div className="settings-info">
+                    <span className="settings-label">Standard Unit</span>
+                    <span className="settings-desc">Automatically convert recipe ingredient measurements</span>
+                  </div>
+                  <Dropdown
+                    value={settings.standardUnit}
+                    onChange={val => updateSettings({ standardUnit: val as StandardUnit })}
+                    ariaLabel="Standard Unit"
+                    options={[
+                      { value: 'off', label: 'Follow Recipe' },
+                      { value: 'us', label: 'US Customary' },
+                      { value: 'metric', label: 'Metric' },
+                      { value: 'australia', label: 'Australian Metric' }
+                    ]}
+                  />
+                </div>
+
+                <div className={`settings-collapsible ${settings.standardUnit !== 'off' ? 'is-expanded' : ''}`}>
+                  <div className="settings-collapsible-inner">
+                    <div className="settings-row">
+                      <div className="settings-info">
+                        <span className="settings-label">Convert Cup/tsp/tbsp (Supported ingredients)</span>
+                        <span className="settings-desc">Convert cup and spoon measurements to weight for recognized baking and cooking ingredients</span>
+                      </div>
+                      <Switch
+                        checked={settings.convertVolumeUnits}
+                        onChange={convertVolumeUnits => updateSettings({ convertVolumeUnits })}
+                        ariaLabel="Convert Cup, tsp, tbsp"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
     </div>
-  );
+  )
 }

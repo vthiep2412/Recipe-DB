@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "description": "Culinary density database mapping cooking and baking ingredients to g/ml density factors, category, and units for app-wide conversion and Kitchen Studio integration",
+  "ingredients": [
+    {
+      "id": "all-purpose-flour",
+      "name": "All-purpose Flour",
+      "density": 0.528,
+      "aliases": [
+        "all purpose flour",
+        "all-purpose flour",
+        "ap flour",
+        "plain flour",
+        "white flour",
+        "flour"
+      ]
+    },
+    {
+      "id": "bread-flour",
+      "name": "Bread Flour",
+      "density": 0.537,
+      "aliases": [
+        "bread flour"
+      ]
+    },
+    {
+      "id": "cake-flour",
+      "name": "Cake Flour",
+      "density": 0.482,
+      "aliases": [
+        "cake flour",
+        "pastry flour"
+      ]
+    },
+    {
+      "id": "whole-wheat-flour",
+      "name": "Whole Wheat Flour",
+      "density": 0.55,
+      "aliases": [
+        "whole wheat flour",
+        "wheat flour"
+      ]
+    },
+    {
+      "id": "granulated-sugar",
+      "name": "Granulated Sugar",
+      "density": 0.845,
+      "aliases": [
+        "granulated sugar",
+        "white sugar",
+        "cane sugar",
+        "sugar"
+      ]
+    },
+    {
+      "id": "brown-sugar",
+      "name": "Brown Sugar",
+      "density": 0.93,
+      "aliases": [
+        "brown sugar",
+        "light brown sugar",
+        "dark brown sugar",
+        "packed brown sugar"
+      ]
+    },
+    {
+      "id": "powdered-sugar",
+      "name": "Powdered Sugar",
+      "density": 0.507,
+      "aliases": [
+        "powdered sugar",
+        "confectioners sugar",
+        "confectioner sugar",
+        "icing sugar"
+      ]
+    },
+    {
+      "id": "butter",
+      "name": "Butter",
+      "density": 0.959,
+      "aliases": [
+        "butter",
+        "unsalted butter",
+        "salted butter",
+        "melted butter",
+        "softened butter"
+      ]
+    },
+    {
+      "id": "vegetable-oil",
+      "name": "Vegetable Oil",
+      "density": 0.92,
+      "aliases": [
+        "vegetable oil",
+        "canola oil",
+        "olive oil",
+        "coconut oil",
+        "sunflower oil",
+        "oil"
+      ]
+    },
+    {
+      "id": "milk",
+      "name": "Milk",
+      "density": 1.0,
+      "aliases": [
+        "milk",
+        "whole milk",
+        "skim milk",
+        "buttermilk",
+        "almond milk",
+        "oat milk"
+      ]
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "density": 1.0,
+      "aliases": [
+        "water"
+      ]
+    },
+    {
+      "id": "heavy-cream",
+      "name": "Heavy Cream",
+      "density": 1.01,
+      "aliases": [
+        "heavy cream",
+        "whipping cream",
+        "double cream",
+        "cream"
+      ]
+    },
+    {
+      "id": "honey",
+      "name": "Honey",
+      "density": 1.42,
+      "aliases": [
+        "honey"
+      ]
+    },
+    {
+      "id": "maple-syrup",
+      "name": "Maple Syrup",
+      "density": 1.37,
+      "aliases": [
+        "maple syrup",
+        "pancake syrup"
+      ]
+    },
+    {
+      "id": "vanilla-extract",
+      "name": "Vanilla Extract",
+      "density": 1.0,
+      "aliases": [
+        "vanilla",
+        "vanilla extract",
+        "pure vanilla extract"
+      ]
+    },
+    {
+      "id": "baking-powder",
+      "name": "Baking Powder",
+      "density": 0.97,
+      "aliases": [
+        "baking powder"
+      ]
+    },
+    {
+      "id": "baking-soda",
+      "name": "Baking Soda",
+      "density": 1.22,
+      "aliases": [
+        "baking soda",
+        "bicarbonate of soda",
+        "sodium bicarbonate"
+      ]
+    },
+    {
+      "id": "salt",
+      "name": "Table Salt",
+      "density": 1.16,
+      "aliases": [
+        "salt",
+        "table salt",
+        "fine salt",
+        "sea salt"
+      ]
+    },
+    {
+      "id": "kosher-salt",
+      "name": "Kosher Salt",
+      "density": 0.85,
+      "aliases": [
+        "kosher salt"
+      ]
+    },
+    {
+      "id": "chocolate-chips",
+      "name": "Chocolate Chips",
+      "density": 0.718,
+      "aliases": [
+        "chocolate chips",
+        "dark chocolate chips",
+        "semi-sweet chocolate chips",
+        "milk chocolate chips",
+        "white chocolate chips",
+        "chocolate chunks"
+      ]
+    },
+    {
+      "id": "cocoa-powder",
+      "name": "Cocoa Powder",
+      "density": 0.423,
+      "aliases": [
+        "cocoa powder",
+        "unsweetened cocoa powder",
+        "dutch process cocoa",
+        "cocoa"
+      ]
+    },
+    {
+      "id": "mini-marshmallows",
+      "name": "Mini Marshmallows",
+      "density": 0.211,
+      "aliases": [
+        "mini marshmallows",
+        "marshmallows",
+        "marshmallow"
+      ]
+    },
+    {
+      "id": "graham-crackers",
+      "name": "Graham Crackers",
+      "density": 0.465,
+      "aliases": [
+        "graham crackers",
+        "crushed graham crackers",
+        "graham cracker crumbs"
+      ]
+    },
+    {
+      "id": "rolled-oats",
+      "name": "Rolled Oats",
+      "density": 0.38,
+      "aliases": [
+        "rolled oats",
+        "old fashioned oats",
+        "quick oats",
+        "oats"
+      ]
+    },
+    {
+      "id": "cornstarch",
+      "name": "Cornstarch",
+      "density": 0.541,
+      "aliases": [
+        "cornstarch",
+        "corn starch",
+        "cornflour"
+      ]
+    }
+  ]
+}

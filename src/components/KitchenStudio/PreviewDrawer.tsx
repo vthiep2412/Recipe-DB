@@ -201,7 +201,7 @@ export function PreviewDrawer({ graph, workspace }: PreviewDrawerProps) {
 
           {activeTab === 'fablang' && (
             <div className="preview-drawer-code-scroll">
-              <pre className="preview-drawer-code">{fablangCode}</pre>
+              <pre className="preview-drawer-code is-fablang">{fablangCode}</pre>
             </div>
           )}
 

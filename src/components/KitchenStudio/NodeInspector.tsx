@@ -231,7 +231,7 @@ export function NodeInspector({
     const currentIngId = activeMention.data?.isRemention
       ? `remention-${activeMention.data?.ingredientId || activeMention.displayText.toLowerCase()}`
       : (activeMention.data?.ingredientId || activeMention.displayText.toLowerCase());
-    const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId);
+    const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId || i.name.toLowerCase() === currentIngId.toLowerCase())
     const availableUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
 
     return (

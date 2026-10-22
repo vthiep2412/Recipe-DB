@@ -1610,16 +1610,19 @@ export function KitchenCanvas({
           const isRoot = !sectionParentMap[sec.id];
           let isFirst = false;
           let isLast = false;
+          let canReorder = false;
           if (isRoot) {
             const cIdx = clusters.findIndex(c => c.root.id === sec.id);
             isFirst = cIdx === 0;
             isLast = cIdx === clusters.length - 1;
+            canReorder = clusters.length > 1;
           } else {
             const parentCluster = clusters.find(c => c.subsections.some(s => s.id === sec.id));
             if (parentCluster) {
               const sIdx = parentCluster.subsections.findIndex(s => s.id === sec.id);
               isFirst = sIdx === 0;
               isLast = sIdx === parentCluster.subsections.length - 1;
+              canReorder = parentCluster.subsections.length > 1;
             }
           }
 
@@ -1646,6 +1649,7 @@ export function KitchenCanvas({
                 isFirst={isFirst}
                 isLast={isLast}
                 isSelected={selectedNodeId === sec.id}
+                canReorder={canReorder}
                 accentColor={sectionAccentMap[sec.id]}
                 parentName={sectionParentMap[sec.id]?.name}
                 onSelect={() => {

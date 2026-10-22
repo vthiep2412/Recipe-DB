@@ -76,7 +76,7 @@ function recipeStudioApiPlugin(): Plugin {
               }
               const rawId = data.id !== undefined && data.id !== null ? String(data.id) : '';
               const recipeId = (rawId || 'recipe-' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-');
-              const recipesDir = path.resolve(__dirname, 'src/recipes');
+              const recipesDir = path.resolve(import.meta.dirname, 'src/recipes');
               if (!fs.existsSync(recipesDir)) {
                 fs.mkdirSync(recipesDir, { recursive: true });
               }
