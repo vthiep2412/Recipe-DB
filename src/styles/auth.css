@@ -1,0 +1,536 @@
+/* Auth & Account Settings Styles */
+
+/* ══════════════════════════════════════════════════════════════
+   SCENE BACKDROP (Culinary Atmosphere for /auth route)
+══════════════════════════════════════════════════════════════ */
+.auth-page {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 3.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--background-primary-alt, #0d0d0d);
+  padding: 1.5rem;
+}
+
+.auth-backdrop {
+  position: absolute;
+  inset: 0;
+  background-image: url("https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/Chef_prepares_red_onion_at_kitchen_counter_for_cooking_in_the_morning.jpg/1200px-Chef_prepares_red_onion_at_kitchen_counter_for_cooking_in_the_morning.jpg");
+  background-size: cover;
+  background-position: center;
+  filter: blur(14px) brightness(0.35);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+[data-theme="light"] .auth-backdrop {
+  filter: blur(14px) brightness(0.7) opacity(0.35);
+}
+
+.auth-backdrop-tint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(var(--text-accent-rgb, 255, 122, 0), 0.12) 0%, rgba(0, 0, 0, 0.75) 65%);
+  pointer-events: none;
+}
+
+[data-theme="light"] .auth-backdrop-tint {
+  background: linear-gradient(135deg, rgba(var(--text-accent-rgb, 234, 88, 12), 0.08) 0%, rgba(248, 249, 250, 0.85) 65%);
+}
+
+.auth-page-center {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DESKTOP 16:9 CARD COMPONENT (SHARED SLIDING CARD)
+══════════════════════════════════════════════════════════════ */
+.pc-auth-container {
+  position: relative;
+  width: min(940px, 94vw);
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 6rem);
+  border-radius: var(--radius-l);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(22, 22, 22, 0.95);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  display: flex;
+}
+
+[data-theme="light"] .pc-auth-container {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.15);
+}
+
+.card-recipedb-brand {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--interactive-accent);
+  letter-spacing: -0.03rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Static Backing Halves */
+.pc-base-half {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2.5rem;
+  text-align: center;
+  z-index: 1;
+  gap: 1rem;
+}
+
+.pc-base-half h3 {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-normal);
+}
+
+.pc-base-half p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 300px;
+  line-height: 1.55;
+}
+
+.pc-toggle-action-btn {
+  background: transparent;
+  border: 2px solid var(--interactive-accent);
+  color: var(--interactive-accent);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 0.65rem 1.8rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pc-toggle-action-btn:hover {
+  background: var(--interactive-accent);
+  color: #ffffff;
+}
+
+/* The 16:9 Moving Inner Slider */
+.pc-sliding-box {
+  position: absolute;
+  top: 3.5%;
+  left: 2%;
+  width: 48%;
+  height: 93%;
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+[data-theme="light"] .pc-sliding-box {
+  background: #ffffff;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12);
+}
+
+/* State: shifted to right (sign up mode) */
+.pc-auth-container.is-signup .pc-sliding-box {
+  transform: translateX(100%);
+}
+
+/* Inner form track for the slider */
+.pc-slider-track {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pc-auth-container.is-signup .pc-slider-track {
+  transform: translateX(-50%);
+}
+
+.pc-form-pane {
+  width: 50%;
+  height: 100%;
+  padding: 2.2rem 2.4rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.15rem;
+  overflow-y: auto;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE SLIDING CARD COMPONENT (PORTRAIT CARD SLIDER)
+══════════════════════════════════════════════════════════════ */
+.mobile-auth-viewport {
+  position: relative;
+  width: min(390px, 92vw);
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .mobile-auth-viewport {
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+}
+
+.mobile-auth-track {
+  display: flex;
+  width: 200%;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mobile-auth-track.show-signup {
+  transform: translateX(-50%);
+}
+
+.mobile-auth-panel {
+  width: 50%;
+  flex-shrink: 0;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 2.25rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+[data-theme="light"] .mobile-auth-panel {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* Form Element Styles */
+.auth-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.auth-caption {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: 0.15rem;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.auth-field input {
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 0.6rem 0.85rem;
+  color: var(--text-normal);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.auth-field input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.auth-submit-btn {
+  background: var(--interactive-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-s);
+  padding: 0.72rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.auth-submit-btn:hover:not(:disabled) {
+  background: var(--interactive-accent-hover);
+}
+
+.auth-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-msg-banner {
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-s);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.auth-msg-banner.error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-red);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.auth-msg-banner.success {
+  background: rgba(51, 160, 88, 0.12);
+  color: var(--color-green);
+  border: 1px solid rgba(51, 160, 88, 0.25);
+}
+
+.mobile-switch-action-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mobile-switch-header {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.mobile-switch-solid-btn {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.mobile-switch-solid-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+  background: rgba(var(--text-accent-rgb, 255, 122, 0), 0.06);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AUTH MODAL OVERLAY
+══════════════════════════════════════════════════════════════ */
+.auth-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.auth-modal-container {
+  position: relative;
+  max-width: 960px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.auth-modal-close-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 30;
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.auth-modal-close-btn:hover {
+  color: var(--color-red);
+  border-color: var(--color-red);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ACCOUNT SETTINGS (/account route)
+══════════════════════════════════════════════════════════════ */
+.account-settings-container {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.account-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 1.25rem;
+}
+
+.account-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-normal);
+  letter-spacing: -0.02rem;
+}
+
+.account-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.account-card {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.account-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.account-card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-normal);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.account-card-desc {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.account-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.account-cooldown-badge {
+  font-size: 0.725rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  background: rgba(var(--text-accent-rgb, 255, 122, 0), 0.12);
+  color: var(--interactive-accent);
+  border: 1px solid rgba(var(--text-accent-rgb, 255, 122, 0), 0.28);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+}
+
+.account-danger-zone {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.03);
+}
+
+.account-danger-title {
+  color: var(--color-red);
+}
+
+.account-btn-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.account-secondary-btn {
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-s);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.account-secondary-btn:hover:not(:disabled) {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.account-danger-btn {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--color-red);
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-s);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.account-danger-btn:hover:not(:disabled) {
+  background: var(--color-red);
+  color: #ffffff;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .pc-sliding-box,
+  .pc-slider-track,
+  .mobile-auth-track,
+  .pc-toggle-action-btn,
+  .auth-submit-btn {
+    transition-duration: 0.01ms !important;
+  }
+}

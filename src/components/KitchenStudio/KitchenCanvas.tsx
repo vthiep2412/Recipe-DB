@@ -17,6 +17,8 @@ import { RecipeMetadataModal } from './RecipeMetadataModal';
 import { CascadeDeleteModal } from './CascadeDeleteModal';
 import { ExportRecipeModal } from './ExportRecipeModal';
 import { ReparentSectionModal } from './ReparentSectionModal';
+import { recipeStorageService } from '../../services/recipeStorageService';
+import { authStore } from '../../services/authStore';
 
 interface KitchenCanvasProps {
   workspace: StudioWorkspace;
@@ -1485,6 +1487,56 @@ export function KitchenCanvas({
   };
 
   // Open Export Recipe Modal
+  const [isSubmittingCloud, setIsSubmittingCloud] = useState(false);
+  const [authState, setAuthState] = useState(authStore.getState());
+
+  useEffect(() => {
+    const unsub = authStore.subscribe(state => setAuthState(state));
+    return () => unsub();
+  }, []);
+
+  const role = authState.role || authState.profile?.role;
+
+  const handleSubmitForReview = async () => {
+    if (!authState.user) {
+      authStore.openAuthModal('Please log in to submit your recipe for review.');
+      return;
+    }
+    setIsSubmittingCloud(true);
+    try {
+      const res = await recipeStorageService.submitRecipe(workspace, 'pending');
+      if (res.ok) {
+        showToast('Recipe submitted for review!');
+      } else {
+        showToast(`Submission failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Submission failed');
+    } finally {
+      setIsSubmittingCloud(false);
+    }
+  };
+
+  const handleDirectPublish = async () => {
+    if (!authState.user) {
+      authStore.openAuthModal('Please log in to publish.');
+      return;
+    }
+    setIsSubmittingCloud(true);
+    try {
+      const res = await recipeStorageService.submitRecipe(workspace, 'approved');
+      if (res.ok) {
+        showToast('Recipe published directly to catalog!');
+      } else {
+        showToast(`Publish failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Publish failed');
+    } finally {
+      setIsSubmittingCloud(false);
+    }
+  };
+
   const handleExport = () => {
     setIsExportModalOpen(true);
   };
@@ -1532,9 +1584,11 @@ export function KitchenCanvas({
           <button
             type="button"
             className="canvas-export-btn"
-            onClick={handleExport}
+            onClick={role === 'admin' ? handleDirectPublish : role === 'recipe_creator' ? handleSubmitForReview : handleExport}
+            disabled={isSubmittingCloud}
+            style={role === 'admin' ? { background: 'var(--color-green)', borderColor: 'var(--color-green)' } : undefined}
           >
-            Export to src/recipes
+            {role === 'admin' ? (isSubmittingCloud ? 'Publishing...' : 'Publish') : role === 'recipe_creator' ? (isSubmittingCloud ? 'Submitting...' : 'Submit for Review') : 'Export to src/recipes'}
           </button>
         </div>
       </header>
