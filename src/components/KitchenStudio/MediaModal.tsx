@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { Image, Video, RefreshCw, Trash2, Plus, X } from 'lucide-preact';
+import { localMediaStore } from '../../services/localMediaStore';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -23,40 +24,101 @@ export function MediaModal({
   currentUrls,
   onClose,
   onSave,
-  onSaveGallery
+  onSaveGallery,
 }: MediaModalProps) {
-  const effectiveMode: 'single' | 'gallery' = mode || (currentUrls !== undefined || onSaveGallery !== undefined ? 'gallery' : 'single');
+  const effectiveMode: 'single' | 'gallery' =
+    mode || (currentUrls !== undefined || onSaveGallery !== undefined ? 'gallery' : 'single');
 
   const [urlInput, setUrlInput] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [actualRef, setActualRef] = useState('');
   const [galleryList, setGalleryList] = useState<string[]>([]);
+  const [galleryPreviewMap, setGalleryPreviewMap] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const createdUrlsRef = useRef<Set<string>>(new Set());
+
+  // Resolve IDB blobs to preview URLs
+  const resolveRefToPreview = async (ref: string): Promise<string> => {
+    if (!ref) return '';
+    if (ref.startsWith('idb:')) {
+      try {
+        const blob = await localMediaStore.loadBlob(ref);
+        if (blob) {
+          const objectUrl = URL.createObjectURL(blob);
+          createdUrlsRef.current.add(objectUrl);
+          return objectUrl;
+        }
+      } catch {
+        // IDB fallback
+      }
+    }
+    return ref;
+  };
+
+  useEffect(() => {
+    return () => {
+      createdUrlsRef.current.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // Cleanup fallback
+        }
+      });
+      createdUrlsRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setUrlInput(currentUrl);
-      setPreviewUrl(currentUrl);
-      setGalleryList(currentUrls ? [...currentUrls] : (currentUrl ? [currentUrl] : []));
+      setActualRef(currentUrl);
+
+      resolveRefToPreview(currentUrl).then((resolved) => {
+        setPreviewUrl(resolved);
+      });
+
+      const list = currentUrls ? [...currentUrls] : currentUrl ? [currentUrl] : [];
+      setGalleryList(list);
+
+      // Resolve gallery previews
+      const map: Record<string, string> = {};
+      Promise.all(
+        list.map(async (ref) => {
+          map[ref] = await resolveRefToPreview(ref);
+        })
+      ).then(() => {
+        setGalleryPreviewMap({ ...map });
+      });
     }
   }, [isOpen, currentUrl, currentUrls]);
 
   if (!isOpen) return null;
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      if (effectiveMode === 'single') {
-        setPreviewUrl(result);
-        setUrlInput(result);
-      } else {
-        setGalleryList(prev => [...prev, result]);
-        setUrlInput('');
-      }
-    };
-    reader.readAsDataURL(file);
+
+    // 1. Instant object URL for zero-latency local preview
+    const objectUrl = URL.createObjectURL(file);
+    createdUrlsRef.current.add(objectUrl);
+    const assetId = `idb:asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // 2. Persist blob into IndexedDB
+    try {
+      await localMediaStore.saveBlob(assetId, file);
+    } catch {
+      // Storage quota fallback
+    }
+
+    if (effectiveMode === 'single') {
+      setPreviewUrl(objectUrl);
+      setActualRef(assetId);
+      setUrlInput('');
+    } else {
+      setGalleryList((prev) => [...prev, assetId]);
+      setGalleryPreviewMap((prev) => ({ ...prev, [assetId]: objectUrl }));
+      setUrlInput('');
+    }
   };
 
   const handleFileInputChange = (e: Event) => {
@@ -92,13 +154,18 @@ export function MediaModal({
     }
   };
 
-  const handleApplyUrl = () => {
+  const handleApplyUrl = async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
     if (effectiveMode === 'single') {
-      setPreviewUrl(trimmed);
+      const resolved = await resolveRefToPreview(trimmed);
+      setPreviewUrl(resolved);
+      setActualRef(trimmed);
+      setUrlInput('');
     } else {
-      setGalleryList(prev => [...prev, trimmed]);
+      const resolved = await resolveRefToPreview(trimmed);
+      setGalleryList((prev) => [...prev, trimmed]);
+      setGalleryPreviewMap((prev) => ({ ...prev, [trimmed]: resolved }));
       setUrlInput('');
     }
   };
@@ -106,18 +173,19 @@ export function MediaModal({
   const handleClearSingleMedia = () => {
     setUrlInput('');
     setPreviewUrl('');
+    setActualRef('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   const handleRemoveGalleryItem = (index: number) => {
-    setGalleryList(prev => prev.filter((_, idx) => idx !== index));
+    setGalleryList((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleSave = () => {
     if (effectiveMode === 'single') {
-      onSave?.(previewUrl.trim());
+      onSave?.(actualRef || previewUrl.trim());
     } else {
       onSaveGallery?.(galleryList);
       if (onSave) {
@@ -127,17 +195,19 @@ export function MediaModal({
     onClose();
   };
 
-  const modalTitle = title || (
-    effectiveMode === 'gallery'
+  const modalTitle =
+    title ||
+    (effectiveMode === 'gallery'
       ? 'Recipe Image Gallery'
-      : (mediaType === 'video' ? 'Recipe Video Manager' : 'Recipe Image Manager')
-  );
+      : mediaType === 'video'
+      ? 'Recipe Video Manager'
+      : 'Recipe Image Manager');
 
   const modalElement = (
     <div className="studio-modal-overlay" onClick={onClose}>
       <div
         className="studio-modal-card"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="media-modal-title"
@@ -230,8 +300,8 @@ export function MediaModal({
                           : 'Or enter video URL...'
                       }
                       value={urlInput}
-                      onInput={e => setUrlInput((e.target as HTMLInputElement).value)}
-                      onKeyDown={e => {
+                      onInput={(e) => setUrlInput((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           handleApplyUrl();
@@ -254,9 +324,13 @@ export function MediaModal({
             <div className="studio-gallery-media-section">
               {galleryList.length > 0 && (
                 <div className="studio-gallery-grid">
-                  {galleryList.map((url, idx) => (
+                  {galleryList.map((ref, idx) => (
                     <div key={idx} className="studio-gallery-item-card">
-                      <img src={url} alt={`Gallery item ${idx + 1}`} className="studio-gallery-thumb" />
+                      <img
+                        src={galleryPreviewMap[ref] || ref}
+                        alt={`Gallery item ${idx + 1}`}
+                        className="studio-gallery-thumb"
+                      />
                       <button
                         type="button"
                         className="studio-gallery-item-delete-btn"
@@ -279,7 +353,10 @@ export function MediaModal({
                 </div>
               )}
 
-              <div className="studio-unified-dropzone-wrapper" style={{ marginTop: galleryList.length > 0 ? '1rem' : '0' }}>
+              <div
+                className="studio-unified-dropzone-wrapper"
+                style={{ marginTop: galleryList.length > 0 ? '1rem' : '0' }}
+              >
                 <div
                   className={`studio-custom-dropzone ${isDragging ? 'is-dragging' : ''}`}
                   onDragOver={handleDragOver}
@@ -307,8 +384,8 @@ export function MediaModal({
                     className="studio-input"
                     placeholder="Or enter image URL to add..."
                     value={urlInput}
-                    onInput={e => setUrlInput((e.target as HTMLInputElement).value)}
-                    onKeyDown={e => {
+                    onInput={(e) => setUrlInput((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleApplyUrl();

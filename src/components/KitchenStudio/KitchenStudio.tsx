@@ -78,6 +78,7 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
 
   return (
     <StudioHub
+      onNavigate={onNavigate}
       onOpenWorkspace={id => onNavigate(`/kitchen-studio/making-recipe/${id}`)}
     />
   );
