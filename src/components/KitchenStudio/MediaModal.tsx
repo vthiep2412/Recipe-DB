@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { Image, Video, RefreshCw, Trash2, Plus, X } from 'lucide-preact';
+import { saveBlob } from '../../services/localMediaStore';
+import { preflightProcessImage } from '../../services/cloudinaryUpload';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -9,6 +11,7 @@ export interface MediaModalProps {
   title?: string;
   currentUrl?: string;
   currentUrls?: string[];
+  workspaceId?: string;
   onClose: () => void;
   onSave?: (url: string) => void;
   onSaveGallery?: (urls: string[]) => void;
@@ -21,6 +24,7 @@ export function MediaModal({
   title,
   currentUrl = '',
   currentUrls,
+  workspaceId = 'temp',
   onClose,
   onSave,
   onSaveGallery
@@ -43,20 +47,44 @@ export function MediaModal({
 
   if (!isOpen) return null;
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+
+    try {
+      // 1. Client-side canvas preflight
+      const processedBlob = await preflightProcessImage(file);
+
+      // 2. Save Blob in IndexedDB
+      const assetUuid = crypto.randomUUID();
+      const idbKey = `idb:${workspaceId}:${assetUuid}`;
+      await saveBlob(idbKey, processedBlob);
+
+      // 3. Local preview URL
+      const objectUrl = URL.createObjectURL(processedBlob);
+
       if (effectiveMode === 'single') {
-        setPreviewUrl(result);
-        setUrlInput(result);
+        setPreviewUrl(idbKey); // Stored ref key
+        setUrlInput(objectUrl);
       } else {
-        setGalleryList(prev => [...prev, result]);
+        setGalleryList(prev => [...prev, idbKey]);
         setUrlInput('');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Error processing file preflight:', err);
+      // Fallback
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        if (effectiveMode === 'single') {
+          setPreviewUrl(result);
+          setUrlInput(result);
+        } else {
+          setGalleryList(prev => [...prev, result]);
+          setUrlInput('');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleFileInputChange = (e: Event) => {
@@ -169,9 +197,9 @@ export function MediaModal({
                 <div className="studio-media-preview-container">
                   <div className="studio-media-preview-box">
                     {mediaType === 'picture' ? (
-                      <img src={previewUrl} alt="Preview" className="studio-preview-img" />
+                      <img src={urlInput || previewUrl} alt="Preview" className="studio-preview-img" />
                     ) : (
-                      <video src={previewUrl} controls className="studio-preview-video" />
+                      <video src={urlInput || previewUrl} controls className="studio-preview-video" />
                     )}
                   </div>
                   <div className="studio-preview-actions-bar">

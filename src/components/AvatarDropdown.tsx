@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
-import { User, Settings, Moon, Sun, LogOut, Monitor } from 'lucide-preact'
+import { User, Settings, Moon, Sun, LogOut, Monitor, Shield, ChefHat, LogIn } from 'lucide-preact'
 import { useSettings } from '../services/settingsStore'
+import { authUser, authProfile, signOut, openAuthModal } from '../services/authStore'
 
 interface Props {
   onOpenSettings: () => void
@@ -11,6 +12,9 @@ export function AvatarDropdown({ onOpenSettings }: Props) {
   const [isClosing, setIsClosing] = useState(false)
   const [settings, updateSettings] = useSettings()
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const user = authUser.value
+  const profile = authProfile.value
 
   const closeMenu = () => {
     if (isOpen && !isClosing) {
@@ -65,12 +69,73 @@ export function AvatarDropdown({ onOpenSettings }: Props) {
 
       {isOpen && (
         <div className={`avatar-dropdown ${isClosing ? 'anim-exit' : 'anim-enter'}`}>
-          <div className="dropdown-item disabled">
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <User size={16} />
-              Account settings
-            </span>
-          </div>
+          {user ? (
+            <>
+              <div className="dropdown-item" style={{ flexDirection: 'column', alignItems: 'flex-start', cursor: 'default' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+                  {profile?.display_name || user.email}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  @{profile?.username || 'user'} • {profile?.role || 'user'}
+                </span>
+              </div>
+
+              <div className="dropdown-divider" />
+
+              <a
+                href="/account"
+                className="dropdown-item"
+                onClick={closeMenu}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <User size={16} />
+                  Account settings
+                </span>
+              </a>
+
+              {(profile?.role === 'recipe_creator' || profile?.role === 'admin') && (
+                <a
+                  href="/kitchen-studio"
+                  className="dropdown-item"
+                  onClick={closeMenu}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <ChefHat size={16} />
+                    Kitchen Studio
+                  </span>
+                </a>
+              )}
+
+              {profile?.role === 'admin' && (
+                <a
+                  href="/admin"
+                  className="dropdown-item"
+                  onClick={closeMenu}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Shield size={16} />
+                    Admin Panel
+                  </span>
+                </a>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              className="dropdown-item"
+              onClick={() => {
+                closeMenu()
+                openAuthModal()
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <LogIn size={16} />
+                Sign In / Register
+              </span>
+            </button>
+          )}
+
+          <div className="dropdown-divider" />
 
           <button
             type="button"
@@ -142,17 +207,25 @@ export function AvatarDropdown({ onOpenSettings }: Props) {
             </div>
           </div>
 
-          <div className="dropdown-divider" />
-
-          <div
-            className="dropdown-item disabled"
-            style={{ color: '#ef4444' }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <LogOut size={16} />
-              Logout
-            </span>
-          </div>
+          {user && (
+            <>
+              <div className="dropdown-divider" />
+              <button
+                type="button"
+                className="dropdown-item"
+                style={{ color: '#ef4444' }}
+                onClick={() => {
+                  closeMenu()
+                  signOut()
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <LogOut size={16} />
+                  Logout
+                </span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

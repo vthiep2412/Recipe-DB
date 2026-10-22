@@ -1,5 +1,6 @@
-import { Search, Bookmark } from 'lucide-preact';
+import { Search, Bookmark, Shield, ChefHat } from 'lucide-preact';
 import { AvatarDropdown } from './AvatarDropdown';
+import { authProfile } from '../services/authStore';
 
 interface Props {
   onNavigate: (path: string) => void;
@@ -7,6 +8,8 @@ interface Props {
 }
 
 export function Navbar({ onNavigate, onOpenSettings }: Props) {
+  const profile = authProfile.value;
+
   return (
     <header className="nav-bar">
       <a
@@ -21,6 +24,34 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
       </a>
 
       <div className="nav-right">
+        {profile?.role === 'admin' && (
+          <a
+            href="/admin"
+            className="nav-btn"
+            title="Admin Panel"
+            onClick={e => {
+              e.preventDefault();
+              onNavigate('/admin');
+            }}
+          >
+            <Shield size={20} />
+          </a>
+        )}
+
+        {(profile?.role === 'recipe_creator' || profile?.role === 'admin') && (
+          <a
+            href="/kitchen-studio"
+            className="nav-btn"
+            title="Kitchen Studio"
+            onClick={e => {
+              e.preventDefault();
+              onNavigate('/kitchen-studio');
+            }}
+          >
+            <ChefHat size={20} />
+          </a>
+        )}
+
         <button
           className="nav-btn"
           aria-label="Search"
