@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
-import { ArrowLeft, Settings } from 'lucide-preact';
+import { ArrowLeft, Settings, Send, Check } from 'lucide-preact';
 import type {
   StudioWorkspace,
   CanvasStepNode,
@@ -17,6 +17,8 @@ import { RecipeMetadataModal } from './RecipeMetadataModal';
 import { CascadeDeleteModal } from './CascadeDeleteModal';
 import { ExportRecipeModal } from './ExportRecipeModal';
 import { ReparentSectionModal } from './ReparentSectionModal';
+import { recipeStorageService } from '../../services/recipeStorageService';
+import { authProfile } from '../../services/authStore';
 
 interface KitchenCanvasProps {
   workspace: StudioWorkspace;
@@ -169,6 +171,9 @@ export function KitchenCanvas({
   onUpdateWorkspace,
   onBackToHub
 }: KitchenCanvasProps) {
+  const profile = authProfile.value;
+  const [submitting, setSubmitting] = useState(false);
+
   // Canvas navigation state
   const [pan, setPan] = useState({ x: Math.max(window.innerWidth / 2 - 340, 40), y: 80 });
   const [zoom, setZoom] = useState(1);
@@ -309,7 +314,6 @@ export function KitchenCanvas({
       '.studio-canvas-node, .section-node-card, .studio-sidebar-toolbox, .studio-json-drawer, .studio-preview-drawer, .studio-inspector-card, .canvas-top-bar, .universal-dropdown-container, .universal-dropdown-portal, .studio-modal-overlay, .studio-modal-backdrop'
     );
 
-    // If click is outside the inspector and outside nodes, close the inspector
     const isInsideInspector = Boolean((e.target as HTMLElement).closest('.canvas-inspector-anchor, .studio-inspector-card, .universal-dropdown-container, .universal-dropdown-portal'));
     const isInsideSelectedStep = Boolean((e.target as HTMLElement).closest(`.studio-canvas-node[data-node-id="${selectedNodeId}"]`));
     if (!isInsideInspector && !isInsideSelectedStep) {
@@ -382,10 +386,7 @@ export function KitchenCanvas({
   const STEP_DEFAULT_WIDTH = 576;
   const STEP_DEFAULT_HEIGHT = 260;
 
-  const SECTION_ACCENT_COLORS = [
-    '#ff7a00'
-  ];
-
+  const SECTION_ACCENT_COLORS = ['#ff7a00'];
   const VERTICAL_GAP = 90;
   const HORIZONTAL_GAP = 80;
 
@@ -451,7 +452,6 @@ export function KitchenCanvas({
     };
   }, []);
 
-  // Group sections hierarchically: roots followed immediately by child subsections
   const { orderedSections, sectionParentMap, sectionAccentMap, clusters } = useMemo(() => {
     const roots = currentSections.filter(s => !s.parentSectionId || !currentSections.some(p => p.id === s.parentSectionId));
     const ordered: CanvasSection[] = [];
@@ -493,7 +493,6 @@ export function KitchenCanvas({
     };
   }, [currentSections]);
 
-  // Compute dynamic positions for sections and child steps with real-time sliding
   const nodePositions = useMemo(() => {
     const positions: Record<string, NodeLayoutPos> = {};
     const knownSectionIds = new Set(orderedSections.map(s => s.id));
@@ -527,7 +526,6 @@ export function KitchenCanvas({
       return Math.max(ownWidth, childrenTotalWidth);
     };
 
-    // First pass: compute resting base X and slot widths for all columns
     const baseColumnX: Record<string, number> = {};
     const slotWidths: Record<string, number> = {};
     let currentColumnX = 0;
@@ -554,12 +552,10 @@ export function KitchenCanvas({
 
     restingLayoutRef.current = { baseColumnX, slotWidths };
 
-    // Compute live real-time drag sliding deltas
     const liveDeltas: Record<string, number> = {};
     if (draggingSectionId) {
       const draggedCluster = clusters.find(c => c.root.id === draggingSectionId);
       if (draggedCluster) {
-        // Atomic cluster drag: root and all subsections move together
         for (const member of [draggedCluster.root, ...draggedCluster.subsections]) {
           liveDeltas[member.id] = dragCurrentDeltaX;
         }
@@ -571,7 +567,6 @@ export function KitchenCanvas({
         const draggedClusterCenter = draggedClusterStartX + draggedClusterWidth / 2 + dragCurrentDeltaX;
         const clusterIndex = clusters.indexOf(draggedCluster);
 
-        // Real-time 50% midpoint crossover detection for other clusters
         clusters.forEach((otherCluster, oIdx) => {
           if (oIdx === clusterIndex) return;
           const otherStartX = baseColumnX[otherCluster.root.id] || 0;
@@ -599,7 +594,6 @@ export function KitchenCanvas({
           }
         });
       } else {
-        // Individual subsection drag within cluster
         liveDeltas[draggingSectionId] = dragCurrentDeltaX;
         const parentCluster = clusters.find(c => c.subsections.some(s => s.id === draggingSectionId));
         if (parentCluster) {
@@ -631,7 +625,6 @@ export function KitchenCanvas({
       }
     }
 
-    // Second pass: position section headers and subtrees
     for (let secIdx = 0; secIdx < orderedSections.length; secIdx++) {
       const sec = orderedSections[secIdx];
       const isSub = Boolean(sec.parentSectionId);
@@ -747,7 +740,6 @@ export function KitchenCanvas({
     return positions;
   }, [workspace.canvasNodes, orderedSections, clusters, nodeSizes, draggingSectionId, dragCurrentDeltaX]);
 
-  // Compute overarching tree brackets connecting parent sections to their child subsections
   const overarchingBrackets = useMemo(() => {
     const brackets: {
       key: string;
@@ -803,7 +795,6 @@ export function KitchenCanvas({
     return brackets;
   }, [clusters, nodePositions]);
 
-  // Compute intra section connector wire paths
   const connectorWires = useMemo(() => {
     const wires: { fromId: string; toId: string; pathD: string }[] = [];
     const knownSectionIds = new Set(currentSections.map(s => s.id));
@@ -844,7 +835,6 @@ export function KitchenCanvas({
     return wires;
   }, [workspace.canvasNodes, currentSections, nodePositions, nodeSizes]);
 
-  // Compute yield dependency wires across producing and consuming steps
   const yieldWires = useMemo(() => {
     const wires: { fromId: string; toId: string; pathD: string; isHighlighted: boolean }[] = [];
 
@@ -884,7 +874,6 @@ export function KitchenCanvas({
     return wires;
   }, [workspace.canvasNodes, nodePositions, nodeSizes, selectedNodeId, highlightedStepId]);
 
-  // Section column drag reorder handlers with real-time sliding
   const handleStartDragSection = (e: PointerEvent, sectionId: string, _idx: number) => {
     e.stopPropagation();
     const target = e.currentTarget as HTMLElement;
@@ -967,7 +956,6 @@ export function KitchenCanvas({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
 
-      // Compute final delta from exact pointer release position
       const finalCanvasPointerX = (ev.clientX - panRef.current.x) / zoom;
       const finalDeltaX = finalCanvasPointerX - dragStartCanvasPointerXRef.current;
 
@@ -977,7 +965,6 @@ export function KitchenCanvas({
         if (draggedCluster) {
           const currentClusterIdx = clusters.indexOf(draggedCluster);
 
-          // Compute resting centers of all clusters
           const clusterRestingCenters = clusters.map(c => {
             const startX = baseColumnX[c.root.id] || 0;
             const last = c.subsections[c.subsections.length - 1] || c.root;
@@ -1025,7 +1012,6 @@ export function KitchenCanvas({
         if (parentCluster) {
           const currentSubIdx = parentCluster.subsections.findIndex(s => s.id === sectionId);
 
-          // Compute resting centers of all subsections in this cluster
           const subRestingCenters = parentCluster.subsections.map(s => {
             const startX = baseColumnX[s.id] || 0;
             const width = slotWidths[s.id] || SUBSECTION_DEFAULT_WIDTH;
@@ -1172,7 +1158,6 @@ export function KitchenCanvas({
     updateWorkspaceState({ ...workspace, sections: nextSections });
   };
 
-  // Section and subsection creation with strict depth 1 rules
   const handleAddSectionNode = () => {
     const newId = `sec-${Date.now()}`;
     const order = currentSections.length;
@@ -1235,7 +1220,6 @@ export function KitchenCanvas({
     });
   };
 
-  // Add step node with tree guardrails
   const handleAddStepNode = () => {
     let parentId: string;
     let targetSectionId: string;
@@ -1326,7 +1310,6 @@ export function KitchenCanvas({
     setSelectedNodeId(newId);
   };
 
-  // Cascade delete logic
   const handleRequestDeleteSection = (sectionId: string) => {
     const section = currentSections.find(s => s.id === sectionId);
     if (!section) return;
@@ -1437,7 +1420,6 @@ export function KitchenCanvas({
     }
   };
 
-  // Step Node modification
   const handleUpdateStep = (stepId: string, updated: Partial<CanvasStepNode>) => {
     const updatedNodes = workspace.canvasNodes.map(n => {
       if (n.id === stepId) {
@@ -1448,7 +1430,6 @@ export function KitchenCanvas({
     updateWorkspaceState({ ...workspace, canvasNodes: updatedNodes });
   };
 
-  // Jump to step with glow and auto centering
   const handleJumpToStep = (targetStepId: string) => {
     const targetPos = nodePositions[targetStepId];
     if (!targetPos || !canvasRef.current) return;
@@ -1484,9 +1465,33 @@ export function KitchenCanvas({
     }, 1600);
   };
 
-  // Open Export Recipe Modal
   const handleExport = () => {
     setIsExportModalOpen(true);
+  };
+
+  const handleSubmitCloud = async () => {
+    const isPublish = profile?.role === 'admin';
+    setSubmitting(true);
+    try {
+      const res = await recipeStorageService.submitWorkspaceRecipe(
+        workspace,
+        isPublish ? 'approved' : 'pending'
+      );
+
+      if (res.ok) {
+        showToast(
+          isPublish
+            ? 'Recipe published to Supabase catalog!'
+            : 'Recipe submitted for admin review!'
+        );
+      } else {
+        showToast(`Submission failed: ${res.error}`);
+      }
+    } catch (err: any) {
+      showToast(`Submission failed: ${err?.message}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1529,17 +1534,38 @@ export function KitchenCanvas({
 
         <div className="canvas-top-right">
           {toastMessage && <div className="canvas-export-toast">{toastMessage}</div>}
+
+          <button
+            type="button"
+            className="canvas-export-btn"
+            onClick={handleSubmitCloud}
+            disabled={submitting}
+            style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
+          >
+            {profile?.role === 'admin' ? (
+              <>
+                <Check size={14} />
+                <span>{submitting ? 'Publishing...' : 'Publish'}</span>
+              </>
+            ) : (
+              <>
+                <Send size={14} />
+                <span>{submitting ? 'Submitting...' : 'Submit for Review'}</span>
+              </>
+            )}
+          </button>
+
           <button
             type="button"
             className="canvas-export-btn"
             onClick={handleExport}
           >
-            Export to src/recipes
+            Export JSON
           </button>
         </div>
       </header>
 
-      {/* Pannable and Zoomable Board */}
+      {/* Board */}
       <div
         ref={transformLayerRef}
         className={`canvas-transform-layer ${isSmoothPan ? 'is-smooth-transitioning' : ''}`}
@@ -1548,9 +1574,7 @@ export function KitchenCanvas({
           transformOrigin: '0 0'
         }}
       >
-        {/* SVG Wire Layer for Connectors & Overarching Tree Brackets */}
         <svg className="canvas-wires-layer">
-          {/* Overarching Tree Brackets connecting Parent Sections to Child Subsections */}
           {overarchingBrackets.map(b => (
             <g key={b.key}>
               <path
@@ -1602,7 +1626,6 @@ export function KitchenCanvas({
           ))}
         </svg>
 
-        {/* Section Nodes */}
         {orderedSections.map((sec, idx) => {
           const pos = nodePositions[sec.id];
           if (!pos) return null;
@@ -1667,7 +1690,6 @@ export function KitchenCanvas({
           );
         })}
 
-        {/* Step Nodes */}
         {workspace.canvasNodes.map((node, index) => {
           const pos = nodePositions[node.id];
           if (!pos) return null;
@@ -1719,7 +1741,6 @@ export function KitchenCanvas({
                 }}
               />
 
-              {/* Sliding Inspector Card placed right beside the active step node */}
               {selectedNodeId === node.id && (activeMention || isYieldMode) && (
                 <div className="canvas-inspector-anchor">
                   <NodeInspector
@@ -1808,7 +1829,6 @@ export function KitchenCanvas({
         })}
       </div>
 
-      {/* Figma Style Right Sidebar Toolbox */}
       <SidebarToolbox
         selectedNodeId={selectedNodeId}
         selectedStep={selectedStep}
@@ -1827,10 +1847,8 @@ export function KitchenCanvas({
         }}
       />
 
-      {/* Collapsible Live Multi-Mode Preview Drawer */}
       <PreviewDrawer graph={activeGraph} workspace={workspace} />
 
-      {/* Recipe Settings & Metadata Modal with Obsidian Editor */}
       {isMetadataModalOpen && (
         <RecipeMetadataModal
           isOpen={isMetadataModalOpen}
@@ -1850,7 +1868,6 @@ export function KitchenCanvas({
         />
       )}
 
-      {/* Cascade Deletion Confirmation Dialog */}
       <CascadeDeleteModal
         isOpen={Boolean(deleteModalState?.isOpen)}
         type={deleteModalState?.type || 'step'}
@@ -1867,7 +1884,6 @@ export function KitchenCanvas({
         onCancel={() => setDeleteModalState(null)}
       />
 
-      {/* Media Modal */}
       <MediaModal
         isOpen={Boolean(mediaModalType)}
         mediaType={mediaModalType || 'picture'}
@@ -1892,7 +1908,6 @@ export function KitchenCanvas({
         }}
       />
 
-      {/* Custom Item Modal */}
       <CustomItemModal
         isOpen={Boolean(customItemModalType)}
         itemType={customItemModalType || 'ingredient'}
@@ -1912,7 +1927,6 @@ export function KitchenCanvas({
         }}
       />
 
-      {/* Export Recipe Modal */}
       <ExportRecipeModal
         isOpen={isExportModalOpen}
         workspace={workspace}
@@ -1930,7 +1944,6 @@ export function KitchenCanvas({
         }}
       />
 
-      {/* Reparent / Change Hierarchy Modal */}
       <ReparentSectionModal
         isOpen={isReparentModalOpen}
         section={selectedSection}
