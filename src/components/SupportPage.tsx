@@ -9,6 +9,7 @@ interface Props {
 }
 
 const CATEGORY_OPTIONS = [
+  { value: 'Creator Application', label: 'Creator Application' },
   { value: 'Account Deletion Restoration', label: 'Account Deletion Restoration' },
   { value: 'Technical Support', label: 'Technical Support' },
   { value: 'General Inquiry', label: 'General Inquiry' },

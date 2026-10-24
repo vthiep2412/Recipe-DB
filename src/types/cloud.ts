@@ -120,8 +120,9 @@ export interface CloudinaryServiceAPI {
 export interface CloudRecipeStorageAPI {
   submitRecipe(
     workspace: StudioWorkspace,
-    targetStatus: 'pending' | 'approved'
-  ): Promise<{ ok: boolean; id?: string; error?: string }>;
+    targetStatus: 'pending' | 'approved',
+    customSlug?: string
+  ): Promise<{ ok: boolean; id?: string; slug?: string; error?: string }>;
 
   listUserRecipes(ownerId: string): Promise<CloudRecipe[]>;
 

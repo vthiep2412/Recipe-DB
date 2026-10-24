@@ -277,12 +277,57 @@ export function App() {
   } else if (currentPath === '/admin') {
     mainContent = <AdminPanel onNavigate={navigate} />;
   } else if (currentPath.startsWith('/kitchen-studio')) {
-    mainContent = (
-      <KitchenStudio
-        currentPath={currentPath}
-        onNavigate={navigate}
-      />
-    );
+    if (role !== 'recipe_creator' && role !== 'admin') {
+      mainContent = (
+        <div
+          className="page-container"
+          style={{ textAlign: 'center', paddingTop: '4rem', maxWidth: '36rem', margin: '0 auto' }}
+          role="region"
+          aria-labelledby="access-denied-heading"
+        >
+          <h2
+            id="access-denied-heading"
+            style={{ fontSize: '1.5rem', marginBottom: '1rem', color: 'var(--color-primary, #ff5722)' }}
+          >
+            Creator Access Required
+          </h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1.75rem', lineHeight: '1.6' }}>
+            Kitchen Studio is reserved for Recipe Creators and Administrators.
+            Apply for creator privileges to compose and submit recipes.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: 500,
+                cursor: 'pointer'
+              }}
+              onClick={() => navigate('/support')}
+            >
+              Apply for Creator Privileges
+            </button>
+            <button
+              type="button"
+              className="tag-chip"
+              style={{ fontSize: '0.95rem', padding: '0.6rem 1.25rem', cursor: 'pointer' }}
+              onClick={() => navigate('/')}
+            >
+              Return to Catalog
+            </button>
+          </div>
+        </div>
+      );
+    } else {
+      mainContent = (
+        <KitchenStudio
+          currentPath={currentPath}
+          onNavigate={navigate}
+        />
+      );
+    }
   } else if (currentPath.startsWith('/recipes/')) {
     const recipeId = currentPath.replace('/recipes/', '');
     mainContent = <RecipeViewRoute recipeId={recipeId} onNavigate={navigate} />;

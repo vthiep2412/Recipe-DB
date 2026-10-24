@@ -68,16 +68,42 @@ function mapRecipeDetailsRow(row: any): CloudRecipeDetails {
   };
 }
 
+async function dataUrlToBlob(dataUrl: string): Promise<Blob | null> {
+  try {
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  } catch {
+    try {
+      const parts = dataUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const binary = atob(parts[1]);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+      return new Blob([array], { type: mime });
+    } catch {
+      return null;
+    }
+  }
+}
+
 async function uploadAllLocalRefsInWorkspace(workspace: StudioWorkspace): Promise<StudioWorkspace> {
   const jsonStr = JSON.stringify(workspace);
   const idbRegex = /"idb:([^"]+)"/g;
-  const matches = [...jsonStr.matchAll(idbRegex)];
-  if (matches.length === 0) {
+  const base64Regex = /"(data:image\/[^";]+;base64,[^"]+)"/g;
+
+  const idbMatches = [...jsonStr.matchAll(idbRegex)];
+  const base64Matches = [...jsonStr.matchAll(base64Regex)];
+
+  if (idbMatches.length === 0 && base64Matches.length === 0) {
     return workspace;
   }
 
   const replacementMap = new Map<string, string>();
-  for (const match of matches) {
+
+  // 1. Resolve IDB references
+  for (const match of idbMatches) {
     const rawKey = match[1];
     const fullKey = `idb:${rawKey}`;
     if (!replacementMap.has(fullKey)) {
@@ -89,6 +115,22 @@ async function uploadAllLocalRefsInWorkspace(workspace: StudioWorkspace): Promis
         }
       } catch {
         // Fallback for offline or unreachable asset
+      }
+    }
+  }
+
+  // 2. Resolve base64 data URIs
+  for (const match of base64Matches) {
+    const dataUrl = match[1];
+    if (!replacementMap.has(dataUrl)) {
+      try {
+        const blob = await dataUrlToBlob(dataUrl);
+        if (blob) {
+          const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
+          replacementMap.set(dataUrl, uploaded.secure_url);
+        }
+      } catch {
+        // Fallback for invalid or failed base64 upload
       }
     }
   }
@@ -206,18 +248,63 @@ export class SupabaseRecipeStorageProvider
   extends LocalRecipeStorageProvider
   implements CloudRecipeStorageAPI
 {
+  async checkRecipeSlugAvailable(
+    slug: string,
+    recipeId?: string
+  ): Promise<boolean> {
+    const cleanSlug = slugifyRecipeTitle(slug);
+    if (!cleanSlug) {
+      return false;
+    }
+
+    try {
+      const isUuid =
+        recipeId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipeId);
+
+      const { data, error } = await supabase.rpc('check_recipe_slug_available', {
+        p_slug: cleanSlug,
+        p_recipe_id: isUuid ? recipeId : null
+      });
+
+      if (!error && typeof data === 'boolean') {
+        return data;
+      }
+    } catch {
+      // Fallback
+    }
+
+    const collision = await this.checkSlugCollision(slug, recipeId);
+    return !collision.isTaken;
+  }
+
   override async checkSlugCollision(
     slug: string,
     currentWorkspaceId?: string
   ): Promise<CollisionCheckResult> {
-    const localResult = await super.checkSlugCollision(slug, currentWorkspaceId);
-    if (localResult.isTaken) {
-      return localResult;
-    }
-
     const cleanSlug = slugifyRecipeTitle(slug);
     if (!cleanSlug) {
       return { isTaken: false };
+    }
+
+    try {
+      const isUuid =
+        currentWorkspaceId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentWorkspaceId);
+
+      const { data, error } = await supabase.rpc('check_recipe_slug_available', {
+        p_slug: cleanSlug,
+        p_recipe_id: isUuid ? currentWorkspaceId : null
+      });
+
+      if (!error && typeof data === 'boolean') {
+        return {
+          isTaken: !data,
+          source: 'remote'
+        };
+      }
+    } catch {
+      // Fallback
     }
 
     try {
@@ -228,6 +315,9 @@ export class SupabaseRecipeStorageProvider
         .maybeSingle();
 
       if (!error && data) {
+        if (currentWorkspaceId && data.id === currentWorkspaceId) {
+          return { isTaken: false };
+        }
         return {
           isTaken: true,
           source: 'remote',
@@ -243,8 +333,9 @@ export class SupabaseRecipeStorageProvider
 
   async submitRecipe(
     workspace: StudioWorkspace,
-    targetStatus: 'pending' | 'approved'
-  ): Promise<{ ok: boolean; id?: string; error?: string }> {
+    targetStatus: 'pending' | 'approved',
+    customSlug?: string
+  ): Promise<{ ok: boolean; id?: string; slug?: string; error?: string }> {
     const authState = authStore.getState();
     if (!authState.user) {
       return { ok: false, error: 'User must be authenticated to submit recipes' };
@@ -264,6 +355,39 @@ export class SupabaseRecipeStorageProvider
         workspace.id
       );
 
+      let finalSlug = customSlug ? slugifyRecipeTitle(customSlug) : '';
+      if (finalSlug) {
+        const isAvail = await this.checkRecipeSlugAvailable(
+          finalSlug,
+          isExistingUuid ? workspace.id : undefined
+        );
+        if (!isAvail) {
+          return { ok: false, error: `Recipe slug "${finalSlug}" is already taken.` };
+        }
+      } else {
+        let baseSlug = slugifyRecipeTitle(
+          cleanWorkspace.title || cleanWorkspace.graph?.title || 'untitled-recipe'
+        );
+        if (!baseSlug) {
+          baseSlug = 'untitled-recipe';
+        }
+
+        finalSlug = baseSlug;
+        let collision = await this.checkSlugCollision(
+          finalSlug,
+          isExistingUuid ? workspace.id : undefined
+        );
+        let suffix = 1;
+        while (collision.isTaken && suffix < 100) {
+          finalSlug = `${baseSlug}-${suffix}`;
+          collision = await this.checkSlugCollision(
+            finalSlug,
+            isExistingUuid ? workspace.id : undefined
+          );
+          suffix++;
+        }
+      }
+
       if (isExistingUuid) {
         const { data: existingRecipe } = await supabase
           .from('recipes')
@@ -272,16 +396,21 @@ export class SupabaseRecipeStorageProvider
           .maybeSingle();
 
         if (existingRecipe) {
+          const updatePayload: Record<string, any> = {
+            title: cleanWorkspace.title || cleanWorkspace.graph?.title || 'Untitled Recipe',
+            description: cleanWorkspace.graph?.description || '',
+            image_url: heroImage,
+            tags: Array.isArray(tags) ? tags : [],
+            status: targetStatus,
+            updated_at: new Date().toISOString()
+          };
+          if (finalSlug) {
+            updatePayload.slug = finalSlug;
+          }
+
           const { error: updateError } = await supabase
             .from('recipes')
-            .update({
-              title: cleanWorkspace.title || cleanWorkspace.graph?.title || 'Untitled Recipe',
-              description: cleanWorkspace.graph?.description || '',
-              image_url: heroImage,
-              tags: Array.isArray(tags) ? tags : [],
-              status: targetStatus,
-              updated_at: new Date().toISOString()
-            })
+            .update(updatePayload)
             .eq('id', existingRecipe.id);
 
           if (updateError) {
@@ -307,24 +436,8 @@ export class SupabaseRecipeStorageProvider
           }
 
           await localMediaStore.clearWorkspace(workspace.id);
-          return { ok: true, id: existingRecipe.id };
+          return { ok: true, id: existingRecipe.id, slug: finalSlug || existingRecipe.slug };
         }
-      }
-
-      let baseSlug = slugifyRecipeTitle(
-        cleanWorkspace.title || cleanWorkspace.graph?.title || 'untitled-recipe'
-      );
-      if (!baseSlug) {
-        baseSlug = 'untitled-recipe';
-      }
-
-      let finalSlug = baseSlug;
-      let collision = await this.checkSlugCollision(finalSlug);
-      let suffix = 1;
-      while (collision.isTaken && suffix < 100) {
-        finalSlug = `${baseSlug}-${suffix}`;
-        collision = await this.checkSlugCollision(finalSlug);
-        suffix++;
       }
 
       const { data: recipeData, error: recipeError } = await supabase
@@ -367,7 +480,7 @@ export class SupabaseRecipeStorageProvider
 
       await localMediaStore.clearWorkspace(workspace.id);
 
-      return { ok: true, id: recipeData.id };
+      return { ok: true, id: recipeData.id, slug: finalSlug };
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Failed to submit recipe' };
     }
