@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
 import { Search as SearchIcon, Clock, ChefHat, Tag, X } from 'lucide-preact';
 import type { RecipeJSON } from '../types/recipe';
 import { searchPlaceholders } from '../data/searchPlaceholders';
@@ -37,11 +37,13 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Gather unique tags across recipes with clean fallback
-  const fallbackTags = ['cookies', 'dessert', 'smores', 'crumbl', 'chocolate', 'baking'];
+  const allTags = useMemo(() => {
+    const fallbackTags = ['cookies', 'dessert', 'smores', 'crumbl', 'chocolate', 'baking'];
   const recipeTags = Array.from(
     new Set(recipes.flatMap(r => r.tags || []).map(t => t.toLowerCase()))
   );
-  const allTags = Array.from(new Set([...recipeTags, ...fallbackTags])).sort();
+    return Array.from(new Set([...recipeTags, ...fallbackTags])).sort();
+  }, [recipes]);
 
   // Typewriter effect
   useEffect(() => {
@@ -140,7 +142,7 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
   };
 
   // Filter recipes: match title query and ensure all active tags are present
-  const filteredRecipes = recipes.filter(r => {
+  const filteredRecipes = useMemo(() => recipes.filter(r => {
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       if (!r.title.toLowerCase().includes(term)) {
@@ -157,9 +159,9 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
     }
 
     return true;
-  });
+  }), [recipes, searchTerm, selectedTags]);
 
-  const availableFilteredTags = allTags.filter(t => fuzzyMatch(t, tagQuery));
+  const availableFilteredTags = useMemo(() => allTags.filter(t => fuzzyMatch(t, tagQuery)), [allTags, tagQuery]);
 
   return (
     <div className="page-container">

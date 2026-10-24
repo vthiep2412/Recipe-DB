@@ -19,10 +19,10 @@ function recipeStudioApiPlugin(): Plugin {
 
           try {
             const originHostname = new URL(origin).hostname;
-            const trustedHosts = ['localhost', '127.0.0.1', '.trycloudflare.com'];
-            const isAllowed = trustedHosts.some(trusted =>
-              trusted.startsWith('.') ? originHostname.endsWith(trusted) : originHostname === trusted
-            );
+            const trustedHosts = ['localhost', '127.0.0.1'];
+            const isAllowed = trustedHosts.includes(originHostname);
+
+
 
             if (!isAllowed) {
               res.statusCode = 403;
@@ -93,7 +93,7 @@ function recipeStudioApiPlugin(): Plugin {
             } catch (err: any) {
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ ok: false, error: err.message }));
+              res.end(JSON.stringify({ ok: false, error: 'Internal server error while saving recipe' }));
             }
           });
           return;

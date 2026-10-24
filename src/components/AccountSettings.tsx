@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'preact/hooks';
-import { User, Key, LogOut, Trash2, Clock, Check, AlertCircle, ShieldAlert } from 'lucide-preact';
+import {
+  User,
+  Key,
+  LogOut,
+  Trash2,
+  Check,
+  X,
+  Pencil,
+  CircleUser,
+  AlertCircle,
+  ShieldAlert,
+} from 'lucide-preact';
 import { authStore } from '../services/authStore';
+import { Tooltip } from './Tooltip';
+import { ConfirmModal } from './ConfirmModal';
+import { toast } from 'sonner';
 
 export interface AccountSettingsProps {
   onNavigate: (path: string) => void;
@@ -9,22 +23,28 @@ export interface AccountSettingsProps {
 export function AccountSettings({ onNavigate }: AccountSettingsProps) {
   const [authState, setAuthState] = useState(authStore.getState());
 
-  // Identity Form
+  // Identity Form & Inline Edit State
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
+  const [inlineEditing, setInlineEditing] = useState<'none' | 'displayName' | 'username'>('none');
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
   const [identityLoading, setIdentityLoading] = useState(false);
-  const [identityMsg, setIdentityMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'displayName' | 'username';
+    pendingValue: string;
+  } | null>(null);
 
-  // Credentials Form
+  // Credentials State
   const [newEmail, setNewEmail] = useState('');
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [credentialsLoading, setCredentialsLoading] = useState(false);
-  const [credentialsMsg, setCredentialsMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Danger Zone
   const [dangerLoading, setDangerLoading] = useState(false);
-  const [dangerMsg, setDangerMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   useEffect(() => {
     const unsubscribe = authStore.subscribe((state) => {
@@ -60,123 +80,165 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
   const usernameLastChanged = authState.profile?.usernameLastChangedAt
     ? new Date(authState.profile.usernameLastChangedAt).getTime()
     : 0;
-  const usernameElapsed = now - usernameLastChanged;
+  const usernameElapsed = Math.max(0, now - usernameLastChanged);
   const isUsernameOnCooldown = usernameLastChanged > 0 && usernameElapsed < usernameCooldownMs;
-  const usernameRemainingDays = isUsernameOnCooldown
-    ? Math.ceil((usernameCooldownMs - usernameElapsed) / (24 * 60 * 60 * 1000))
-    : 0;
+  const usernameRemainingMs = Math.max(0, usernameCooldownMs - usernameElapsed);
+  const usernameRemainingDays = Math.min(30, Math.ceil(usernameRemainingMs / (24 * 60 * 60 * 1000)));
+  const usernameRemainingHours = Math.min(720, Math.ceil(usernameRemainingMs / (60 * 60 * 1000)));
 
   const displayNameCooldownMs = 24 * 60 * 60 * 1000;
   const displayNameLastChanged = authState.profile?.displayNameLastChangedAt
     ? new Date(authState.profile.displayNameLastChangedAt).getTime()
     : 0;
-  const displayNameElapsed = now - displayNameLastChanged;
+  const displayNameElapsed = Math.max(0, now - displayNameLastChanged);
   const isDisplayNameOnCooldown = displayNameLastChanged > 0 && displayNameElapsed < displayNameCooldownMs;
-  const displayNameRemainingHours = isDisplayNameOnCooldown
-    ? Math.ceil((displayNameCooldownMs - displayNameElapsed) / (60 * 60 * 1000))
-    : 0;
+  const displayNameRemainingMs = Math.max(0, displayNameCooldownMs - displayNameElapsed);
+  const displayNameRemainingHours = Math.min(24, Math.ceil(displayNameRemainingMs / (60 * 60 * 1000)));
+  const displayNameRemainingMinutes = Math.min(1440, Math.ceil(displayNameRemainingMs / (60 * 1000)));
 
-  const handleUpdateIdentity = async (e: Event) => {
-    e.preventDefault();
-    setIdentityMsg(null);
+  const displayNameCooldownText = isDisplayNameOnCooldown
+    ? `Display name can be changed once every 24 hours (${
+        displayNameRemainingHours > 1
+          ? `${displayNameRemainingHours}h remaining`
+          : `${displayNameRemainingMinutes}m remaining`
+      })`
+    : 'Display name can be updated once every 24 hours';
+
+  const usernameCooldownText = isUsernameOnCooldown
+    ? `Username can be changed once every 30 days (${
+        usernameRemainingDays > 1
+          ? `${usernameRemainingDays} days remaining`
+          : `${usernameRemainingHours}h remaining`
+      })`
+    : 'Username can be updated once every 30 days';
+
+  // Inline Display Name Handlers
+  const startEditDisplayName = () => {
+    if (isDisplayNameOnCooldown) return;
+    setEditDisplayName(displayName);
+    setInlineEditing('displayName');
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEditing('none');
+  };
+
+  const requestConfirmDisplayName = () => {
+    const trimmed = editDisplayName.trim();
+    if (!trimmed) return;
+    if (trimmed === displayName) {
+      setInlineEditing('none');
+      return;
+    }
+    setConfirmModal({
+      type: 'displayName',
+      pendingValue: trimmed,
+    });
+  };
+
+  // Inline Username Handlers
+  const startEditUsername = () => {
+    if (isUsernameOnCooldown) return;
+    setEditUsername(username);
+    setInlineEditing('username');
+  };
+
+  const requestConfirmUsername = () => {
+    const clean = editUsername.trim().replace(/^@/, '');
+    if (!clean) return;
+    if (clean === username) {
+      setInlineEditing('none');
+      return;
+    }
+    setConfirmModal({
+      type: 'username',
+      pendingValue: clean,
+    });
+  };
+
+  const handleConfirmModalSave = async () => {
+    if (!confirmModal) return;
     setIdentityLoading(true);
 
     try {
-      const cleanUsername = username.trim().replace(/^@/, '');
-      const profile = authState.profile;
-
-      if (profile && cleanUsername !== profile.username) {
-        if (isUsernameOnCooldown) {
-          setIdentityMsg({
-            type: 'error',
-            text: `Username can only be changed once every 30 days (${usernameRemainingDays} days left).`,
-          });
-          setIdentityLoading(false);
-          return;
+      if (confirmModal.type === 'displayName') {
+        const res = await authStore.updateDisplayName(confirmModal.pendingValue);
+        if (res?.error) {
+          toast.error(res.error);
+        } else {
+          setDisplayName(confirmModal.pendingValue);
+          toast.success('Display name updated.');
+          setInlineEditing('none');
+          setConfirmModal(null);
         }
-        const userRes = await authStore.updateUsername(cleanUsername);
-        if (userRes?.error) {
-          setIdentityMsg({ type: 'error', text: userRes.error });
-          setIdentityLoading(false);
-          return;
-        }
-      }
-
-      if (profile && displayName.trim() !== profile.displayName) {
-        if (isDisplayNameOnCooldown) {
-          setIdentityMsg({
-            type: 'error',
-            text: `Display name can only be changed once every 24 hours (${displayNameRemainingHours} hours left).`,
-          });
-          setIdentityLoading(false);
-          return;
-        }
-        const nameRes = await authStore.updateDisplayName(displayName.trim());
-        if (nameRes?.error) {
-          setIdentityMsg({ type: 'error', text: nameRes.error });
-          setIdentityLoading(false);
-          return;
+      } else {
+        const res = await authStore.updateUsername(confirmModal.pendingValue);
+        if (res?.error) {
+          toast.error(res.error);
+        } else {
+          setUsername(confirmModal.pendingValue);
+          toast.success('Username updated.');
+          setInlineEditing('none');
+          setConfirmModal(null);
         }
       }
-
-      setIdentityMsg({ type: 'success', text: 'Identity updated successfully.' });
     } catch (err: unknown) {
-      setIdentityMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to update profile.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Failed to save changes.');
     } finally {
       setIdentityLoading(false);
     }
   };
 
-  const handleUpdateCredentials = async (e: Event) => {
+  // Credentials Handlers
+  const handleUpdateEmail = async (e: Event) => {
     e.preventDefault();
-    setCredentialsMsg(null);
-
-    const emailToUpdate = newEmail.trim() !== authState.user?.email ? newEmail.trim() : undefined;
-    let passwordToUpdate: string | undefined = undefined;
-
-    if (newPassword) {
-      if (newPassword.length < 8) {
-        setCredentialsMsg({ type: 'error', text: 'New password must be at least 8 characters.' });
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setCredentialsMsg({ type: 'error', text: 'Passwords do not match.' });
-        return;
-      }
-      passwordToUpdate = newPassword;
-    }
-
-    if (!emailToUpdate && !passwordToUpdate) {
-      setCredentialsMsg({ type: 'error', text: 'No changes provided.' });
+    const emailToUpdate = newEmail.trim();
+    if (!emailToUpdate || emailToUpdate === authState.user?.email) {
+      setIsEditingEmail(false);
       return;
     }
 
     setCredentialsLoading(true);
     try {
-      const res = await authStore.updateCredentials({
-        email: emailToUpdate,
-        password: passwordToUpdate,
-      });
+      const res = await authStore.updateCredentials({ email: emailToUpdate });
       if (res?.error) {
-        setCredentialsMsg({ type: 'error', text: res.error });
+        toast.error(res.error);
       } else {
-        setCredentialsMsg({
-          type: 'success',
-          text: emailToUpdate
-            ? 'Confirmation sent to new email address. Please verify to finish email change.'
-            : 'Password updated successfully.',
-        });
-        setNewPassword('');
-        setConfirmPassword('');
+        toast.success('Confirmation sent to new email address. Please verify to complete the change.');
+        setIsEditingEmail(false);
       }
     } catch (err: unknown) {
-      setCredentialsMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to update credentials.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Failed to update email address.');
+    } finally {
+      setCredentialsLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: Event) => {
+    e.preventDefault();
+
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setCredentialsLoading(true);
+    try {
+      const res = await authStore.updateCredentials({ password: newPassword });
+      if (res?.error) {
+        toast.error(res.error);
+      } else {
+        toast.success('Password updated successfully.');
+        setNewPassword('');
+        setConfirmPassword('');
+        setIsChangingPassword(false);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update password.');
     } finally {
       setCredentialsLoading(false);
     }
@@ -197,19 +259,15 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
       return;
     }
     setDangerLoading(true);
-    setDangerMsg(null);
     try {
       const res = await authStore.scheduleAccountDeletion();
       if (res?.error) {
-        setDangerMsg({ type: 'error', text: res.error });
+        toast.error(res.error);
       } else {
-        setDangerMsg({ type: 'success', text: 'Account scheduled for deletion in 30 days.' });
+        toast.success('Account scheduled for deletion in 30 days.');
       }
     } catch (err: unknown) {
-      setDangerMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to schedule deletion.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Failed to schedule deletion.');
     } finally {
       setDangerLoading(false);
     }
@@ -217,25 +275,32 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
 
   const handleCancelDeletion = async () => {
     setDangerLoading(true);
-    setDangerMsg(null);
     try {
       const res = await authStore.cancelAccountDeletion();
       if (res?.error) {
-        setDangerMsg({ type: 'error', text: res.error });
+        toast.error(res.error);
       } else {
-        setDangerMsg({ type: 'success', text: 'Account deletion cancelled.' });
+        toast.success('Account deletion cancelled.');
       }
     } catch (err: unknown) {
-      setDangerMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Failed to cancel deletion.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Failed to cancel deletion.');
     } finally {
       setDangerLoading(false);
     }
   };
 
   const isScheduled = !!authState.profile?.scheduledDeleteAt;
+
+  if (authState.isAuthLoading) {
+    return (
+      <div className="page-container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Checking authorization...</p>
+      </div>
+    );
+  }
+  if (!authState.user) {
+    return null;
+  }
 
   return (
     <div className="account-settings-container">
@@ -246,7 +311,7 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
         </p>
       </div>
 
-      {/* 1. Identity */}
+      {/* 1. Public Identity (Variant A Stacked Card with Inline Pencil Edits) */}
       <section className="account-card">
         <div className="account-card-header">
           <div>
@@ -259,141 +324,289 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
           </div>
         </div>
 
-        {identityMsg && (
-          <div className={`auth-msg-banner ${identityMsg.type}`}>
-            {identityMsg.text}
-          </div>
-        )}
-
-        <form onSubmit={handleUpdateIdentity} className="account-form-grid">
-          <div className="auth-field">
-            <label htmlFor="account-display-name">Display Name</label>
-            <input
-              id="account-display-name"
-              type="text"
-              value={displayName}
-              onInput={(e) => setDisplayName((e.target as HTMLInputElement).value)}
-              disabled={identityLoading}
-              required
-            />
-            {isDisplayNameOnCooldown ? (
-              <span className="account-cooldown-badge">
-                <Clock size={12} /> Cooldown active: {displayNameRemainingHours}h remaining
-              </span>
-            ) : (
-              <span style={{ fontSize: '0.725rem', color: 'var(--text-faint)' }}>
-                Can be updated once every 24 hours.
-              </span>
-            )}
+        <div className="account-profile-hero">
+          <div className="account-profile-avatar">
+            <CircleUser size={40} />
           </div>
 
-          <div className="auth-field">
-            <label htmlFor="account-username">Username (@handle)</label>
-            <input
-              id="account-username"
-              type="text"
-              value={username}
-              onInput={(e) => setUsername((e.target as HTMLInputElement).value)}
-              disabled={identityLoading}
-              required
-            />
-            {isUsernameOnCooldown ? (
-              <span className="account-cooldown-badge">
-                <Clock size={12} /> Cooldown active: {usernameRemainingDays} days remaining
-              </span>
-            ) : (
-              <span style={{ fontSize: '0.725rem', color: 'var(--text-faint)' }}>
-                Can be updated once every 30 days.
-              </span>
-            )}
-          </div>
+          <div className="account-profile-meta">
+            {/* Display Name Row */}
+            <div className="account-field-row">
+              {inlineEditing === 'displayName' ? (
+                <>
+                  <input
+                    type="text"
+                    className="inline-edit-input name-input"
+                    value={editDisplayName}
+                    onInput={(e) => setEditDisplayName((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') requestConfirmDisplayName();
+                      if (e.key === 'Escape') cancelInlineEdit();
+                    }}
+                    disabled={identityLoading}
+                    autoFocus
+                    placeholder="Enter display name"
+                  />
+                  <div className="inline-edit-actions">
+                    <button
+                      type="button"
+                      className="inline-edit-action-btn btn-save"
+                      onClick={requestConfirmDisplayName}
+                      disabled={identityLoading}
+                      aria-label="Save display name"
+                    >
+                      <Check size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-edit-action-btn btn-cancel"
+                      onClick={cancelInlineEdit}
+                      disabled={identityLoading}
+                      aria-label="Cancel editing"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <Tooltip content={displayNameCooldownText}>
+                  <span className="account-field-interactive-group">
+                    <span
+                      className="account-display-name-text"
+                      aria-label={`Display name: ${displayName || 'User'}`}
+                    >
+                      {displayName || 'User'}
+                    </span>
+                    {!isDisplayNameOnCooldown && inlineEditing === 'none' && (
+                      <button
+                        type="button"
+                        className="inline-edit-pencil-btn"
+                        onClick={startEditDisplayName}
+                        aria-label="Edit display name"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </span>
+                </Tooltip>
+              )}
+            </div>
 
-          <div className="account-btn-row">
-            <button
-              type="submit"
-              className="auth-submit-btn"
-              style={{ width: 'auto', padding: '0.55rem 1.25rem' }}
-              disabled={identityLoading}
-            >
-              {identityLoading ? 'Saving...' : 'Save Identity'}
-            </button>
+            {/* Username Handle Row */}
+            <div className="account-field-row">
+              {inlineEditing === 'username' ? (
+                <>
+                  <input
+                    type="text"
+                    className="inline-edit-input user-input"
+                    value={editUsername}
+                    onInput={(e) => setEditUsername((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') requestConfirmUsername();
+                      if (e.key === 'Escape') cancelInlineEdit();
+                    }}
+                    disabled={identityLoading}
+                    autoFocus
+                    placeholder="Enter username"
+                  />
+                  <div className="inline-edit-actions">
+                    <button
+                      type="button"
+                      className="inline-edit-action-btn btn-save"
+                      onClick={requestConfirmUsername}
+                      disabled={identityLoading}
+                      aria-label="Save username"
+                    >
+                      <Check size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-edit-action-btn btn-cancel"
+                      onClick={cancelInlineEdit}
+                      disabled={identityLoading}
+                      aria-label="Cancel editing"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <Tooltip content={usernameCooldownText}>
+                  <span className="account-field-interactive-group">
+                    <span
+                      className="account-username-text"
+                      aria-label={`Username: @${username || 'user'}`}
+                    >
+                      @{username || 'user'}
+                    </span>
+                    {!isUsernameOnCooldown && inlineEditing === 'none' && (
+                      <button
+                        type="button"
+                        className="inline-edit-pencil-btn"
+                        onClick={startEditUsername}
+                        aria-label="Edit username"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    )}
+                  </span>
+                </Tooltip>
+              )}
+            </div>
           </div>
-        </form>
+        </div>
       </section>
 
-      {/* 2. Credentials */}
+      {/* 2. Credentials & Security (Separated into distinct section) */}
       <section className="account-card">
         <div className="account-card-header">
           <div>
             <h2 className="account-card-title">
-              <Key size={18} /> Credentials & Security
+              <Key size={18} /> Credentials &amp; Security
             </h2>
             <p className="account-card-desc">
-              Update your registered email or change your password.
+              Manage your registered email and password credentials.
             </p>
           </div>
         </div>
 
-        {credentialsMsg && (
-          <div className={`auth-msg-banner ${credentialsMsg.type}`}>
-            {credentialsMsg.text}
-          </div>
-        )}
-
-        <form onSubmit={handleUpdateCredentials} className="account-form-grid">
+        <div className="account-form-grid">
+          {/* Email Row */}
           <div className="auth-field">
-            <label htmlFor="account-email">Email Address</label>
-            <input
-              id="account-email"
-              type="email"
-              value={newEmail}
-              onInput={(e) => setNewEmail((e.target as HTMLInputElement).value)}
-              disabled={credentialsLoading}
-              required
-            />
-          </div>
-
-          <div className="auth-field">
-            <label htmlFor="account-new-password">New Password</label>
-            <input
-              id="account-new-password"
-              type="password"
-              placeholder="Leave blank to keep current"
-              value={newPassword}
-              onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
-              disabled={credentialsLoading}
-            />
-          </div>
-
-          {newPassword && (
-            <div className="auth-field">
-              <label htmlFor="account-confirm-password">Confirm New Password</label>
-              <input
-                id="account-confirm-password"
-                type="password"
-                placeholder="Re-enter new password"
-                value={confirmPassword}
-                onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
-                disabled={credentialsLoading}
-                required
-              />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+              <label htmlFor="account-email" style={{ margin: 0 }}>Email Address</label>
+              {!isEditingEmail && (
+                <button
+                  type="button"
+                  className="account-secondary-btn"
+                  style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
+                  onClick={() => setIsEditingEmail(true)}
+                >
+                  Change Email
+                </button>
+              )}
             </div>
-          )}
 
-          <div className="account-btn-row">
-            <button
-              type="submit"
-              className="auth-submit-btn"
-              style={{ width: 'auto', padding: '0.55rem 1.25rem' }}
-              disabled={credentialsLoading}
-            >
-              {credentialsLoading ? 'Updating...' : 'Update Credentials'}
-            </button>
+            {isEditingEmail ? (
+              <form onSubmit={handleUpdateEmail} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <input
+                  id="account-email"
+                  type="email"
+                  value={newEmail}
+                  onInput={(e) => setNewEmail((e.target as HTMLInputElement).value)}
+                  disabled={credentialsLoading}
+                  required
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="account-secondary-btn"
+                    style={{ padding: '0.35rem 0.75rem' }}
+                    onClick={() => {
+                      setNewEmail(authState.user?.email || '');
+                      setIsEditingEmail(false);
+                    }}
+                    disabled={credentialsLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    style={{ width: 'auto', padding: '0.35rem 0.85rem' }}
+                    disabled={credentialsLoading}
+                  >
+                    Save Email
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ fontSize: '0.875rem', color: 'var(--text-normal)' }}>
+                {authState.user?.email || 'No email registered'}
+              </div>
+            )}
           </div>
-        </form>
+
+          {/* Password Row */}
+          <div className="auth-field" style={{ borderTop: '1px solid var(--background-modifier-border)', paddingTop: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+              <div>
+                <label style={{ margin: 0 }}>Password</label>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono, monospace)', marginTop: '0.15rem' }}>
+                  ••••••••••••••••
+                </div>
+              </div>
+
+              {!isChangingPassword && (
+                <button
+                  type="button"
+                  className="account-secondary-btn"
+                  style={{ padding: '0.25rem 0.65rem', fontSize: '0.75rem' }}
+                  onClick={() => setIsChangingPassword(true)}
+                >
+                  Change Password
+                </button>
+              )}
+            </div>
+
+            {isChangingPassword && (
+              <form onSubmit={handleUpdatePassword} className="credentials-reveal-box">
+                <div className="auth-field" style={{ marginBottom: '0.75rem' }}>
+                  <label htmlFor="account-new-pass">New Password</label>
+                  <input
+                    id="account-new-pass"
+                    type="password"
+                    placeholder="Enter new password (min. 8 characters)"
+                    value={newPassword}
+                    onInput={(e) => setNewPassword((e.target as HTMLInputElement).value)}
+                    disabled={credentialsLoading}
+                    required
+                  />
+                </div>
+
+                <div className="auth-field" style={{ marginBottom: '1rem' }}>
+                  <label htmlFor="account-confirm-pass">Confirm New Password</label>
+                  <input
+                    id="account-confirm-pass"
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onInput={(e) => setConfirmPassword((e.target as HTMLInputElement).value)}
+                    disabled={credentialsLoading}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="account-secondary-btn"
+                    style={{ padding: '0.35rem 0.75rem' }}
+                    onClick={() => {
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setIsChangingPassword(false);
+                    }}
+                    disabled={credentialsLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    style={{ width: 'auto', padding: '0.35rem 0.85rem' }}
+                    disabled={credentialsLoading}
+                  >
+                    Update Password
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
       </section>
 
-      {/* 3. Session */}
+      {/* 3. Session Management */}
       <section className="account-card">
         <div className="account-card-header">
           <div>
@@ -437,12 +650,6 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
           </div>
         </div>
 
-        {dangerMsg && (
-          <div className={`auth-msg-banner ${dangerMsg.type}`}>
-            {dangerMsg.text}
-          </div>
-        )}
-
         {isScheduled ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div className="auth-msg-banner error" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -484,6 +691,27 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
           </div>
         )}
       </section>
+
+      {/* Centralized Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!confirmModal}
+        title={confirmModal?.type === 'displayName' ? 'Change Display Name' : 'Change Username'}
+        message={
+          confirmModal ? (
+            <>
+              Do you want to change {confirmModal.type === 'displayName' ? 'Display Name' : 'Username'} to this{' '}
+              <strong>
+                {confirmModal.type === 'username' ? `@${confirmModal.pendingValue}` : confirmModal.pendingValue}
+              </strong>?
+            </>
+          ) : null
+        }
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
+        isLoading={identityLoading}
+        onConfirm={handleConfirmModalSave}
+        onCancel={() => setConfirmModal(null)}
+      />
     </div>
   );
 }

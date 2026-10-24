@@ -14,7 +14,8 @@ const initialAuthState: AuthState = {
   role: null,
   isAuthLoading: true,
   showModal: false,
-  modalContextCaption: null
+  modalContextCaption: null,
+  modalInitialView: null
 };
 
 let currentAuthState: AuthState = { ...initialAuthState };
@@ -33,6 +34,7 @@ function mapProfileRow(row: any): UserProfile {
     usernameLastChangedAt: row.username_last_changed_at ?? null,
     displayNameLastChangedAt: row.display_name_last_changed_at ?? null,
     isArchived: Boolean(row.is_archived),
+    isAdminDeleted: Boolean(row.is_admin_deleted),
     scheduledDeleteAt: row.scheduled_delete_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -51,6 +53,55 @@ async function fetchProfileForUser(userId: string): Promise<UserProfile | null> 
       return null;
     }
     return mapProfileRow(data);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOrHealProfile(user: any): Promise<UserProfile | null> {
+  try {
+    const existing = await fetchProfileForUser(user.id);
+    if (existing) {
+      return existing;
+    }
+
+    // Profile row missing in database: auto-heal from user metadata
+    const meta = user.user_metadata || {};
+    const fallbackUsername = (meta.username || user.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`).replace(/^@/, '');
+    const fallbackDisplayName = meta.display_name || fallbackUsername;
+
+    try {
+      const { data: inserted, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          username: fallbackUsername,
+          display_name: fallbackDisplayName,
+          role: 'user'
+        })
+        .select()
+        .maybeSingle();
+
+      if (inserted && !insertError) {
+        return mapProfileRow(inserted);
+      }
+    } catch {
+      // Continue to in-memory profile if insert is rejected
+    }
+
+    return {
+      id: user.id,
+      username: fallbackUsername,
+      displayName: fallbackDisplayName,
+      role: 'user',
+      usernameLastChangedAt: null,
+      displayNameLastChangedAt: null,
+      isArchived: false,
+      isAdminDeleted: false,
+      scheduledDeleteAt: null,
+      createdAt: user.created_at || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
   } catch {
     return null;
   }
@@ -76,7 +127,7 @@ async function syncSession(): Promise<void> {
       email: session.user.email ?? ''
     };
 
-    const profile = await fetchProfileForUser(session.user.id);
+    const profile = await fetchOrHealProfile(session.user);
     currentAuthState = {
       ...currentAuthState,
       user: authUser,
@@ -115,7 +166,7 @@ if (typeof window !== 'undefined') {
       email: session.user.email ?? ''
     };
 
-    const profile = await fetchProfileForUser(session.user.id);
+    const profile = await fetchOrHealProfile(session.user);
     currentAuthState = {
       ...currentAuthState,
       user: authUser,
@@ -145,11 +196,12 @@ export const authStore: AuthStoreAPI = {
     return currentAuthState;
   },
 
-  openAuthModal(caption?: string): void {
+  openAuthModal(caption?: string, initialView?: 'login' | 'signup'): void {
     currentAuthState = {
       ...currentAuthState,
       showModal: true,
-      modalContextCaption: caption ?? null
+      modalContextCaption: caption ?? null,
+      modalInitialView: initialView ?? null
     };
     notifyListeners();
   },
@@ -158,26 +210,49 @@ export const authStore: AuthStoreAPI = {
     currentAuthState = {
       ...currentAuthState,
       showModal: false,
-      modalContextCaption: null
+      modalContextCaption: null,
+      modalInitialView: null
     };
     notifyListeners();
   },
 
-  async signIn(email: string, password: string): Promise<{ error?: string }> {
+  async signIn(identifier: string, password: string): Promise<{ error?: string }> {
     try {
+      const cleanIdentifier = identifier.trim();
+      let email = cleanIdentifier;
+
+      // Check if identifier is an email address or username
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier);
+      if (!isEmail) {
+        const usernameLookup = cleanIdentifier.replace(/^@/, '');
+        try {
+          const { data, error: rpcError } = await supabase.rpc('get_email_for_username', {
+            p_username: usernameLookup
+          });
+          if (data && !rpcError) {
+            email = data;
+          }
+        } catch {
+          // If RPC is unavailable fallback to identifier
+        }
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) {
-        return { error: error.message };
+        if (error.message.toLowerCase().includes('rate')) {
+          return { error: 'Too many login attempts. Please try again later.' };
+        }
+        return { error: 'Invalid email/username or password.' };
       }
 
       await syncSession();
       return {};
-    } catch (err: any) {
-      return { error: err?.message || 'Failed to sign in' };
+    } catch {
+      return { error: 'Invalid email/username or password.' };
     }
   },
 
@@ -185,7 +260,7 @@ export const authStore: AuthStoreAPI = {
     email: string;
     password: string;
     username: string;
-    displayName: string;
+    displayName?: string;
   }): Promise<{ error?: string }> {
     try {
       const { error } = await supabase.auth.signUp({
@@ -194,7 +269,7 @@ export const authStore: AuthStoreAPI = {
         options: {
           data: {
             username: params.username,
-            display_name: params.displayName
+            display_name: params.displayName || params.username
           }
         }
       });
@@ -368,17 +443,9 @@ export const authStore: AuthStoreAPI = {
     }
 
     try {
-      const targetDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          scheduled_delete_at: targetDate,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (error) {
-        return { error: error.message };
+      const { error: rpcError } = await supabase.rpc('schedule_account_deletion');
+      if (rpcError) {
+        return { error: rpcError.message };
       }
 
       const updatedProfile = await fetchProfileForUser(user.id);
@@ -400,16 +467,9 @@ export const authStore: AuthStoreAPI = {
     }
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          scheduled_delete_at: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (error) {
-        return { error: error.message };
+      const { error: rpcError } = await supabase.rpc('cancel_account_deletion');
+      if (rpcError) {
+        return { error: rpcError.message };
       }
 
       const updatedProfile = await fetchProfileForUser(user.id);

@@ -11,6 +11,7 @@ interface CompactDropdownProps {
   onChange: (val: string) => void;
   className?: string;
   placeholder?: string;
+  placement?: 'bottom' | 'top' | 'auto';
 }
 
 export function CompactDropdown({
@@ -18,10 +19,14 @@ export function CompactDropdown({
   value,
   onChange,
   className = '',
-  placeholder = 'Select...'
+  placeholder = 'Select...',
+  placement = 'auto'
 }: CompactDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isDropup, setIsDropup] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   const normalizedOptions: OptionItem[] = options.map(opt =>
     typeof opt === 'string' ? { value: opt, label: opt } : opt
@@ -30,15 +35,67 @@ export function CompactDropdown({
   const selectedItem = normalizedOptions.find(opt => opt.value === value);
   const displayLabel = selectedItem ? selectedItem.label : value || placeholder;
 
+  const closeDropdown = () => {
+    if (isOpen && !isClosing) {
+      setIsClosing(true);
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+      closeTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(false);
+        setIsClosing(false);
+        closeTimeoutRef.current = null;
+      }, 140);
+    }
+  };
+
+  const openDropdown = () => {
+    if (closeTimeoutRef.current !== null) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const shouldDropup =
+        placement === 'top' ||
+        (placement !== 'bottom' && spaceBelow < 180 && spaceAbove > spaceBelow);
+      setIsDropup(shouldDropup);
+    }
+
+    setIsClosing(false);
+    setIsOpen(true);
+  };
+
+  const toggleDropdown = () => {
+    if (isOpen && !isClosing) {
+      closeDropdown();
+    } else {
+      openDropdown();
+    }
+  };
+
   useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || isClosing) return;
+
     const handleOutsideClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        closeDropdown();
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
+      if (e.key === 'Escape') {
+        closeDropdown();
       }
     };
 
@@ -48,19 +105,19 @@ export function CompactDropdown({
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, isClosing]);
 
   return (
     <div className={`compact-dropdown-container ${className}`} ref={containerRef}>
       <button
         type="button"
-        className={`compact-dropdown-trigger ${isOpen ? 'is-open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
+        className={`compact-dropdown-trigger ${isOpen && !isClosing ? 'is-open' : ''}`}
+        onClick={toggleDropdown}
+        aria-expanded={isOpen && !isClosing}
       >
         <span className="compact-dropdown-label">{displayLabel}</span>
         <svg
-          className={`compact-dropdown-arrow ${isOpen ? 'is-rotated' : ''}`}
+          className={`compact-dropdown-arrow ${isOpen && !isClosing ? (isDropup ? 'is-dropup-rotated' : 'is-rotated') : ''}`}
           width="12"
           height="12"
           viewBox="0 0 12 12"
@@ -78,7 +135,9 @@ export function CompactDropdown({
       </button>
 
       {isOpen && (
-        <div className="compact-dropdown-menu">
+        <div
+          className={`compact-dropdown-menu ${isDropup ? 'is-dropup' : 'is-dropdown'} ${isClosing ? 'anim-exit' : 'anim-enter'}`}
+        >
           {normalizedOptions.map(opt => (
             <button
               key={opt.value}
@@ -86,7 +145,7 @@ export function CompactDropdown({
               className={`compact-dropdown-item ${opt.value === value ? 'is-selected' : ''}`}
               onClick={() => {
                 onChange(opt.value);
-                setIsOpen(false);
+                closeDropdown();
               }}
             >
               <span>{opt.label}</span>

@@ -15,6 +15,7 @@ interface UniversalDropdownProps {
   addNewLabel?: string;
   onSelect: (id: string) => void;
   onAddNew?: () => void;
+  placement?: 'bottom' | 'top' | 'auto';
 }
 
 export function UniversalDropdown({
@@ -23,24 +24,80 @@ export function UniversalDropdown({
   placeholder = 'Select item...',
   addNewLabel = '+ Add New',
   onSelect,
-  onAddNew
+  onAddNew,
+  placement = 'auto'
 }: UniversalDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isDropup, setIsDropup] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   const selectedItem = items.find(item => item.id === selectedId);
 
+  const closeDropdown = () => {
+    if (isOpen && !isClosing) {
+      setIsClosing(true);
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+      closeTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(false);
+        setIsClosing(false);
+        closeTimeoutRef.current = null;
+      }, 140);
+    }
+  };
+
+  const openDropdown = () => {
+    if (closeTimeoutRef.current !== null) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const shouldDropup =
+        placement === 'top' ||
+        (placement !== 'bottom' && spaceBelow < 260 && spaceAbove > spaceBelow);
+      setIsDropup(shouldDropup);
+    }
+
+    setIsClosing(false);
+    setIsOpen(true);
+  };
+
+  const toggleDropdown = () => {
+    if (isOpen && !isClosing) {
+      closeDropdown();
+    } else {
+      openDropdown();
+    }
+  };
+
   useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || isClosing) return;
+
     const handleOutsideClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        closeDropdown();
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
+      if (e.key === 'Escape') {
+        closeDropdown();
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
@@ -49,15 +106,15 @@ export function UniversalDropdown({
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, isClosing]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isClosing) {
       inputRef.current?.focus();
-    } else {
+    } else if (!isOpen) {
       setSearchTerm('');
     }
-  }, [isOpen]);
+  }, [isOpen, isClosing]);
 
   const filteredItems = items.filter(item =>
     item.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -78,20 +135,25 @@ export function UniversalDropdown({
     <div className="universal-dropdown-container" ref={containerRef}>
       <button
         type="button"
-        className="universal-dropdown-trigger"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
+        className={`universal-dropdown-trigger ${isOpen && !isClosing ? 'is-open' : ''}`}
+        onClick={toggleDropdown}
+        aria-expanded={isOpen && !isClosing}
       >
         <span className="universal-dropdown-value">
           {selectedItem ? selectedItem.label : placeholder}
         </span>
-        <span className="universal-dropdown-arrow">
+        <span
+          className={`universal-dropdown-arrow ${isOpen && !isClosing ? (isDropup ? 'is-dropup-rotated' : 'is-rotated') : ''}`}
+          style={{ transition: 'transform 0.2s cubic-bezier(0.23, 1, 0.32, 1)' }}
+        >
           <ChevronDown size={14} />
         </span>
       </button>
 
       {isOpen && (
-        <div className="universal-dropdown-menu">
+        <div
+          className={`universal-dropdown-menu ${isDropup ? 'is-dropup' : 'is-dropdown'} ${isClosing ? 'anim-exit' : 'anim-enter'}`}
+        >
           <div className="universal-dropdown-search-box">
             <input
               ref={inputRef}
@@ -108,7 +170,7 @@ export function UniversalDropdown({
               type="button"
               className="universal-dropdown-add-btn"
               onClick={() => {
-                setIsOpen(false);
+                closeDropdown();
                 onAddNew();
               }}
             >
@@ -130,7 +192,7 @@ export function UniversalDropdown({
                       className={`universal-dropdown-item ${item.id === selectedId ? 'is-selected' : ''}`}
                       onClick={() => {
                         onSelect(item.id);
-                        setIsOpen(false);
+                        closeDropdown();
                       }}
                     >
                       <span className="universal-dropdown-item-label">{item.label}</span>

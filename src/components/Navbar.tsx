@@ -6,9 +6,10 @@ import { authStore } from '../services/authStore';
 interface Props {
   onNavigate: (path: string) => void;
   onOpenSettings: () => void;
+  currentPath?: string;
 }
 
-export function Navbar({ onNavigate, onOpenSettings }: Props) {
+export function Navbar({ onNavigate, onOpenSettings, currentPath }: Props) {
   const [authState, setAuthState] = useState(authStore.getState());
 
   useEffect(() => {
@@ -19,6 +20,7 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
   }, []);
 
   const role = authState.role || authState.profile?.role;
+  const isScheduled = !!authState.profile?.scheduledDeleteAt;
 
   return (
     <header className="nav-bar">
@@ -30,11 +32,11 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
           onNavigate('/');
         }}
       >
-        recipedb
+        RecipeDB
       </a>
 
       <div className="nav-right">
-        {role === 'admin' && (
+        {!isScheduled && role === 'admin' && (
           <button
             type="button"
             className="nav-btn"
@@ -67,7 +69,11 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
           <Bookmark size={20} />
         </button>
 
-        <AvatarDropdown onOpenSettings={onOpenSettings} onNavigate={onNavigate} />
+        <AvatarDropdown
+          onOpenSettings={onOpenSettings}
+          onNavigate={onNavigate}
+          currentPath={currentPath}
+        />
       </div>
     </header>
   );

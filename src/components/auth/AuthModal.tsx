@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'preact/hooks';
-import { X } from 'lucide-preact';
 import { AuthCard } from './AuthCard';
 import { authStore } from '../../services/authStore';
 
@@ -75,16 +74,9 @@ export function AuthModal({ onNavigate }: AuthModalProps) {
       aria-label="Authentication modal"
     >
       <div className="auth-modal-container" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="auth-modal-close-btn"
-          onClick={() => authStore.closeAuthModal()}
-          aria-label="Close modal"
-        >
-          <X size={18} />
-        </button>
-
         <AuthCard
+          key={authState.modalInitialView ?? 'login'}
+          initialView={authState.modalInitialView ?? 'login'}
           contextCaption={authState.modalContextCaption}
           onSuccess={() => {
             authStore.closeAuthModal();

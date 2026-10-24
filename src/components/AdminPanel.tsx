@@ -46,19 +46,15 @@ function sanitizeMarkdownHtml(rawHtml: string): string {
   for (const el of allElements) {
     const attributeNames = el.getAttributeNames();
     for (const attr of attributeNames) {
-      if (attr.toLowerCase().startsWith('on')) {
+      if (attr.toLowerCase().startsWith('on') || attr.toLowerCase() === 'style') {
         el.removeAttribute(attr);
       }
     }
 
     if (el.hasAttribute('href')) {
       const href = el.getAttribute('href') || '';
-      const cleanHref = href.trim().toLowerCase();
-      if (
-        cleanHref.startsWith('javascript:') ||
-        cleanHref.startsWith('vbscript:') ||
-        cleanHref.startsWith('data:')
-      ) {
+      const cleanHref = href.trim();
+      if (!/^https?:\/\/|^mailto:/i.test(cleanHref)) {
         el.removeAttribute('href');
       } else {
         el.setAttribute('rel', 'noopener noreferrer');
@@ -68,8 +64,8 @@ function sanitizeMarkdownHtml(rawHtml: string): string {
 
     if (el.hasAttribute('src')) {
       const src = el.getAttribute('src') || '';
-      const cleanSrc = src.trim().toLowerCase();
-      if (!cleanSrc.startsWith('https://') && !cleanSrc.startsWith('http://')) {
+      const cleanSrc = src.trim();
+      if (!/^https?:\/\//i.test(cleanSrc)) {
         el.removeAttribute('src');
       }
     }
@@ -129,6 +125,11 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
   }, [onNavigate]);
 
   const loadData = async () => {
+    const currentAuth = authStore.getState();
+    const userRole = currentAuth.role || currentAuth.profile?.role;
+    if (!currentAuth.user || userRole !== 'admin') {
+      return;
+    }
     if (activeTab === 'recipes') {
       setRecipesLoading(true);
       try {
@@ -347,6 +348,18 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
       return matchesSearch && matchesFilter;
     });
   }, [applications, appsSearch, appsFilter]);
+
+  const userRole = authState.role || authState.profile?.role;
+  if (authState.isAuthLoading) {
+    return (
+      <div className="page-container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Checking admin authorization...</p>
+      </div>
+    );
+  }
+  if (!authState.user || userRole !== 'admin') {
+    return null;
+  }
 
   return (
     <div className="admin-shell">

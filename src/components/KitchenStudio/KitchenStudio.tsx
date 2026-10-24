@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
+import { authStore } from '../../services/authStore';
 import type { StudioWorkspace } from '../../types/orchestration';
 import { parseTextToStudioWorkspace } from '../../parser/orchestrationParser';
 import { StudioHub } from './StudioHub';
@@ -13,6 +14,17 @@ interface KitchenStudioProps {
 }
 
 export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
+  const authState = authStore.getState();
+  if (authState.isAuthLoading) {
+    return (
+      <div className="page-container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Checking authorization...</p>
+      </div>
+    );
+  }
+  if (!authState.user) {
+    return null;
+  }
   const [activeWorkspace, setActiveWorkspace] = useState<StudioWorkspace | null>(null);
 
   const isMakingRecipe = currentPath.startsWith('/kitchen-studio/making-recipe/');

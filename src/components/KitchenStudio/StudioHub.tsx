@@ -37,7 +37,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'sent' && authState.user) {
+    if (activeTab === 'sent' && authState.user && !authState.isAuthLoading) {
       setSentLoading(true);
       recipeStorageService
         .listUserRecipes(authState.user.id)

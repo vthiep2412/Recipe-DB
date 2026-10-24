@@ -24,9 +24,22 @@ import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
 
+export function escapeHtmlAttr(str?: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export function isSafeUrl(url?: string): boolean {
   if (!url) return false;
-  const trimmed = url.trim().toLowerCase();
+  return /^https?:\/\/|^mailto:/i.test(url.trim());
+}
+
+export function _legacyUrl(trimmed: string) {
   return (
     trimmed.startsWith('https://') ||
     trimmed.startsWith('http://') ||
@@ -39,9 +52,16 @@ function sanitizeMarkdown(raw?: string): string {
   const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
-    const safeHref = isSafeUrl(href) ? href : '#';
-    const titleAttr = title ? ` title="${title}"` : '';
-    return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${text}</a>`;
+    const safeHref = isSafeUrl(href) ? escapeHtmlAttr(href.trim()) : '#';
+    const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
+    return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
+  };
+  renderer.image = ({ href, title, text }) => {
+    const safeSrc = href && /^https?:\/\//i.test(href.trim()) ? escapeHtmlAttr(href.trim()) : '';
+    if (!safeSrc) return '';
+    const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
+    const altAttr = text ? ` alt="${escapeHtmlAttr(text)}"` : '';
+    return `<img src="${safeSrc}"${altAttr}${titleAttr} loading="lazy" />`;
   };
   return marked.parse(escaped, { renderer, async: false }) as string;
 }

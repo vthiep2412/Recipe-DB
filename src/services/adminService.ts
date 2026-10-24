@@ -18,6 +18,7 @@ function mapProfileRow(row: any): UserProfile {
     usernameLastChangedAt: row.username_last_changed_at ?? null,
     displayNameLastChangedAt: row.display_name_last_changed_at ?? null,
     isArchived: Boolean(row.is_archived),
+    isAdminDeleted: Boolean(row.is_admin_deleted),
     scheduledDeleteAt: row.scheduled_delete_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -71,8 +72,10 @@ export const adminService: AdminServiceAPI = {
       }
 
       if (params?.searchQuery?.trim()) {
-        const clean = params.searchQuery.trim();
-        query = query.ilike('title', `%${clean}%`);
+        const clean = params.searchQuery.trim().replace(/[^a-zA-Z0-9_\-\s]/g, '');
+        if (clean) {
+          query = query.ilike('title', `%${clean}%`);
+        }
       }
 
       const { data, error } = await query;
@@ -132,7 +135,7 @@ export const adminService: AdminServiceAPI = {
       }
 
       if (params?.searchQuery?.trim()) {
-        const q = params.searchQuery.trim().replace(/[(),]/g, '');
+        const q = params.searchQuery.trim().replace(/[^a-zA-Z0-9_\-\s]/g, '');
         if (q) {
           query = query.or(`username.ilike.%${q}%,display_name.ilike.%${q}%`);
         }
@@ -249,44 +252,9 @@ export const adminService: AdminServiceAPI = {
         app_id: applicationId
       });
 
-      if (!rpcError) {
-        return {};
+      if (rpcError) {
+        return { error: rpcError.message };
       }
-
-      const { data: appData, error: fetchError } = await supabase
-        .from('creator_applications')
-        .select('user_id')
-        .eq('id', applicationId)
-        .single();
-
-      if (fetchError || !appData) {
-        return { error: fetchError?.message || 'Application not found' };
-      }
-
-      const { error: appUpdateError } = await supabase
-        .from('creator_applications')
-        .update({
-          status: 'approved',
-          reviewed_at: new Date().toISOString()
-        })
-        .eq('id', applicationId);
-
-      if (appUpdateError) {
-        return { error: appUpdateError.message };
-      }
-
-      const { error: profileUpdateError } = await supabase
-        .from('profiles')
-        .update({
-          role: 'recipe_creator',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', appData.user_id);
-
-      if (profileUpdateError) {
-        return { error: profileUpdateError.message };
-      }
-
       return {};
     } catch (err: any) {
       return { error: err?.message || 'Failed to approve application' };

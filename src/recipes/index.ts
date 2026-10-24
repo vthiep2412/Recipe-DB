@@ -45,19 +45,34 @@ for (const mod of Object.values(jsonModules)) {
   }
 }
 
+let cachedAllRecipes: RecipeJSON[] | null = null;
+const parsedRecipeCache = new Map<string, RecipeJSON>();
+
+function getCachedOrParse(entry: RecipeEntry): RecipeJSON {
+  const existing = parsedRecipeCache.get(entry.id);
+  if (existing) return existing;
+  const parsed = entry.getParsed();
+  parsedRecipeCache.set(entry.id, parsed);
+  return parsed;
+}
+
 export function getAllRecipes(): RecipeJSON[] {
+  if (cachedAllRecipes) {
+    return cachedAllRecipes;
+  }
   const uniqueEntries = new Map<string, RecipeEntry>();
   for (const entry of Object.values(registry)) {
     if (!uniqueEntries.has(entry.id)) {
       uniqueEntries.set(entry.id, entry);
     }
   }
-  return Array.from(uniqueEntries.values()).map(entry => entry.getParsed());
+  cachedAllRecipes = Array.from(uniqueEntries.values()).map(entry => getCachedOrParse(entry));
+  return cachedAllRecipes;
 }
 
 export function getRecipeById(id: string): RecipeJSON | null {
   const entry = registry[id];
-  if (entry) return entry.getParsed();
+  if (entry) return getCachedOrParse(entry);
 
   // Check Kitchen Studio local storage
   try {

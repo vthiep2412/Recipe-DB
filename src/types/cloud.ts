@@ -10,6 +10,7 @@ export interface UserProfile {
   usernameLastChangedAt: string | null;
   displayNameLastChangedAt: string | null;
   isArchived: boolean;
+  isAdminDeleted: boolean;
   scheduledDeleteAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +28,7 @@ export interface AuthState {
   isAuthLoading: boolean;
   showModal: boolean;
   modalContextCaption: string | null;
+  modalInitialView: 'login' | 'signup' | null;
 }
 
 export type CreatorApplicationStatus = 'pending' | 'reviewed' | 'approved' | 'rejected';
@@ -81,14 +83,14 @@ export interface CloudinaryResult {
 export interface AuthStoreAPI {
   useAuth(): AuthState;
   getState(): AuthState;
-  openAuthModal(caption?: string): void;
+  openAuthModal(caption?: string, initialView?: 'login' | 'signup'): void;
   closeAuthModal(): void;
-  signIn(email: string, password: string): Promise<{ error?: string }>;
+  signIn(identifier: string, password: string): Promise<{ error?: string }>;
   signUp(params: {
     email: string;
     password: string;
     username: string;
-    displayName: string;
+    displayName?: string;
   }): Promise<{ error?: string }>;
   signOut(): Promise<void>;
   signOutAll(): Promise<void>;

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
+import { Eye, EyeOff } from 'lucide-preact';
 import { authStore } from '../../services/authStore';
+import { evaluatePassword } from '../../services/passwordStrength';
 
 export interface AuthCardProps {
   initialView?: 'login' | 'signup';
@@ -20,19 +22,22 @@ export function AuthCard({
   );
 
   // Login form state
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Sign up form state
-  const [signupDisplayName, setSignupDisplayName] = useState('');
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [signupSuccess, setSignupSuccess] = useState<string | null>(null);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     setView(initialView);
@@ -55,15 +60,15 @@ export function AuthCard({
 
   const handleLoginSubmit = async (e: Event) => {
     e.preventDefault();
-    if (!loginEmail.trim() || !loginPassword) {
-      setLoginError('Please enter both email and password.');
+    if (!loginIdentifier.trim() || !loginPassword) {
+      setLoginError('Please enter your email or username and password.');
       return;
     }
     setLoginLoading(true);
     setLoginError(null);
 
     try {
-      const res = await authStore.signIn(loginEmail.trim(), loginPassword);
+      const res = await authStore.signIn(loginIdentifier.trim(), loginPassword);
       if (res?.error) {
         setLoginError(res.error);
       } else {
@@ -78,10 +83,6 @@ export function AuthCard({
 
   const handleSignupSubmit = async (e: Event) => {
     e.preventDefault();
-    if (!signupDisplayName.trim()) {
-      setSignupError('Display name is required.');
-      return;
-    }
     const cleanUsername = signupUsername.trim().replace(/^@/, '');
     if (!cleanUsername) {
       setSignupError('Username is required.');
@@ -95,6 +96,16 @@ export function AuthCard({
       setSignupError('Password must be at least 8 characters.');
       return;
     }
+    if (signupPassword !== signupConfirmPassword) {
+      setSignupError('Passwords do not match.');
+      return;
+    }
+
+    const strength = evaluatePassword(signupPassword, [cleanUsername, signupEmail.trim()]);
+    if (strength.score < 2) {
+      setSignupError(strength.warning || 'Please choose a stronger password.');
+      return;
+    }
 
     setSignupLoading(true);
     setSignupError(null);
@@ -104,7 +115,6 @@ export function AuthCard({
         email: signupEmail.trim(),
         password: signupPassword,
         username: cleanUsername,
-        displayName: signupDisplayName.trim(),
       });
       if (res?.error) {
         setSignupError(res.error);
@@ -120,6 +130,11 @@ export function AuthCard({
       setSignupLoading(false);
     }
   };
+
+  const passwordStrength = evaluatePassword(signupPassword, [
+    signupUsername.trim(),
+    signupEmail.trim(),
+  ]);
 
   // Mobile viewport layout
   if (isMobile) {
@@ -142,13 +157,13 @@ export function AuthCard({
 
             <form onSubmit={handleLoginSubmit} className="auth-field" style={{ gap: '0.9rem' }}>
               <div className="auth-field">
-                <label htmlFor="mobile-login-email">Email address</label>
+                <label htmlFor="mobile-login-identifier">Email or username</label>
                 <input
-                  id="mobile-login-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={loginEmail}
-                  onInput={(e) => setLoginEmail((e.target as HTMLInputElement).value)}
+                  id="mobile-login-identifier"
+                  type="text"
+                  placeholder="you@example.com or username"
+                  value={loginIdentifier}
+                  onInput={(e) => setLoginIdentifier((e.target as HTMLInputElement).value)}
                   disabled={loginLoading}
                   required
                 />
@@ -156,15 +171,26 @@ export function AuthCard({
 
               <div className="auth-field">
                 <label htmlFor="mobile-login-password">Password</label>
-                <input
-                  id="mobile-login-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={loginPassword}
-                  onInput={(e) => setLoginPassword((e.target as HTMLInputElement).value)}
-                  disabled={loginLoading}
-                  required
-                />
+                <div className="auth-password-row">
+                  <input
+                    id="mobile-login-password"
+                    type={(showLoginPassword ? 'text' : 'password') as any}
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onInput={(e) => setLoginPassword((e.target as HTMLInputElement).value)}
+                    disabled={loginLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    title={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -203,24 +229,11 @@ export function AuthCard({
 
             <form onSubmit={handleSignupSubmit} className="auth-field" style={{ gap: '0.85rem' }}>
               <div className="auth-field">
-                <label htmlFor="mobile-signup-name">Display name</label>
-                <input
-                  id="mobile-signup-name"
-                  type="text"
-                  placeholder="Your Name"
-                  value={signupDisplayName}
-                  onInput={(e) => setSignupDisplayName((e.target as HTMLInputElement).value)}
-                  disabled={signupLoading}
-                  required
-                />
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="mobile-signup-username">Username (@handle)</label>
+                <label htmlFor="mobile-signup-username">Username</label>
                 <input
                   id="mobile-signup-username"
                   type="text"
-                  placeholder="handle"
+                  placeholder="username"
                   value={signupUsername}
                   onInput={(e) => setSignupUsername((e.target as HTMLInputElement).value)}
                   disabled={signupLoading}
@@ -243,15 +256,72 @@ export function AuthCard({
 
               <div className="auth-field">
                 <label htmlFor="mobile-signup-password">Password</label>
-                <input
-                  id="mobile-signup-password"
-                  type="password"
-                  placeholder="At least 8 characters"
-                  value={signupPassword}
-                  onInput={(e) => setSignupPassword((e.target as HTMLInputElement).value)}
-                  disabled={signupLoading}
-                  required
-                />
+                <div className="auth-password-row">
+                  <input
+                    id="mobile-signup-password"
+                    type={(showSignupPassword ? 'text' : 'password') as any}
+                    placeholder="At least 8 characters"
+                    value={signupPassword}
+                    onInput={(e) => setSignupPassword((e.target as HTMLInputElement).value)}
+                    disabled={signupLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                    title={showSignupPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showSignupPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {signupPassword && (
+                  <div>
+                    <div className="password-meter" aria-hidden="true">
+                      {[0, 1, 2, 3].map((step) => (
+                        <div
+                          key={step}
+                          className="password-meter-segment"
+                          style={{
+                            backgroundColor:
+                              passwordStrength.score >= step + 1
+                                ? passwordStrength.color
+                                : 'var(--background-modifier-border)',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="password-meter-label">
+                      <span>Strength: {passwordStrength.label}</span>
+                      {passwordStrength.warning && <span>{passwordStrength.warning}</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="mobile-signup-confirm-password">Confirm password</label>
+                <div className="auth-password-row">
+                  <input
+                    id="mobile-signup-confirm-password"
+                    type={(showConfirmPassword ? 'text' : 'password') as any}
+                    placeholder="Re-enter your password"
+                    value={signupConfirmPassword}
+                    onInput={(e) => setSignupConfirmPassword((e.target as HTMLInputElement).value)}
+                    disabled={signupLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -328,13 +398,13 @@ export function AuthCard({
 
             <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               <div className="auth-field">
-                <label htmlFor="pc-login-email">Email address</label>
+                <label htmlFor="pc-login-identifier">Email or username</label>
                 <input
-                  id="pc-login-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={loginEmail}
-                  onInput={(e) => setLoginEmail((e.target as HTMLInputElement).value)}
+                  id="pc-login-identifier"
+                  type="text"
+                  placeholder="you@example.com or username"
+                  value={loginIdentifier}
+                  onInput={(e) => setLoginIdentifier((e.target as HTMLInputElement).value)}
                   disabled={loginLoading}
                   required
                 />
@@ -342,15 +412,26 @@ export function AuthCard({
 
               <div className="auth-field">
                 <label htmlFor="pc-login-password">Password</label>
-                <input
-                  id="pc-login-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={loginPassword}
-                  onInput={(e) => setLoginPassword((e.target as HTMLInputElement).value)}
-                  disabled={loginLoading}
-                  required
-                />
+                <div className="auth-password-row">
+                  <input
+                    id="pc-login-password"
+                    type={(showLoginPassword ? 'text' : 'password') as any}
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onInput={(e) => setLoginPassword((e.target as HTMLInputElement).value)}
+                    disabled={loginLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    title={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -375,26 +456,13 @@ export function AuthCard({
             {signupError && <div className="auth-msg-banner error">{signupError}</div>}
             {signupSuccess && <div className="auth-msg-banner success">{signupSuccess}</div>}
 
-            <form onSubmit={handleSignupSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+            <form onSubmit={handleSignupSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div className="auth-field">
-                <label htmlFor="pc-signup-name">Display name</label>
-                <input
-                  id="pc-signup-name"
-                  type="text"
-                  placeholder="Your Name"
-                  value={signupDisplayName}
-                  onInput={(e) => setSignupDisplayName((e.target as HTMLInputElement).value)}
-                  disabled={signupLoading}
-                  required
-                />
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="pc-signup-username">Username (@handle)</label>
+                <label htmlFor="pc-signup-username">Username</label>
                 <input
                   id="pc-signup-username"
                   type="text"
-                  placeholder="handle"
+                  placeholder="username"
                   value={signupUsername}
                   onInput={(e) => setSignupUsername((e.target as HTMLInputElement).value)}
                   disabled={signupLoading}
@@ -417,15 +485,72 @@ export function AuthCard({
 
               <div className="auth-field">
                 <label htmlFor="pc-signup-password">Password</label>
-                <input
-                  id="pc-signup-password"
-                  type="password"
-                  placeholder="At least 8 characters"
-                  value={signupPassword}
-                  onInput={(e) => setSignupPassword((e.target as HTMLInputElement).value)}
-                  disabled={signupLoading}
-                  required
-                />
+                <div className="auth-password-row">
+                  <input
+                    id="pc-signup-password"
+                    type={(showSignupPassword ? 'text' : 'password') as any}
+                    placeholder="At least 8 characters"
+                    value={signupPassword}
+                    onInput={(e) => setSignupPassword((e.target as HTMLInputElement).value)}
+                    disabled={signupLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowSignupPassword(!showSignupPassword)}
+                    aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                    title={showSignupPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showSignupPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {signupPassword && (
+                  <div>
+                    <div className="password-meter" aria-hidden="true">
+                      {[0, 1, 2, 3].map((step) => (
+                        <div
+                          key={step}
+                          className="password-meter-segment"
+                          style={{
+                            backgroundColor:
+                              passwordStrength.score >= step + 1
+                                ? passwordStrength.color
+                                : 'var(--background-modifier-border)',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="password-meter-label">
+                      <span>Strength: {passwordStrength.label}</span>
+                      {passwordStrength.warning && <span>{passwordStrength.warning}</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="pc-signup-confirm-password">Confirm password</label>
+                <div className="auth-password-row">
+                  <input
+                    id="pc-signup-confirm-password"
+                    type={(showConfirmPassword ? 'text' : 'password') as any}
+                    placeholder="Re-enter your password"
+                    value={signupConfirmPassword}
+                    onInput={(e) => setSignupConfirmPassword((e.target as HTMLInputElement).value)}
+                    disabled={signupLoading}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="auth-password-toggle-btn"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
 
               <button

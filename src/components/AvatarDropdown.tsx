@@ -6,10 +6,14 @@ import {
   Sun,
   LogOut,
   LogIn,
+  UserPlus,
+  CircleUser,
+  UserRoundCog,
   Monitor,
   UtensilsCrossed,
   Shield,
   Lightbulb,
+  LifeBuoy,
 } from 'lucide-preact';
 import { useSettings } from '../services/settingsStore';
 import { authStore } from '../services/authStore';
@@ -17,9 +21,10 @@ import { authStore } from '../services/authStore';
 interface Props {
   onOpenSettings: () => void;
   onNavigate?: (path: string) => void;
+  currentPath?: string;
 }
 
-export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
+export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [settings, updateSettings] = useSettings();
@@ -93,9 +98,9 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
     }
   };
 
-  const handleOpenAuth = () => {
+  const handleOpenAuth = (mode: 'login' | 'signup' = 'login') => {
     closeMenu();
-    authStore.openAuthModal();
+    authStore.openAuthModal(undefined, mode);
   };
 
   const handleSignOut = async () => {
@@ -111,6 +116,9 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
 
   const role = authState.role || authState.profile?.role;
   const isAuthenticated = !!authState.user;
+  const isScheduled = !!authState.profile?.scheduledDeleteAt;
+  const activePath = currentPath ?? (typeof window !== 'undefined' ? window.location.pathname : '');
+  const isAccountPage = activePath === '/account';
 
   return (
     <div className="avatar-menu-wrapper" ref={menuRef}>
@@ -125,50 +133,61 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
 
       {isOpen && (
         <div className={`avatar-dropdown ${isClosing ? 'anim-exit' : 'anim-enter'}`}>
-          {/* Unauthenticated: Log in button */}
+          {/* Unauthenticated: Split Log in and Sign up buttons */}
           {!isAuthenticated ? (
-            <button
-              type="button"
-              className="dropdown-item"
-              onClick={handleOpenAuth}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <LogIn size={16} />
-                Log in
-              </span>
-            </button>
+            <>
+              <div className="dropdown-auth-split">
+                <button
+                  type="button"
+                  className="dropdown-auth-btn"
+                  onClick={() => handleOpenAuth('login')}
+                >
+                  <LogIn size={16} />
+                  <span>Log in</span>
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-auth-btn"
+                  onClick={() => handleOpenAuth('signup')}
+                >
+                  <UserPlus size={16} />
+                  <span>Sign up</span>
+                </button>
+              </div>
+              <div className="dropdown-divider" />
+            </>
           ) : (
             <>
-              {/* Authenticated user banner / name */}
-              <div
-                style={{
-                  padding: '0.4rem 0.75rem 0.2rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-faint)',
-                  borderBottom: '1px solid var(--background-modifier-border)',
-                  marginBottom: '0.35rem',
-                }}
-              >
-                <div style={{ fontWeight: 600, color: 'var(--text-normal)' }}>
-                  {authState.profile?.displayName || 'User'}
+              {/* Authenticated user merged header: avatar + name + settings button */}
+              <div className="dropdown-user-header">
+                <div className="dropdown-user-info">
+                  <div className="dropdown-user-avatar">
+                    <CircleUser size={32} />
+                  </div>
+                  <div className="dropdown-user-details">
+                    <span className="dropdown-user-name">
+                      {authState.profile?.displayName || authState.user?.email?.split('@')[0] || 'User'}
+                    </span>
+                    <span className="dropdown-user-handle">
+                      @{authState.profile?.username || authState.user?.email?.split('@')[0] || 'user'}
+                    </span>
+                  </div>
                 </div>
-                <div>@{authState.profile?.username || 'user'}</div>
+                {!isAccountPage && !isScheduled && (
+                  <button
+                    type="button"
+                    className="dropdown-user-settings-btn"
+                    onClick={() => handleNavigate('/account')}
+                    aria-label="Account settings"
+                  >
+                    <UserRoundCog size={18} />
+                  </button>
+                )}
               </div>
-
-              {/* Account Settings (All authenticated roles) */}
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => handleNavigate('/account')}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <User size={16} />
-                  Account settings
-                </span>
-              </button>
+              <div className="dropdown-divider" />
 
               {/* Standard user: Recipe Suggest (disabled, greyed) */}
-              {role === 'user' && (
+              {!isScheduled && role === 'user' && (
                 <div
                   className="dropdown-item disabled"
                   style={{ opacity: 0.5, cursor: 'not-allowed' }}
@@ -182,7 +201,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
               )}
 
               {/* Creator & Admin: Kitchen Studio */}
-              {(role === 'recipe_creator' || role === 'admin') && (
+              {!isScheduled && (role === 'recipe_creator' || role === 'admin') && (
                 <button
                   type="button"
                   className="dropdown-item"
@@ -196,7 +215,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
               )}
 
               {/* Admin: Admin Panel */}
-              {role === 'admin' && (
+              {!isScheduled && role === 'admin' && (
                 <button
                   type="button"
                   className="dropdown-item"
@@ -223,6 +242,18 @@ export function AvatarDropdown({ onOpenSettings, onNavigate }: Props) {
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Settings size={16} />
               App settings
+            </span>
+          </button>
+
+          {/* Support */}
+          <button
+            type="button"
+            className="dropdown-item"
+            onClick={() => handleNavigate('/support')}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <LifeBuoy size={16} />
+              Support
             </span>
           </button>
 
