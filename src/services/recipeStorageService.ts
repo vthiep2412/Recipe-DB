@@ -40,7 +40,7 @@ export interface RecipeStorageProvider {
 
 const WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
 
-function mapRecipeRow(row: any): CloudRecipe {
+export function mapRecipeRow(row: any): CloudRecipe {
   return {
     id: row.id,
     slug: row.slug ?? null,
@@ -57,7 +57,7 @@ function mapRecipeRow(row: any): CloudRecipe {
   };
 }
 
-function mapRecipeDetailsRow(row: any): CloudRecipeDetails {
+export function mapRecipeDetailsRow(row: any): CloudRecipeDetails {
   return {
     recipeId: row.recipe_id,
     sectionsAst: (row.sections_ast as Record<string, unknown>) || {},
@@ -155,7 +155,7 @@ export class LocalRecipeStorageProvider implements RecipeStorageProvider {
     }
 
     try {
-      const diskRecipes = getAllRecipes();
+      const diskRecipes = await getAllRecipes();
       const matchOnDisk = diskRecipes.find(r => {
         const idMatch = slugifyRecipeTitle(r.id) === cleanSlug;
         const titleMatch = slugifyRecipeTitle(r.title) === cleanSlug;
@@ -499,6 +499,35 @@ export class SupabaseRecipeStorageProvider
       }
 
       return data.map(mapRecipeRow);
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchApprovedRecipes(): Promise<{
+    recipe: CloudRecipe;
+    details: CloudRecipeDetails;
+  }[]> {
+    try {
+      const { data, error } = await supabase
+        .from('recipes')
+        .select('*, recipe_details(*)')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false });
+
+      if (error || !data) {
+        return [];
+      }
+
+      return data.map((row: any) => {
+        const detailsRow = Array.isArray(row.recipe_details)
+          ? row.recipe_details[0]
+          : row.recipe_details;
+        return {
+          recipe: mapRecipeRow(row),
+          details: mapRecipeDetailsRow(detailsRow || {})
+        };
+      });
     } catch {
       return [];
     }

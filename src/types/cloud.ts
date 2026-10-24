@@ -126,6 +126,11 @@ export interface CloudRecipeStorageAPI {
 
   listUserRecipes(ownerId: string): Promise<CloudRecipe[]>;
 
+  fetchApprovedRecipes(): Promise<{
+    recipe: CloudRecipe;
+    details: CloudRecipeDetails;
+  }[]>;
+
   fetchRecipeBySlugOrId(identifier: string): Promise<{
     recipe: CloudRecipe;
     details: CloudRecipeDetails;

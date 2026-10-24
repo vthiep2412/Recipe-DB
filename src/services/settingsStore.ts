@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'preact/hooks'
+import { userDataSyncService } from './userDataSyncService'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type StandardUnit = 'off' | 'us' | 'metric' | 'australia'
@@ -64,6 +65,7 @@ export function updateSettings(partial: Partial<AppSettings>): void {
   currentSettings = { ...currentSettings, ...partial }
   saveSettings(currentSettings)
   applyTheme(currentSettings.theme)
+  userDataSyncService.updateSettingsData(currentSettings as unknown as Record<string, unknown>)
   listeners.forEach(fn => fn(currentSettings))
 }
 

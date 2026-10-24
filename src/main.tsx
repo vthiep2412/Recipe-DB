@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import './styles/theme.css';
 import './styles/recipe.css';
 import './styles/timer.css';
@@ -21,79 +21,9 @@ import { AdminDeletionModal } from './components/auth/AdminDeletionModal';
 import { SupportPage } from './components/SupportPage';
 import { AdminPanel } from './components/AdminPanel';
 import { authStore } from './services/authStore';
-import { recipeStorageService } from './services/recipeStorageService';
 import { getAllRecipes, getRecipeById } from './recipes';
 import type { RecipeJSON } from './types/recipe';
-import type { CloudRecipe, CloudRecipeDetails } from './types/cloud';
 
-function mapCloudToRecipeJSON(cloud: {
-  recipe: CloudRecipe;
-  details: CloudRecipeDetails;
-}): RecipeJSON {
-  const { recipe, details } = cloud;
-  const sectionsAst = details.sectionsAst as any;
-  const rawSections = sectionsAst?.sections || [];
-  const rawCanvasNodes = sectionsAst?.canvasNodes || [];
-
-  const steps = rawCanvasNodes.map((n: any, idx: number) => ({
-    index: idx + 1,
-    rawText: n.instructionText || n.title || '',
-    tokens: (n.segments || []).map((seg: any) => {
-      if (seg.type === 'mention') {
-        const m = seg.mention;
-        return {
-          type:
-            m.type === 'ingredient'
-              ? 'ingredient'
-              : m.type === 'cookware'
-              ? 'cookware'
-              : m.type === 'timer'
-              ? 'timer'
-              : 'text',
-          name: m.displayText || '',
-          value: m.displayText || '',
-          durationText: m.data?.durationText || '',
-        };
-      }
-      return { type: 'text', value: seg.text || '' };
-    }),
-    id: n.id,
-    title: n.title,
-    sectionId: n.sectionId,
-    image: n.media?.pictureUrl,
-  }));
-
-  const mappedSections =
-    rawSections.length > 0
-      ? rawSections.map((sec: any) => ({
-          id: sec.id,
-          name: sec.name || 'Main',
-          steps: steps.filter((s: any) => s.sectionId === sec.id),
-        }))
-      : [
-          {
-            id: 'sec-main',
-            name: 'Instructions',
-            steps,
-          },
-        ];
-
-  return {
-    id: recipe.slug || recipe.id,
-    title: recipe.title,
-    description: recipe.description || '',
-    image: recipe.imageUrl,
-    gallery: [],
-    importantNotes: details.importantNotes || '',
-    servings: { base: 4, unitName: 'servings' },
-    times: { total: '30m' },
-    tags: recipe.tags || [],
-    metadata: {},
-    ingredients: (details.ingredientsIndex as any[]) || [],
-    sections: mappedSections,
-    rawCooklang: details.rawFablang || '',
-  };
-}
 
 function RecipeViewRoute({
   recipeId,
@@ -102,31 +32,17 @@ function RecipeViewRoute({
   recipeId: string;
   onNavigate: (path: string) => void;
 }) {
-  const [recipe, setRecipe] = useState<RecipeJSON | null>(() => getRecipeById(recipeId) || null);
-  const [loading, setLoading] = useState(!recipe);
+  const [recipe, setRecipe] = useState<RecipeJSON | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
-    const disk = getRecipeById(recipeId);
-    if (disk) {
-      setRecipe(disk);
-      setLoading(false);
-    }
+    setLoading(true);
 
-    recipeStorageService
-      .fetchRecipeBySlugOrId(recipeId)
-      .then((cloudData) => {
+    getRecipeById(recipeId)
+      .then((data) => {
         if (!isMounted) return;
-        if (cloudData) {
-          const authState = authStore.getState();
-          const isOwner = authState.user?.id === cloudData.recipe.ownerId;
-          const isAdmin = authState.role === 'admin' || authState.profile?.role === 'admin';
-          const isApproved = cloudData.recipe.status === 'approved';
-
-          if (isApproved || isOwner || isAdmin) {
-            setRecipe(mapCloudToRecipeJSON(cloudData));
-          }
-        }
+        setRecipe(data);
         setLoading(false);
       })
       .catch(() => {
@@ -172,7 +88,25 @@ export function App() {
   const [settings] = useSettings();
   const mainRef = useRef<HTMLElement>(null);
 
-  const recipes = useMemo(() => getAllRecipes(), []);
+  const [recipes, setRecipes] = useState<RecipeJSON[]>([]);
+  const [isRecipesLoading, setIsRecipesLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllRecipes()
+      .then((data) => {
+        if (!isMounted) return;
+        setRecipes(data);
+        setIsRecipesLoading(false);
+      })
+      .catch(() => {
+        if (isMounted) setIsRecipesLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -238,6 +172,7 @@ export function App() {
       mainContent = (
         <SearchPage
           recipes={recipes}
+          isLoading={isRecipesLoading}
           onSelectRecipe={(id) => navigate(`/recipes/${id}`)}
         />
       );
@@ -336,6 +271,7 @@ export function App() {
     mainContent = (
       <SearchPage
         recipes={recipes}
+        isLoading={isRecipesLoading}
         onSelectRecipe={(id) => navigate(`/recipes/${id}`)}
       />
     );

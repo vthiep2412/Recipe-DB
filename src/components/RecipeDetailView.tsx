@@ -11,7 +11,8 @@ import {
   Check,
   CookingPot,
   AlertTriangle,
-  Play
+  Play,
+  Bookmark
 } from 'lucide-preact';
 import { marked } from 'marked';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
@@ -20,6 +21,7 @@ import { formatFraction, parseFraction } from '../parser/cooklangParser';
 import { convertUnit } from '../parser/unitConverter';
 import { useSettings } from '../services/settingsStore';
 import { startAlarmLoop, stopAlarmLoop, isRinging } from '../services/timerAudio';
+import { userDataSyncService } from '../services/userDataSyncService';
 import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
@@ -144,6 +146,18 @@ interface RecipeViewState {
 
 export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const loadInitialState = (): RecipeViewState => {
+    const cloudProgress = userDataSyncService.getRecipeProgress(recipe.id);
+    if (cloudProgress) {
+      return {
+        activeMode: cloudProgress.sidebarMode === 'cook' ? 'cooking' : 'prepare',
+        prepChecks: cloudProgress.checkedPrepItems || [],
+        cookChecks: cloudProgress.checkedCookingItems || [],
+        activeSectionId: cloudProgress.activeSectionId || undefined,
+        sectionFocus: cloudProgress.activeSectionId
+          ? { [cloudProgress.activeSectionId]: cloudProgress.activeStepIndex ?? 0 }
+          : undefined
+      };
+    }
     if (typeof window === 'undefined') return {};
     try {
       const raw = localStorage.getItem(`recipe_view_${recipe.id || 'default'}`);
@@ -194,6 +208,50 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       setLightboxImage(recipe.image);
     }
   }, [recipe.image]);
+
+  const [bookmarked, setBookmarked] = useState(() => userDataSyncService.isBookmarked(recipe.id));
+
+  useEffect(() => {
+    let isMounted = true;
+    setBookmarked(userDataSyncService.isBookmarked(recipe.id));
+
+    userDataSyncService.hydrateBookmarks().then(() => {
+      if (isMounted) {
+        setBookmarked(userDataSyncService.isBookmarked(recipe.id));
+      }
+    });
+
+    userDataSyncService.hydrateRecipeProgress(recipe.id).then((cloud) => {
+      if (!isMounted || !cloud) return;
+      if (cloud.sidebarMode) {
+        setSidebarMode(cloud.sidebarMode === 'cook' ? 'cooking' : 'prepare');
+      }
+      if (cloud.checkedPrepItems) {
+        setCheckedPrepItems(new Set(cloud.checkedPrepItems));
+      }
+      if (cloud.checkedCookingItems) {
+        setCheckedCookingItems(new Set(cloud.checkedCookingItems));
+      }
+      if (cloud.activeSectionId) {
+        setActiveSectionId(cloud.activeSectionId);
+        if (typeof cloud.activeStepIndex === 'number') {
+          setSectionActiveSteps((prev) => ({
+            ...prev,
+            [cloud.activeSectionId!]: cloud.activeStepIndex!
+          }));
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [recipe.id]);
+
+  const handleToggleBookmark = () => {
+    const next = userDataSyncService.toggleBookmark(recipe.id);
+    setBookmarked(next);
+  };
 
   const getScrollContainer = (target: HTMLElement | null): HTMLElement | null => {
     if (!target) return null;
@@ -252,18 +310,27 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const activeStep = activeSectionId ? (sectionActiveSteps[activeSectionId] ?? 0) : 0;
+    const toSave: RecipeViewState = {
+      activeMode: sidebarMode,
+      prepChecks: Array.from(checkedPrepItems),
+      cookChecks: Array.from(checkedCookingItems),
+      sectionFocus: sectionActiveSteps,
+      activeSectionId: activeSectionId
+    };
     try {
-      const toSave: RecipeViewState = {
-        activeMode: sidebarMode,
-        prepChecks: Array.from(checkedPrepItems),
-        cookChecks: Array.from(checkedCookingItems),
-        sectionFocus: sectionActiveSteps,
-        activeSectionId: activeSectionId
-      };
       localStorage.setItem(`recipe_view_${recipe.id || 'default'}`, JSON.stringify(toSave));
     } catch {
       // Fallback on storage write error
     }
+
+    userDataSyncService.updateRecipeProgress(recipe.id, {
+      sidebarMode: sidebarMode === 'cooking' ? 'cook' : 'prep',
+      checkedPrepItems: Array.from(checkedPrepItems),
+      checkedCookingItems: Array.from(checkedCookingItems),
+      activeStepIndex: activeStep,
+      activeSectionId: activeSectionId || undefined
+    });
   }, [recipe.id, sidebarMode, checkedPrepItems, checkedCookingItems, sectionActiveSteps, activeSectionId]);
 
   const [timers, setTimers] = useState<ActiveTimer[]>([]);
@@ -1264,17 +1331,38 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         <div className="cook-hero-body">
           <div className="cook-title-row">
             <h1 className="cook-hero-title">{recipe.title}</h1>
-            {recipe.source?.url && isSafeUrl(recipe.source.url) && (
-              <a
-                href={recipe.source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="cook-title-link"
-                aria-label="Source recipe"
+            <div className="cook-title-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className={`cook-bookmark-btn ${bookmarked ? 'is-bookmarked' : ''}`}
+                onClick={handleToggleBookmark}
+                aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark recipe'}
+                title={bookmarked ? 'Bookmarked' : 'Bookmark recipe'}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: bookmarked ? 'var(--color-primary, #ff5722)' : 'var(--text-muted)',
+                  padding: '0.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'color 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1)'
+                }}
               >
-                <LinkIcon size={18} />
-              </a>
-            )}
+                <Bookmark size={20} fill={bookmarked ? 'currentColor' : 'none'} />
+              </button>
+              {recipe.source?.url && isSafeUrl(recipe.source.url) && (
+                <a
+                  href={recipe.source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="cook-title-link"
+                  aria-label="Source recipe"
+                >
+                  <LinkIcon size={18} />
+                </a>
+              )}
+            </div>
           </div>
 
           {recipe.author?.name && (

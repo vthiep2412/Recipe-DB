@@ -1,78 +1,135 @@
-import { parseCooklang } from '../parser/cooklangParser';
 import { recipeGraphToRecipeJSON, normalizeWorkspace } from '../parser/graphAdapter';
 import { exportStudioWorkspaceToRecipeGraph } from '../parser/orchestrationParser';
 import type { RecipeJSON } from '../types/recipe';
-import type { RecipeGraph, StudioWorkspace } from '../types/orchestration';
-import chewySmoresRaw from './chewy-smores-cookies.md?raw';
+import type { StudioWorkspace } from '../types/orchestration';
+import type { CloudRecipe, CloudRecipeDetails } from '../types/cloud';
+import { recipeStorageService } from '../services/recipeStorageService';
 
 const WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
 
-export interface RecipeEntry {
-  id: string;
-  slug: string;
-  rawText?: string;
-  getParsed: () => RecipeJSON;
-}
+/**
+ * Maps raw cloud recipe rows to the client-facing RecipeJSON format.
+ */
+export function mapCloudToRecipeJSON(cloud: {
+  recipe: CloudRecipe;
+  details: CloudRecipeDetails;
+}): RecipeJSON {
+  const { recipe, details } = cloud;
+  const sectionsAst = details.sectionsAst as any;
+  const rawSections = sectionsAst?.sections || [];
+  const rawCanvasNodes = sectionsAst?.canvasNodes || [];
 
-const registry: Record<string, RecipeEntry> = {
-  'chewy-smores-cookies': {
-    id: 'chewy-smores-cookies',
-    slug: 'chewy-smores-cookies',
-    rawText: chewySmoresRaw,
-    getParsed: () => parseCooklang(chewySmoresRaw, 'chewy-smores-cookies')
-  }
-};
-
-// Auto register any json recipe files placed in src/recipes/
-const jsonModules = import.meta.glob<Record<string, any>>('./*.json', { eager: true });
-for (const mod of Object.values(jsonModules)) {
-  const data = (mod && mod.default) ? mod.default : mod;
-  if (data && data.id) {
-    const slug = data.slug || data.id;
-    registry[data.id] = {
-      id: data.id,
-      slug,
-      getParsed: () => {
-        if (Array.isArray(data.sections) && Array.isArray(data.ingredients)) {
-          return data as RecipeJSON;
-        }
-        return recipeGraphToRecipeJSON(data as RecipeGraph);
+  const steps = rawCanvasNodes.map((n: any, idx: number) => ({
+    index: idx + 1,
+    rawText: n.instructionText || n.title || '',
+    tokens: (n.segments || []).map((seg: any) => {
+      if (seg.type === 'mention') {
+        const m = seg.mention;
+        return {
+          type:
+            m.type === 'ingredient'
+              ? 'ingredient'
+              : m.type === 'cookware'
+              ? 'cookware'
+              : m.type === 'timer'
+              ? 'timer'
+              : 'text',
+          name: m.displayText || '',
+          value: m.displayText || '',
+          durationText: m.data?.durationText || '',
+        };
       }
-    };
-    if (slug !== data.id) {
-      registry[slug] = registry[data.id];
-    }
-  }
+      return { type: 'text', value: seg.text || '' };
+    }),
+    id: n.id,
+    title: n.title,
+    sectionId: n.sectionId,
+    image: n.media?.pictureUrl,
+  }));
+
+  const mappedSections =
+    rawSections.length > 0 && rawSections[0]?.steps
+      ? rawSections
+      : rawSections.length > 0
+      ? rawSections.map((sec: any) => ({
+          id: sec.id,
+          name: sec.name || 'Main',
+          steps: steps.filter((s: any) => s.sectionId === sec.id),
+        }))
+      : [
+          {
+            id: 'sec-main',
+            name: 'Instructions',
+            steps,
+          },
+        ];
+
+  return {
+    id: recipe.slug || recipe.id,
+    title: recipe.title,
+    description: recipe.description || '',
+    image: recipe.imageUrl,
+    gallery: [],
+    importantNotes: details.importantNotes || '',
+    servings: { base: 4, unitName: 'servings' },
+    times: { total: '30m' },
+    tags: recipe.tags || [],
+    metadata: {},
+    ingredients: (details.ingredientsIndex as any[]) || [],
+    sections: mappedSections,
+    rawCooklang: details.rawFablang || '',
+  };
 }
 
 let cachedAllRecipes: RecipeJSON[] | null = null;
 const parsedRecipeCache = new Map<string, RecipeJSON>();
 
-function getCachedOrParse(entry: RecipeEntry): RecipeJSON {
-  const existing = parsedRecipeCache.get(entry.id);
-  if (existing) return existing;
-  const parsed = entry.getParsed();
-  parsedRecipeCache.set(entry.id, parsed);
-  return parsed;
-}
-
-export function getAllRecipes(): RecipeJSON[] {
-  if (cachedAllRecipes) {
+/**
+ * Pure cloud-native recipe loader:
+ * Queries all approved recipes from Supabase with in-memory caching.
+ */
+export async function getAllRecipes(forceRefresh = false): Promise<RecipeJSON[]> {
+  if (cachedAllRecipes && !forceRefresh) {
     return cachedAllRecipes;
   }
-  const uniqueEntries = new Map<string, RecipeEntry>();
-  for (const entry of Object.values(registry)) {
-    if (!uniqueEntries.has(entry.id)) {
-      uniqueEntries.set(entry.id, entry);
+
+  try {
+    const cloudRecipes = await recipeStorageService.fetchApprovedRecipes();
+    const mapped = cloudRecipes.map(mapCloudToRecipeJSON);
+
+    for (const r of mapped) {
+      parsedRecipeCache.set(r.id, r);
     }
+
+    cachedAllRecipes = mapped;
+    return mapped;
+  } catch {
+    return cachedAllRecipes || [];
   }
-  cachedAllRecipes = Array.from(uniqueEntries.values()).map(entry => getCachedOrParse(entry));
-  return cachedAllRecipes;
 }
 
-export function getRecipeById(id: string): RecipeJSON | null {
-  const entry = registry[id];
-  if (entry) return getCachedOrParse(entry);
+/**
+ * Fetch a recipe by its slug or UUID identifier.
+ * Checks memory cache -> cloud database -> local Kitchen Studio storage.
+ */
+export async function getRecipeById(id: string): Promise<RecipeJSON | null> {
+  const existing = parsedRecipeCache.get(id);
+  if (existing) return existing;
+
+  try {
+    const cloudData = await recipeStorageService.fetchRecipeBySlugOrId(id);
+    if (cloudData) {
+      const mapped = mapCloudToRecipeJSON(cloudData);
+      parsedRecipeCache.set(mapped.id, mapped);
+      if (cloudData.recipe.slug) {
+        parsedRecipeCache.set(cloudData.recipe.slug, mapped);
+      }
+      parsedRecipeCache.set(cloudData.recipe.id, mapped);
+      return mapped;
+    }
+  } catch {
+    // Fall back to studio workspace
+  }
 
   // Check Kitchen Studio local storage
   try {
@@ -83,7 +140,9 @@ export function getRecipeById(id: string): RecipeJSON | null {
       if (match) {
         const normalized = normalizeWorkspace(match);
         const compiledGraph = exportStudioWorkspaceToRecipeGraph(normalized);
-        return recipeGraphToRecipeJSON(compiledGraph);
+        const mapped = recipeGraphToRecipeJSON(compiledGraph);
+        parsedRecipeCache.set(id, mapped);
+        return mapped;
       }
     }
   } catch {
@@ -91,4 +150,12 @@ export function getRecipeById(id: string): RecipeJSON | null {
   }
 
   return null;
+}
+
+/**
+ * Clear in-memory recipe cache to force fresh fetch.
+ */
+export function invalidateRecipeCache(): void {
+  cachedAllRecipes = null;
+  parsedRecipeCache.clear();
 }

@@ -5,6 +5,7 @@ import { searchPlaceholders } from '../data/searchPlaceholders';
 
 interface Props {
   recipes: RecipeJSON[];
+  isLoading?: boolean;
   onSelectRecipe: (id: string) => void;
 }
 
@@ -22,7 +23,7 @@ function fuzzyMatch(text: string, query: string): boolean {
   return false;
 }
 
-export function SearchPage({ recipes, onSelectRecipe }: Props) {
+export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState('');
@@ -296,7 +297,55 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
         <h2 className="section-label">Recommendation</h2>
 
         <div className="recipe-cards-grid">
-          {filteredRecipes.map(recipe => {
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="recipe-card"
+                style={{ opacity: 0.7, pointerEvents: 'none' }}
+                aria-hidden="true"
+              >
+                <div
+                  style={{
+                    height: '180px',
+                    background: 'var(--bg-muted, rgba(255,255,255,0.06))',
+                    borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
+                  }}
+                />
+                <div className="recipe-card-content" style={{ gap: '0.6rem' }}>
+                  <div
+                    style={{
+                      height: '16px',
+                      width: '30%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.08))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                  <div
+                    style={{
+                      height: '22px',
+                      width: '75%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.08))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                  <div
+                    style={{
+                      height: '14px',
+                      width: '50%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.05))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                </div>
+              </div>
+            ))
+          ) : filteredRecipes.length === 0 ? (
+            <div style={{ padding: '3rem 1rem', textAlign: 'center', gridColumn: '1 / -1', color: 'var(--text-muted)' }}>
+              <p>No recipes found matching your search.</p>
+            </div>
+          ) : (
+            filteredRecipes.map(recipe => {
             const totalTime = recipe.times.total || recipe.times.cook || '20 min';
             const diff = recipe.difficulty || 'Medium';
             const diffClass = diff.toLowerCase().includes('easy')
@@ -345,7 +394,7 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
                 </div>
               </a>
             );
-          })}
+          }))}
         </div>
       </div>
     </div>

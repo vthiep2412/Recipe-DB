@@ -417,11 +417,6 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                   Review incoming submissions, approve for public catalog, or take down.
                 </p>
               </div>
-              {authState.profile && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Admin: <strong>@{authState.profile.username}</strong>
-                </div>
-              )}
             </div>
 
             <div className="admin-toolbar">
