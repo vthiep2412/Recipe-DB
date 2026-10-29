@@ -9,7 +9,7 @@ interface Props {
 }
 
 const CATEGORY_OPTIONS = [
-  { value: 'Creator Application', label: 'Creator Application' },
+  { value: 'Account Suspension Appeal', label: 'Account Suspension Appeal' },
   { value: 'Account Deletion Restoration', label: 'Account Deletion Restoration' },
   { value: 'Technical Support', label: 'Technical Support' },
   { value: 'General Inquiry', label: 'General Inquiry' },
@@ -29,6 +29,9 @@ export function SupportPage({ onNavigate }: Props) {
     }
     if (authState.profile?.username) {
       setUsername(authState.profile.username);
+    }
+    if (authState.profile?.isArchived) {
+      setCategory('Account Suspension Appeal');
     }
   }, []);
 

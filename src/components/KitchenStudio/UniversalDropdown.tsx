@@ -59,8 +59,20 @@ export function UniversalDropdown({
 
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
+      let scrollParent = containerRef.current.parentElement;
+      while (scrollParent && scrollParent !== document.body) {
+        const style = window.getComputedStyle(scrollParent);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'hidden') {
+          break;
+        }
+        scrollParent = scrollParent.parentElement;
+      }
+
+      const parentBottom = scrollParent ? scrollParent.getBoundingClientRect().bottom : window.innerHeight;
+      const parentTop = scrollParent ? scrollParent.getBoundingClientRect().top : 0;
+      const spaceBelow = Math.min(window.innerHeight, parentBottom) - rect.bottom;
+      const spaceAbove = rect.top - Math.max(0, parentTop);
+
       const shouldDropup =
         placement === 'top' ||
         (placement !== 'bottom' && spaceBelow < 260 && spaceAbove > spaceBelow);
@@ -132,7 +144,7 @@ export function UniversalDropdown({
   }
 
   return (
-    <div className="universal-dropdown-container" ref={containerRef}>
+    <div className={`universal-dropdown-container ${isOpen && !isClosing ? 'is-open' : ''}`} ref={containerRef}>
       <button
         type="button"
         className={`universal-dropdown-trigger ${isOpen && !isClosing ? 'is-open' : ''}`}

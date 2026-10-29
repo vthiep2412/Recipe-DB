@@ -186,7 +186,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const [settings] = useSettings();
   const isMobileScreen = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   const [savedState] = useState<RecipeViewState>(loadInitialState);
-  const [servings, setServings] = useState(recipe.servings.base || 1);
+  const [servings, setServings] = useState(recipe?.servings?.base || 1);
   const [sidebarMode, setSidebarMode] = useState<'prepare' | 'cooking'>(
     isMobileScreen ? 'prepare' : (savedState.activeMode || 'prepare')
   );
@@ -201,13 +201,14 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const [highlightedStepIndex, setHighlightedStepIndex] = useState<number | null>(null);
   const [deletedNoticeYieldId, setDeletedNoticeYieldId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [lightboxImage, setLightboxImage] = useState<string>(recipe.image || '');
+  const [lightboxImage, setLightboxImage] = useState<string>(recipe?.image || '');
+  const isProgressHydratedRef = useRef(false);
 
   useEffect(() => {
-    if (recipe.image) {
+    if (recipe?.image) {
       setLightboxImage(recipe.image);
     }
-  }, [recipe.image]);
+  }, [recipe?.image]);
 
   const [bookmarked, setBookmarked] = useState(() => userDataSyncService.isBookmarked(recipe.id));
 
@@ -222,25 +223,30 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     });
 
     userDataSyncService.hydrateRecipeProgress(recipe.id).then((cloud) => {
-      if (!isMounted || !cloud) return;
-      if (cloud.sidebarMode) {
-        setSidebarMode(cloud.sidebarMode === 'cook' ? 'cooking' : 'prepare');
-      }
-      if (cloud.checkedPrepItems) {
-        setCheckedPrepItems(new Set(cloud.checkedPrepItems));
-      }
-      if (cloud.checkedCookingItems) {
-        setCheckedCookingItems(new Set(cloud.checkedCookingItems));
-      }
-      if (cloud.activeSectionId) {
-        setActiveSectionId(cloud.activeSectionId);
-        if (typeof cloud.activeStepIndex === 'number') {
-          setSectionActiveSteps((prev) => ({
-            ...prev,
-            [cloud.activeSectionId!]: cloud.activeStepIndex!
-          }));
+      if (!isMounted) return;
+      if (cloud) {
+        if (cloud.sidebarMode) {
+          setSidebarMode(cloud.sidebarMode === 'cook' ? 'cooking' : 'prepare');
+        }
+        if (cloud.checkedPrepItems) {
+          setCheckedPrepItems(new Set(cloud.checkedPrepItems));
+        }
+        if (cloud.checkedCookingItems) {
+          setCheckedCookingItems(new Set(cloud.checkedCookingItems));
+        }
+        if (cloud.activeSectionId) {
+          setActiveSectionId(cloud.activeSectionId);
+          if (typeof cloud.activeStepIndex === 'number') {
+            setSectionActiveSteps((prev) => ({
+              ...prev,
+              [cloud.activeSectionId!]: cloud.activeStepIndex!
+            }));
+          }
         }
       }
+      isProgressHydratedRef.current = true;
+    }).catch(() => {
+      if (isMounted) isProgressHydratedRef.current = true;
     });
 
     return () => {
@@ -310,6 +316,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!isProgressHydratedRef.current) return;
     const activeStep = activeSectionId ? (sectionActiveSteps[activeSectionId] ?? 0) : 0;
     const toSave: RecipeViewState = {
       activeMode: sidebarMode,
@@ -687,7 +694,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLightboxOpen]);
 
-  const baseServings = recipe.servings.base || 1;
+  const baseServings = recipe?.servings?.base || 1;
   const scaleRatio = servings / baseServings;
 
   const togglePrepItem = (itemKey: string) => {
@@ -775,18 +782,18 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     return qtyText
   }
 
-  const listableIngredients = recipe.ingredients.filter(ing => !ing.isHidden);
+  const listableIngredients = (recipe?.ingredients || []).filter(ing => !ing.isHidden);
 
   const cookwareNames = new Set<string>();
-  recipe.sections.forEach(sec => {
-    sec.steps.forEach(step => {
-      step.tokens.forEach(tok => {
+  (recipe?.sections || []).forEach(sec => {
+    (sec?.steps || []).forEach(step => {
+      (step?.tokens || []).forEach(tok => {
         if (tok.type === 'cookware') cookwareNames.add(tok.name);
       });
     });
-    sec.subsections?.forEach(sub => {
-      sub.steps.forEach(step => {
-        step.tokens.forEach(tok => {
+    sec?.subsections?.forEach(sub => {
+      (sub?.steps || []).forEach(step => {
+        (step?.tokens || []).forEach(tok => {
           if (tok.type === 'cookware') cookwareNames.add(tok.name);
         });
       });
@@ -794,17 +801,17 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   });
 
   const stepNumberMap = new Map<number, number>();
-  recipe.sections.forEach(sec => {
+  (recipe?.sections || []).forEach(sec => {
     let secCount = 0;
-    sec.steps.forEach(st => {
+    (sec?.steps || []).forEach(st => {
       if (st.isCountedStep !== false) {
         secCount++;
         stepNumberMap.set(st.index, secCount);
       }
     });
-    sec.subsections?.forEach(sub => {
+    sec?.subsections?.forEach(sub => {
       let subCount = 0;
-      sub.steps.forEach(st => {
+      (sub?.steps || []).forEach(st => {
         if (st.isCountedStep !== false) {
           subCount++;
           stepNumberMap.set(st.index, subCount);
@@ -814,13 +821,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   });
 
   const breakdownTimes = [
-    { label: 'Prep Time', value: recipe.times.prep },
-    { label: 'Bake Time', value: recipe.times.bake },
-    { label: 'Cook Time', value: recipe.times.cook },
-    { label: 'Rest Time', value: recipe.times.rest },
+    { label: 'Prep Time', value: recipe?.times?.prep },
+    { label: 'Bake Time', value: recipe?.times?.bake },
+    { label: 'Cook Time', value: recipe?.times?.cook },
+    { label: 'Rest Time', value: recipe?.times?.rest },
   ].filter(t => Boolean(t.value));
 
-  const totalTime = recipe.times.total || recipe.times.cook || '—';
+  const totalTime = recipe?.times?.total || recipe?.times?.cook || '—';
   const difficulty = recipe.difficulty || 'Medium';
   const diffLower = difficulty.toLowerCase();
   const diffClass = diffLower.includes('easy')
@@ -885,6 +892,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                       key={`step-cw-${step.index}-${idx}-${tok.name}`}
                       className={`cook-ing ${isDone ? 'done' : ''}`}
                       onClick={() => toggleCookingItem(checkKey)}
+                      role="checkbox"
+                      aria-checked={isDone}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          e.preventDefault();
+                          toggleCookingItem(checkKey);
+                        }
+                      }}
                     >
                       <div className="cook-ing-box">
                         {isDone && <Check size={11} strokeWidth={3.5} />}
@@ -908,7 +924,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               {stepIngs.map((tok, idx) => {
                 const checkKey = `cook:step:${step.index}:${tok.name.toLowerCase()}`;
                 const isDone = checkedCookingItems.has(checkKey);
-                const matchedIng = recipe.ingredients.find(
+                const matchedIng = (recipe?.ingredients || []).find(
                   i => i.name.toLowerCase() === tok.name.toLowerCase()
                 );
                 const displayQty = tok.quantityText
@@ -922,6 +938,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                     key={`${step.index}-${idx}-${tok.name}`}
                     className={`cook-ing ${isDone ? 'done' : ''}`}
                     onClick={() => toggleCookingItem(checkKey)}
+                    role="checkbox"
+                    aria-checked={isDone}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        toggleCookingItem(checkKey);
+                      }
+                    }}
                   >
                     <div className="cook-ing-box">
                       {isDone && <Check size={11} strokeWidth={3.5} />}
@@ -947,6 +972,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                     key={`step-yield-${step.index}-${yIdx}`}
                     className={`cook-ing ${isDone ? 'done' : ''}`}
                     onClick={() => toggleCookingItem(checkKey)}
+                    role="checkbox"
+                    aria-checked={isDone}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        toggleCookingItem(checkKey);
+                      }
+                    }}
                   >
                     <div className="cook-ing-box">
                       {isDone && <Check size={11} strokeWidth={3.5} />}
@@ -1037,6 +1071,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         id={`step-node-${step.index}`}
         className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${!isCounted ? 'cook-step-note-callout' : ''} ${isLinked ? 'is-linked-step' : ''}`}
         onClick={() => handleStepClick(secName, step.index)}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isCur}
+        onKeyDown={(e) => {
+          if (e.key === ' ' || e.key === 'Enter') {
+            e.preventDefault();
+            handleStepClick(secName, step.index);
+          }
+        }}
       >
         {isLinked && (
           <div className="cook-step-link-rail" title="Linked to previous step">
@@ -1521,6 +1564,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         key={ing.id}
                         className={`cook-ing ${isDone ? 'done' : ''}`}
                         onClick={() => togglePrepItem(checkKey)}
+                        role="checkbox"
+                        aria-checked={isDone}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault();
+                            togglePrepItem(checkKey);
+                          }
+                        }}
                       >
                         <div className="cook-ing-box">
                           {isDone && <Check size={11} strokeWidth={3.5} />}
@@ -1554,6 +1606,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                           key={name}
                           className={`cook-ing ${isDone ? 'done' : ''}`}
                           onClick={() => togglePrepItem(checkKey)}
+                          role="checkbox"
+                          aria-checked={isDone}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === ' ' || e.key === 'Enter') {
+                              e.preventDefault();
+                              togglePrepItem(checkKey);
+                            }
+                          }}
                         >
                           <div className="cook-ing-box">
                             {isDone && <Check size={11} strokeWidth={3.5} />}
@@ -1568,9 +1629,9 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             </div>
           ) : (
             <div className="cook-cooking-mode-groups">
-              {recipe.sections.map(section => {
-                const filterSteps = (steps: RecipeStep[]) => steps.filter(step =>
-                  step.tokens.some(t => (t.type === 'ingredient' && !t.isHidden) || t.type === 'yield' || t.type === 'cookware') || Boolean(step.producesYield)
+              {(recipe?.sections || []).map(section => {
+                const filterSteps = (steps: RecipeStep[]) => (steps || []).filter(step =>
+                  (step?.tokens || []).some(t => (t.type === 'ingredient' && !t.isHidden) || t.type === 'yield' || t.type === 'cookware') || Boolean(step?.producesYield)
                 );
                 const sectionStepsWithItems = filterSteps(section.steps);
                 const subHasItems = section.subsections?.some(sub => filterSteps(sub.steps).length > 0);
@@ -1610,8 +1671,8 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       </aside>
 
       {/* 4. METHOD MAIN (grid-area: main) */}
-      <main className="cook-main">
-        {recipe.importantNotes && (
+      <div className="cook-main">
+        {recipe?.importantNotes && (
           <div className="recipe-important-notes-card">
             <div className="important-notes-header">
               <AlertTriangle size={18} />
@@ -1629,7 +1690,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         <div className="cook-steps" id="cook-steps">
           <h2 className="cook-section-title">Method</h2>
 
-          {recipe.sections.map(section => (
+          {(recipe?.sections || []).map(section => (
             <div key={section.id || section.name} className="cook-section-block">
               {section.name !== 'Instructions' && (
                 <div className="cook-section-band">{section.name}</div>
@@ -1651,7 +1712,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               )}
 
               <div className="cook-section-steps">
-                {section.steps.map(step => renderStepCard(step, section.name))}
+                {(section.steps || []).map(step => renderStepCard(step, section.name))}
               </div>
 
               {section.subsections && section.subsections.length > 0 && (
@@ -1667,7 +1728,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         </div>
                       )}
                       <div className="cook-subsection-steps">
-                        {sub.steps.map(step => renderStepCard(step, sub.name))}
+                        {(sub.steps || []).map(step => renderStepCard(step, sub.name))}
                       </div>
                     </div>
                   ))}
@@ -1676,7 +1737,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             </div>
           ))}
         </div>
-      </main>
+      </div>
 
       {/* Lightbox Modal */}
       {isLightboxOpen && lightboxImage && (

@@ -173,13 +173,10 @@ export const adminService: AdminServiceAPI = {
 
   async setUserArchived(userId: string, isArchived: boolean): Promise<{ error?: string }> {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          is_archived: isArchived,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const { error } = await supabase.rpc('admin_set_user_archived', {
+        p_user_id: userId,
+        p_is_archived: isArchived
+      });
 
       if (error) {
         return { error: error.message };
@@ -192,14 +189,9 @@ export const adminService: AdminServiceAPI = {
 
   async scheduleUserDeletion(userId: string): Promise<{ error?: string }> {
     try {
-      const targetDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          scheduled_delete_at: targetDate,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const { error } = await supabase.rpc('admin_schedule_account_deletion', {
+        target_user_id: userId
+      });
 
       if (error) {
         return { error: error.message };

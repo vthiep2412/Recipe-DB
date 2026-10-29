@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
 import { ArrowLeft, Settings } from 'lucide-preact';
+import { toast } from 'sonner';
 import type {
   StudioWorkspace,
   CanvasStepNode,
@@ -240,14 +241,6 @@ export function KitchenCanvas({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isReparentModalOpen, setIsReparentModalOpen] = useState(false);
   const [reorderAnimatingDeltas, setReorderAnimatingDeltas] = useState<Record<string, number>>({});
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(prev => (prev === msg ? null : prev));
-    }, 3500);
-  };
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const transformLayerRef = useRef<HTMLDivElement>(null);
@@ -1256,7 +1249,7 @@ export function KitchenCanvas({
         curr = nextParent;
       }
       if (noteDepth >= 2) {
-        showToast('Maximum nesting depth 2 reached');
+        toast.error('Maximum nesting depth 2 reached');
         return;
       }
 
@@ -1267,7 +1260,7 @@ export function KitchenCanvas({
       const mustBeUncounted = !selectedStep.isCountedStep;
       if (mustBeUncounted || countedChildren.length >= 1) {
         if (uncountedChildren.length >= 3) {
-          showToast('Maximum 3 note branches reached for this step');
+          toast.error('Maximum 3 note branches reached for this step');
           return;
         }
       }
@@ -1332,7 +1325,7 @@ export function KitchenCanvas({
     const section = currentSections.find(s => s.id === sectionId);
     if (!section) return;
     if (currentSections.length <= 1) {
-      showToast('Cannot delete the last remaining section');
+      toast.error('Cannot delete the last remaining section');
       return;
     }
     const knownSectionIds = new Set(currentSections.map(s => s.id));
@@ -1540,7 +1533,6 @@ export function KitchenCanvas({
         </div>
 
         <div className="canvas-top-right">
-          {toastMessage && <div className="canvas-export-toast">{toastMessage}</div>}
           <button
             type="button"
             className="canvas-export-btn"
@@ -1933,7 +1925,7 @@ export function KitchenCanvas({
         role={role}
         onClose={() => setIsExportModalOpen(false)}
         onPublishSuccess={(slug, _recipeId) => {
-          showToast(role === 'admin' ? `Published (${slug})!` : `Submitted for review (${slug})!`);
+          toast.success(role === 'admin' ? `Published (${slug})!` : `Submitted for review (${slug})!`);
           updateWorkspaceState({
             ...workspace,
             graph: {

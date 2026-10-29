@@ -31,8 +31,20 @@ export function RequestPublishModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const checkSeqRef = useRef(0);
+  const debounceTimerRef = useRef<number | null>(null);
+
   const isAdmin = role === 'admin';
+  const isAuthorized = role === 'recipe_creator' || role === 'admin';
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspace.id);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current !== null) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   // Initialize Recipe Id when opening
   useEffect(() => {
@@ -78,17 +90,24 @@ export function RequestPublishModal({
       setIsSlugAvailable(false);
       return;
     }
+    const currentSeq = ++checkSeqRef.current;
     setIsCheckingCollision(true);
     try {
       const available = await recipeStorageService.checkRecipeSlugAvailable(
         candidate,
         isUuid ? workspace.id : undefined
       );
-      setIsSlugAvailable(available);
+      if (currentSeq === checkSeqRef.current) {
+        setIsSlugAvailable(available);
+      }
     } catch {
-      setIsSlugAvailable(true);
+      if (currentSeq === checkSeqRef.current) {
+        setIsSlugAvailable(true);
+      }
     } finally {
-      setIsCheckingCollision(false);
+      if (currentSeq === checkSeqRef.current) {
+        setIsCheckingCollision(false);
+      }
     }
   };
 
@@ -96,10 +115,17 @@ export function RequestPublishModal({
     const sanitized = raw.toLowerCase().replace(/[^a-z0-9-_\s]/g, '').replace(/\s+/g, '-');
     setSlugInput(sanitized);
     const cleaned = sanitized.replace(/^-+|-+$/g, '');
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+    }
     if (cleaned) {
-      checkSlug(cleaned);
+      setIsCheckingCollision(true);
+      debounceTimerRef.current = window.setTimeout(() => {
+        checkSlug(cleaned);
+      }, 250);
     } else {
       setIsSlugAvailable(false);
+      setIsCheckingCollision(false);
     }
   };
 
@@ -284,6 +310,13 @@ export function RequestPublishModal({
             )}
           </div>
 
+          {!isAuthorized && (
+            <div className="export-error-banner" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--color-red)' }}>
+              <AlertTriangle size={14} />
+              <span>You need Recipe Creator privileges to submit recipes for review. Apply in Support.</span>
+            </div>
+          )}
+
           {errorMessage && (
             <div className="export-error-banner">
               <AlertTriangle size={14} />
@@ -305,7 +338,7 @@ export function RequestPublishModal({
             type="button"
             className="studio-btn studio-btn-primary"
             onClick={handleExecutePublish}
-            disabled={isSubmitting || isSlugAvailable === false || isCheckingCollision}
+            disabled={isSubmitting || isSlugAvailable === false || isCheckingCollision || !isAuthorized}
           >
             {isSubmitting
               ? 'Submitting...'

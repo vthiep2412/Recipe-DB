@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import {
   FileText,
   Users,
@@ -12,8 +13,10 @@ import {
   Archive,
 } from 'lucide-preact';
 import { marked } from 'marked';
+import { toast } from 'sonner';
 import { authStore } from '../services/authStore';
 import { adminService } from '../services/adminService';
+import { ConfirmModal } from './ConfirmModal';
 import type {
   CloudRecipe,
   UserProfile,
@@ -74,6 +77,17 @@ function sanitizeMarkdownHtml(rawHtml: string): string {
   return doc.body.innerHTML;
 }
 
+function renderPitchMarkdown(rawMarkdown: string): string {
+  if (!rawMarkdown) return '';
+  const escaped = rawMarkdown.replace(/</g, '&lt;');
+  const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
+    const safeText = linkText.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `<span class="obsidian-reading-link">${safeText}</span>`;
+  });
+  const parsed = marked.parse(processed, { async: false }) as string;
+  return sanitizeMarkdownHtml(parsed);
+}
+
 export interface AdminPanelProps {
   onNavigate: (path: string) => void;
 }
@@ -101,8 +115,16 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
   const [appsLoading, setAppsLoading] = useState(false);
   const [pitchViewModes, setPitchViewModes] = useState<Record<string, 'rendered' | 'raw'>>({});
 
-  // Feedback message
-  const [actionNotice, setActionNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  // Modal confirmation state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: ComponentChildren;
+    confirmLabel?: string;
+    confirmVariant?: 'primary' | 'danger';
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
+  const [isConfirmLoading, setIsConfirmLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = authStore.subscribe((state) => {
@@ -120,6 +142,11 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
     } else if (current.role && current.role !== 'admin') {
       onNavigate('/');
     }
+
+    // Proactively preload applications so pending count badge is accurate immediately
+    adminService.listApplications().then((list) => {
+      if (list) setApplications(list);
+    }).catch(() => {});
 
     return () => unsubscribe();
   }, [onNavigate]);
@@ -173,146 +200,240 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
 
   // Recipe Actions
   const handleUpdateRecipeStatus = async (recipeId: string, status: CloudRecipeStatus) => {
-    setActionNotice(null);
     try {
       const res = await adminService.updateRecipeStatus(recipeId, status);
       if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
+        toast.error(res.error, { duration: 4000 });
       } else {
-        setActionNotice({ type: 'success', text: `Recipe status updated to ${status}.` });
+        toast.success(`Recipe status updated to ${status}.`, { duration: 4000 });
         setRecipes((prev) =>
           prev.map((r) => (r.id === recipeId ? { ...r, status } : r))
         );
       }
     } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
     }
   };
 
-  const handleDeleteRecipe = async (recipeId: string) => {
-    if (!confirm('Are you sure you want to permanently delete this recipe?')) return;
-    setActionNotice(null);
-    try {
-      const res = await adminService.deleteRecipe(recipeId);
-      if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
-      } else {
-        setActionNotice({ type: 'success', text: 'Recipe deleted.' });
-        setRecipes((prev) => prev.filter((r) => r.id !== recipeId));
+  const promptTakeDownRecipe = (recipe: CloudRecipe) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Take Down Recipe',
+      message: (
+        <>
+          Are you sure you want to take down <strong>{recipe.title}</strong> from the public catalog? It will no longer be visible to users.
+        </>
+      ),
+      confirmLabel: 'Take Down',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          await handleUpdateRecipeStatus(recipe.id, 'rejected');
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
       }
-    } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
-    }
+    });
+  };
+
+  const promptDeleteRecipe = (recipe: CloudRecipe) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Recipe',
+      message: (
+        <>
+          Are you sure you want to permanently delete <strong>{recipe.title}</strong>? This action cannot be undone.
+        </>
+      ),
+      confirmLabel: 'Delete Recipe',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          const res = await adminService.deleteRecipe(recipe.id);
+          if (res?.error) {
+            toast.error(res.error, { duration: 4000 });
+          } else {
+            toast.success('Recipe deleted.', { duration: 4000 });
+            setRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
+      }
+    });
   };
 
   // User Actions
   const handleUpdateUserRole = async (userId: string, role: UserRole) => {
-    setActionNotice(null);
+    if (userId === authState.user?.id) {
+      toast.error('You cannot change your own administrator role.', { duration: 4000 });
+      return;
+    }
     try {
       const res = await adminService.updateUserRole(userId, role);
       if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
+        toast.error(res.error, { duration: 4000 });
       } else {
-        setActionNotice({ type: 'success', text: `User role updated to ${role}.` });
+        toast.success(`User role updated to ${role}.`, { duration: 4000 });
         setUsers((prev) =>
           prev.map((u) => (u.id === userId ? { ...u, role } : u))
         );
       }
     } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
+      toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
     }
   };
 
-  const handleToggleArchive = async (userId: string, currentArchived: boolean) => {
-    setActionNotice(null);
-    try {
-      const res = await adminService.setUserArchived(userId, !currentArchived);
-      if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
-      } else {
-        setActionNotice({
-          type: 'success',
-          text: `User ${currentArchived ? 'unarchived' : 'archived'}.`,
-        });
-        setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, isArchived: !currentArchived } : u))
-        );
-      }
-    } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
+  const promptToggleArchive = (user: UserProfile) => {
+    if (user.id === authState.user?.id) {
+      toast.error('You cannot archive your own administrator account.', { duration: 4000 });
+      return;
     }
+    const willArchive = !user.isArchived;
+    setConfirmModal({
+      isOpen: true,
+      title: willArchive ? 'Archive User Account' : 'Unarchive User Account',
+      message: willArchive ? (
+        <>
+          Are you sure you want to archive <strong>@{user.username}</strong> ({user.displayName})? Their access will be suspended immediately.
+        </>
+      ) : (
+        <>
+          Are you sure you want to unarchive <strong>@{user.username}</strong> ({user.displayName})? Their account access will be restored.
+        </>
+      ),
+      confirmLabel: willArchive ? 'Archive Account' : 'Unarchive Account',
+      confirmVariant: willArchive ? 'danger' : 'primary',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          const res = await adminService.setUserArchived(user.id, willArchive);
+          if (res?.error) {
+            toast.error(res.error, { duration: 4000 });
+          } else {
+            toast.success(`User ${willArchive ? 'archived' : 'unarchived'}.`, { duration: 4000 });
+            setUsers((prev) =>
+              prev.map((u) => (u.id === user.id ? { ...u, isArchived: willArchive } : u))
+            );
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
+      }
+    });
   };
 
-  const handleScheduleUserDeletion = async (userId: string) => {
-    if (!confirm('Are you sure you want to schedule this user for deletion in 30 days?')) return;
-    setActionNotice(null);
-    try {
-      const res = await adminService.scheduleUserDeletion(userId);
-      if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
-      } else {
-        setActionNotice({ type: 'success', text: 'User scheduled for deletion.' });
-        loadData();
-      }
-    } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
+  const promptScheduleUserDeletion = (user: UserProfile) => {
+    if (user.id === authState.user?.id) {
+      toast.error('You cannot schedule your own administrator account for deletion.', { duration: 4000 });
+      return;
     }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Schedule User Deletion',
+      message: (
+        <>
+          Are you sure you want to schedule <strong>@{user.username}</strong> ({user.displayName}) for permanent deletion in 30 days?
+        </>
+      ),
+      confirmLabel: 'Schedule Deletion',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          const res = await adminService.scheduleUserDeletion(user.id);
+          if (res?.error) {
+            toast.error(res.error, { duration: 4000 });
+          } else {
+            toast.success('User scheduled for deletion.', { duration: 4000 });
+            loadData();
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
+      }
+    });
   };
 
   // Application Actions
-  const handleApproveApplication = async (appId: string) => {
-    setActionNotice(null);
-    try {
-      const res = await adminService.approveApplication(appId);
-      if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
-      } else {
-        setActionNotice({ type: 'success', text: 'Creator application approved.' });
-        setApplications((prev) =>
-          prev.map((a) => (a.id === appId ? { ...a, status: 'approved' } : a))
-        );
+  const promptApproveApplication = (app: CreatorApplication) => {
+    const applicantName = app.profile?.displayName || app.profile?.username || 'Applicant';
+    setConfirmModal({
+      isOpen: true,
+      title: 'Approve Creator Application',
+      message: (
+        <>
+          Are you sure you want to approve the application from <strong>{applicantName}</strong>? This will promote their role to Creator.
+        </>
+      ),
+      confirmLabel: 'Approve Application',
+      confirmVariant: 'primary',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          const res = await adminService.approveApplication(app.id);
+          if (res?.error) {
+            toast.error(res.error, { duration: 4000 });
+          } else {
+            toast.success('Creator application approved.', { duration: 4000 });
+            setApplications((prev) =>
+              prev.map((a) => (a.id === app.id ? { ...a, status: 'approved' } : a))
+            );
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
       }
-    } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
-    }
+    });
   };
 
-  const handleRejectApplication = async (appId: string) => {
-    setActionNotice(null);
-    try {
-      const res = await adminService.rejectApplication(appId);
-      if (res?.error) {
-        setActionNotice({ type: 'error', text: res.error });
-      } else {
-        setActionNotice({ type: 'success', text: 'Creator application rejected.' });
-        setApplications((prev) =>
-          prev.map((a) => (a.id === appId ? { ...a, status: 'rejected' } : a))
-        );
+  const promptRejectApplication = (app: CreatorApplication) => {
+    const applicantName = app.profile?.displayName || app.profile?.username || 'Applicant';
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reject Creator Application',
+      message: (
+        <>
+          Are you sure you want to reject the application from <strong>{applicantName}</strong>?
+        </>
+      ),
+      confirmLabel: 'Reject Application',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        setIsConfirmLoading(true);
+        try {
+          const res = await adminService.rejectApplication(app.id);
+          if (res?.error) {
+            toast.error(res.error, { duration: 4000 });
+          } else {
+            toast.success('Creator application rejected.', { duration: 4000 });
+            setApplications((prev) =>
+              prev.map((a) => (a.id === app.id ? { ...a, status: 'rejected' } : a))
+            );
+          }
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : 'Action failed.', { duration: 4000 });
+        } finally {
+          setIsConfirmLoading(false);
+          setConfirmModal(null);
+        }
       }
-    } catch (err: unknown) {
-      setActionNotice({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Action failed.',
-      });
-    }
+    });
   };
 
   // Filtered lists
@@ -398,15 +519,6 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
 
       {/* Main Admin Content */}
       <div className="admin-content">
-        {actionNotice && (
-          <div
-            className={`auth-msg-banner ${actionNotice.type}`}
-            style={{ margin: '0.75rem 1.5rem 0' }}
-          >
-            {actionNotice.text}
-          </div>
-        )}
-
         {/* Tab 1: Recipe Moderation */}
         {activeTab === 'recipes' && (
           <>
@@ -537,7 +649,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                               <button
                                 type="button"
                                 className="row-action-btn"
-                                onClick={() => handleUpdateRecipeStatus(recipe.id, 'rejected')}
+                                onClick={() => promptTakeDownRecipe(recipe)}
                               >
                                 Take Down
                               </button>
@@ -545,7 +657,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                             <button
                               type="button"
                               className="row-action-btn red"
-                              onClick={() => handleDeleteRecipe(recipe.id)}
+                              onClick={() => promptDeleteRecipe(recipe)}
                             >
                               <Trash2 size={13} /> Delete
                             </button>
@@ -627,10 +739,19 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u) => (
+                    {filteredUsers.map((u) => {
+                      const isSelf = u.id === authState.user?.id;
+                      return (
                       <tr key={u.id}>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{u.displayName}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ fontWeight: 600 }}>{u.displayName}</span>
+                            {isSelf && (
+                              <span className="badge badge-admin" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem' }}>
+                                You
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-faint)' }}>
                             @{u.username}
                           </div>
@@ -656,60 +777,69 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                           {new Date(u.createdAt).toLocaleDateString()}
                         </td>
                         <td>
-                          {u.isArchived ? (
-                            <span style={{ color: 'var(--text-faint)', fontSize: '0.8rem' }}>
+                          {u.scheduledDeleteAt ? (
+                            <span style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.8rem', fontWeight: 600 }}>
+                              Scheduled Deletion
+                            </span>
+                          ) : u.isArchived ? (
+                            <span style={{ color: '#f97316', fontSize: '0.8rem', fontWeight: 600 }}>
                               Archived
                             </span>
-                          ) : u.scheduledDeleteAt ? (
-                            <span style={{ color: 'var(--color-red)', fontSize: '0.8rem' }}>
-                              Pending Delete
-                            </span>
                           ) : (
-                            <span style={{ color: 'var(--color-green)', fontSize: '0.8rem' }}>
+                            <span style={{ color: 'var(--color-green, #22c55e)', fontSize: '0.8rem' }}>
                               Active
                             </span>
                           )}
                         </td>
                         <td>
                           <div className="table-actions">
-                            {u.role === 'user' && (
-                              <button
-                                type="button"
-                                className="row-action-btn green"
-                                onClick={() => handleUpdateUserRole(u.id, 'recipe_creator')}
-                              >
-                                <UserCheck size={13} /> Promote to Creator
-                              </button>
-                            )}
-                            {u.role === 'recipe_creator' && (
-                              <button
-                                type="button"
-                                className="row-action-btn"
-                                onClick={() => handleUpdateUserRole(u.id, 'user')}
-                              >
-                                <UserMinus size={13} /> Demote
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="row-action-btn"
-                              onClick={() => handleToggleArchive(u.id, u.isArchived)}
-                            >
-                              <Archive size={13} /> {u.isArchived ? 'Unarchive' : 'Archive'}
-                            </button>
-                            {!u.scheduledDeleteAt && (
-                              <button
-                                type="button"
-                                className="row-action-btn red"
-                                onClick={() => handleScheduleUserDeletion(u.id)}
-                              >
-                                <Trash2 size={13} /> Schedule delete
-                              </button>
+                            {isSelf ? (
+                              <span style={{ fontSize: '0.78rem', color: 'var(--text-faint)', fontStyle: 'italic', padding: '0.2rem 0' }}>
+                                Your Account (Protected)
+                              </span>
+                            ) : (
+                              <>
+                                {u.role === 'user' && (
+                                  <button
+                                    type="button"
+                                    className="row-action-btn green"
+                                    onClick={() => handleUpdateUserRole(u.id, 'recipe_creator')}
+                                  >
+                                    <UserCheck size={13} /> Promote to Creator
+                                  </button>
+                                )}
+                                {u.role === 'recipe_creator' && (
+                                  <button
+                                    type="button"
+                                    className="row-action-btn"
+                                    onClick={() => handleUpdateUserRole(u.id, 'user')}
+                                  >
+                                    <UserMinus size={13} /> Demote
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="row-action-btn orange"
+                                  onClick={() => promptToggleArchive(u)}
+                                >
+                                  <Archive size={13} /> {u.isArchived ? 'Unarchive' : 'Archive'}
+                                </button>
+                                {!u.scheduledDeleteAt && (
+                                  <button
+                                    type="button"
+                                    className="row-action-btn red"
+                                    onClick={() => promptScheduleUserDeletion(u)}
+                                  >
+                                    <Trash2 size={13} /> Schedule delete
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -724,7 +854,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
               <div>
                 <h1 className="admin-title">Creator Applications</h1>
                 <p className="admin-subtitle">
-                  Review markdown pitches with toggleable Preview and Raw Source view.
+                  Review potential recipe maker Applications.
                 </p>
               </div>
             </div>
@@ -844,14 +974,14 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                               <button
                                 type="button"
                                 className="row-action-btn green"
-                                onClick={() => handleApproveApplication(app.id)}
+                                onClick={() => promptApproveApplication(app)}
                               >
                                 <Check size={13} /> Approve
                               </button>
                               <button
                                 type="button"
                                 className="row-action-btn red"
-                                onClick={() => handleRejectApplication(app.id)}
+                                onClick={() => promptRejectApplication(app)}
                               >
                                 <X size={13} /> Reject
                               </button>
@@ -864,7 +994,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
                         <div
                           className="pitch-rendered"
                           dangerouslySetInnerHTML={{
-                            __html: sanitizeMarkdownHtml(marked.parse(app.applicationMd || '') as string),
+                            __html: renderPitchMarkdown(app.applicationMd || ''),
                           }}
                         />
                       ) : (
@@ -885,6 +1015,23 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
           </>
         )}
       </div>
+
+      {confirmModal && (
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmLabel={confirmModal.confirmLabel}
+          confirmVariant={confirmModal.confirmVariant}
+          isLoading={isConfirmLoading}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => {
+            if (!isConfirmLoading) {
+              setConfirmModal(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

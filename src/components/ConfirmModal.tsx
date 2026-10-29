@@ -7,6 +7,8 @@ export interface ConfirmModalProps {
   message: ComponentChildren;
   confirmLabel?: string;
   cancelLabel?: string;
+  discardLabel?: string;
+  onDiscard?: () => void;
   confirmVariant?: 'primary' | 'danger';
   isLoading?: boolean;
   onConfirm: () => void;
@@ -19,19 +21,57 @@ export function ConfirmModal({
   message,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
+  discardLabel,
+  onDiscard,
   confirmVariant = 'primary',
   isLoading = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const prevFocusedRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
+    if (typeof document !== 'undefined') {
+      prevFocusedRef.current = document.activeElement as HTMLElement | null;
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isLoading) {
+        e.preventDefault();
         onCancel();
+        return;
+      }
+
+      if (e.key === 'Tab' && cardRef.current) {
+        const focusables = Array.from(
+          cardRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        );
+
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !cardRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !cardRef.current.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
 
@@ -43,6 +83,7 @@ export function ConfirmModal({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       clearTimeout(timer);
+      prevFocusedRef.current?.focus?.();
     };
   }, [isOpen, isLoading, onCancel]);
 
@@ -59,6 +100,7 @@ export function ConfirmModal({
       role="presentation"
     >
       <div
+        ref={cardRef}
         className="confirm-modal-card"
         role="dialog"
         aria-modal="true"
@@ -73,6 +115,17 @@ export function ConfirmModal({
         </div>
 
         <div className="confirm-modal-actions">
+          {discardLabel && onDiscard && (
+            <button
+              type="button"
+              className="confirm-modal-btn btn-danger"
+              style={{ marginRight: 'auto' }}
+              onClick={onDiscard}
+              disabled={isLoading}
+            >
+              {discardLabel}
+            </button>
+          )}
           <button
             type="button"
             className="confirm-modal-btn btn-cancel"

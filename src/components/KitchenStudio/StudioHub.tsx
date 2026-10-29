@@ -4,6 +4,7 @@ import type { StudioWorkspace } from '../../types/orchestration';
 import type { CloudRecipe } from '../../types/cloud';
 import { parseTextToStudioWorkspace } from '../../parser/orchestrationParser';
 import { NewRecipeModal } from './NewRecipeModal';
+import { ConfirmModal } from '../ConfirmModal';
 import { authStore } from '../../services/authStore';
 import { recipeStorageService } from '../../services/recipeStorageService';
 
@@ -23,7 +24,8 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
 
   const authState = authStore.getState();
   const role = authState.role || authState.profile?.role;
-  const isCreator = role === 'recipe_creator';
+  const isCreator = role === 'recipe_creator' || role === 'admin';
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<StudioWorkspace | null>(null);
 
   useEffect(() => {
     try {
@@ -79,10 +81,16 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
     onOpenWorkspace(newWs.id);
   };
 
-  const handleDelete = (id: string, e: MouseEvent) => {
+  const promptDeleteWorkspace = (ws: StudioWorkspace, e: MouseEvent) => {
     e.stopPropagation();
-    const updated = workspaces.filter((w) => w.id !== id);
+    setWorkspaceToDelete(ws);
+  };
+
+  const handleConfirmDeleteWorkspace = () => {
+    if (!workspaceToDelete) return;
+    const updated = workspaces.filter((w) => w.id !== workspaceToDelete.id);
     saveWorkspaces(updated);
+    setWorkspaceToDelete(null);
   };
 
   return (
@@ -172,7 +180,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
                     <button
                       type="button"
                       className="workspace-card-delete"
-                      onClick={(e) => handleDelete(ws.id, e)}
+                      onClick={(e) => promptDeleteWorkspace(ws, e)}
                       title="Delete workspace"
                       aria-label="Delete workspace"
                     >
@@ -295,6 +303,20 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
         onClose={() => setIsNewModalOpen(false)}
         onConvert={(rawText) => handleCreateNew(rawText)}
         onGoStraight={() => handleCreateNew('')}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(workspaceToDelete)}
+        title="Delete Recipe Workspace"
+        message={
+          <>
+            Are you sure you want to delete workspace <strong>"{workspaceToDelete?.title || 'Untitled Recipe'}"</strong>? All unsaved canvas nodes and local edits will be permanently erased.
+          </>
+        }
+        confirmLabel="Delete Workspace"
+        confirmVariant="danger"
+        onConfirm={handleConfirmDeleteWorkspace}
+        onCancel={() => setWorkspaceToDelete(null)}
       />
     </div>
   );

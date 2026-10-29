@@ -75,6 +75,7 @@ bun run tunnel
 - **Inline Step Tools**: Step cards can display compact chip bars of ingredients and cookware directly in the method view.
 - **Widescreen Media Clamping**: Step and section images adhere to fixed 16:9 and 21:9 letterbox aspect ratios with height clamping.
 - **Dynamic Servings Scaling**: Stepper scales quantities and fraction display automatically.
+- **Creator Application Workflow**: Dedicated application portal equipped with an Obsidian-style live Markdown editor, guidelines for aspiring creators, and status tracking connected to review workflows.
 - **Theme**: Obsidian dark grey aesthetic (`#1e1e1e` / `#242424`) with warm orange accents.
 
 ## Project Structure

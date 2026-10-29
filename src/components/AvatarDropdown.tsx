@@ -14,9 +14,11 @@ import {
   Shield,
   Lightbulb,
   LifeBuoy,
+  ChefHat,
 } from 'lucide-preact';
 import { useSettings } from '../services/settingsStore';
 import { authStore } from '../services/authStore';
+import { toast } from 'sonner';
 
 interface Props {
   onOpenSettings: () => void;
@@ -106,6 +108,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
   const handleSignOut = async () => {
     closeMenu();
     await authStore.signOut();
+    toast.success('Signed out successfully.', { duration: 2500 });
     if (onNavigate) {
       onNavigate('/');
     } else {
@@ -198,6 +201,20 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
                     Recipe Suggest
                   </span>
                 </div>
+              )}
+
+              {/* Standard user: Apply to be a Recipe Maker */}
+              {!isScheduled && role === 'user' && (
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => handleNavigate('/apply-creator')}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <ChefHat size={16} />
+                    Become a Recipe Maker
+                  </span>
+                </button>
               )}
 
               {/* Creator & Admin: Kitchen Studio */}

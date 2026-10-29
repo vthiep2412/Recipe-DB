@@ -92,7 +92,7 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
         previousActiveElement.current.focus()
       }
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, shouldRender])
 
   const themeOptions: SegmentedOption<ThemeMode>[] = [
     {

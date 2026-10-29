@@ -18,8 +18,11 @@ import { AuthModal } from './components/auth/AuthModal';
 import { AccountSettings } from './components/AccountSettings';
 import { ScheduledDeletionPage } from './components/ScheduledDeletionPage';
 import { AdminDeletionModal } from './components/auth/AdminDeletionModal';
+import { AccountSuspendedModal } from './components/auth/AccountSuspendedModal';
 import { SupportPage } from './components/SupportPage';
+import { CreatorApplicationPage } from './components/CreatorApplicationPage';
 import { AdminPanel } from './components/AdminPanel';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { authStore } from './services/authStore';
 import { getAllRecipes, getRecipeById } from './recipes';
 import type { RecipeJSON } from './types/recipe';
@@ -131,6 +134,7 @@ export function App() {
   };
 
   const isAuthenticated = !!authState.user;
+  const isArchived = isAuthenticated && !!authState.profile?.isArchived;
   const isScheduledForDeletion = isAuthenticated && !!authState.profile?.scheduledDeleteAt;
   const isAdminDeleted = isScheduledForDeletion && !!authState.profile?.isAdminDeleted;
   const role = authState.role || authState.profile?.role;
@@ -146,8 +150,8 @@ export function App() {
         window.history.replaceState({}, '', '/auth');
         setCurrentPath('/auth');
       }
-    } else if (isScheduledForDeletion) {
-      // Handled by AdminDeletionModal or ScheduledDeletionPage
+    } else if (isArchived || isScheduledForDeletion) {
+      // Handled by AccountSuspendedModal, AdminDeletionModal or ScheduledDeletionPage
     } else {
       if (currentPath === '/auth') {
         window.history.replaceState({}, '', '/');
@@ -157,12 +161,16 @@ export function App() {
         setCurrentPath('/');
       }
     }
-  }, [currentPath, isAuthenticated, isScheduledForDeletion, role, authState.isAuthLoading, isProtectedPath, isAdminPath]);
+  }, [currentPath, isAuthenticated, isArchived, isScheduledForDeletion, role, authState.isAuthLoading, isProtectedPath, isAdminPath]);
 
   let mainContent;
 
   if (currentPath === '/support') {
     mainContent = <SupportPage onNavigate={navigate} />;
+  } else if (currentPath === '/apply-creator') {
+    mainContent = <CreatorApplicationPage onNavigate={navigate} />;
+  } else if (isArchived) {
+    mainContent = <AccountSuspendedModal onNavigate={navigate} />;
   } else if (isAdminDeleted) {
     mainContent = <AdminDeletionModal onNavigate={navigate} />;
   } else if (isScheduledForDeletion) {
@@ -240,7 +248,7 @@ export function App() {
                 fontWeight: 500,
                 cursor: 'pointer'
               }}
-              onClick={() => navigate('/support')}
+              onClick={() => navigate('/apply-creator')}
             >
               Apply for Creator Privileges
             </button>
@@ -286,7 +294,9 @@ export function App() {
       />
 
       <main ref={mainRef} className="app-main">
-        {mainContent}
+        <ErrorBoundary key={currentPath}>
+          {mainContent}
+        </ErrorBoundary>
       </main>
 
       <AppSettingsModal
@@ -298,7 +308,7 @@ export function App() {
       <AuthModal onNavigate={navigate} />
 
       {/* Floating Notifications (Top Right) */}
-      <Toaster position="top-right" duration={3000} richColors theme={settings.theme as any} />
+      <Toaster position="top-right" duration={4000} richColors theme={settings.theme as any} />
     </>
   );
 }

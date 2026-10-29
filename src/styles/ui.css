@@ -551,7 +551,7 @@
 }
 
 .confirm-modal-overlay {
-  z-index: 2100 !important;
+  z-index: 100050 !important;
   background-color: var(--modal-backdrop-bg, rgba(0, 0, 0, 0.65)) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;

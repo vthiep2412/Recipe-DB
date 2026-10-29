@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { X, Sparkles, AlertTriangle } from 'lucide-preact';
+import { toast } from 'sonner';
+import { ConfirmModal } from '../ConfirmModal';
 import {
   detectInputFormat,
   isFablangDeclared,
@@ -21,46 +23,26 @@ export function NewRecipeModal({
   onGoStraight
 }: NewRecipeModalProps) {
   const [text, setText] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const toastTimerRef = useRef<number | null>(null);
-
-  const showToast = (msg: string, duration = 3500) => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-    setToastMessage(msg);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMessage(null);
-      toastTimerRef.current = null;
-    }, duration);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current !== null) {
-        window.clearTimeout(toastTimerRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setText('');
-      setToastMessage(null);
+      setIsAiModalOpen(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isAiModalOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isAiModalOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -73,15 +55,15 @@ export function NewRecipeModal({
   const handleFixWithAi = () => {
     const prompt = generateAiRepairPrompt(text, syntaxErrors);
     if (!navigator.clipboard?.writeText) {
-      showToast('Clipboard access unavailable to copy prompt', 3500);
+      toast.error('Clipboard access unavailable to copy prompt');
       return;
     }
     navigator.clipboard.writeText(prompt)
       .then(() => {
-        showToast('AI not implemented =(, but you can use the prompt =D, Copied', 4000);
+        toast.info('Repair prompt copied to clipboard');
       })
       .catch(() => {
-        showToast('Failed to copy repair prompt to clipboard', 3500);
+        toast.error('Failed to copy repair prompt to clipboard');
       });
   };
 
@@ -91,13 +73,8 @@ export function NewRecipeModal({
       return;
     }
 
-    if (syntaxErrors.length > 0) {
-      showToast('Please resolve the F&Blang syntax errors above or click "Fix With AI"', 3500);
-      return;
-    }
-
-    if (format === 'plain_text') {
-      showToast('NO AI yet "big sad" :(', 3500);
+    if (syntaxErrors.length > 0 || format === 'plain_text') {
+      setIsAiModalOpen(true);
       return;
     }
 
@@ -127,13 +104,13 @@ export function NewRecipeModal({
 
         <div className="studio-modal-body">
           <p className="studio-modal-desc">
-            Paste your recipe in standard Cooklang or RecipeDB markdown format below.
+            Paste your recipe in Cooklang, F&amp;Blang, or F&amp;Blang JSON format below.
           </p>
 
           <textarea
             ref={textareaRef}
             className="studio-modal-textarea"
-            placeholder="Paste Cooklang or recipe markdown here..."
+            placeholder="Paste Cooklang, F&Blang, or F&Blang JSON here..."
             value={text}
             onInput={e => setText((e.target as HTMLTextAreaElement).value)}
             rows={10}
@@ -184,12 +161,6 @@ export function NewRecipeModal({
               </ul>
             </div>
           )}
-
-          {toastMessage && (
-            <div className="studio-toast-banner" role="alert">
-              {toastMessage}
-            </div>
-          )}
         </div>
 
         <div className="studio-modal-footer">
@@ -210,6 +181,22 @@ export function NewRecipeModal({
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={isAiModalOpen}
+        title="AI Recipe Conversion"
+        message="Unrecognized recipe syntax. Would you like to use AI to convert this recipe into Kitchen Studio format?"
+        confirmLabel="Yes"
+        cancelLabel="No"
+        confirmVariant="primary"
+        onConfirm={() => {
+          setIsAiModalOpen(false);
+          toast.error('NO AI yet "big sad" :(');
+        }}
+        onCancel={() => {
+          setIsAiModalOpen(false);
+        }}
+      />
     </div>
   );
 }

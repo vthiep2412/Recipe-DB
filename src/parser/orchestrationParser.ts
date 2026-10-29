@@ -13,7 +13,25 @@ import type {
 import { parseFraction } from './cooklangParser';
 import { parseTimeStringToSeconds } from '../constants/standardKitchenData';
 
-export type IngestFormat = 'fablang' | 'cooklang' | 'app_markdown' | 'plain_text';
+export type IngestFormat = 'fablang' | 'fablang_json' | 'cooklang' | 'app_markdown' | 'plain_text';
+
+export function isFablangJson(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false;
+  try {
+    const data = JSON.parse(trimmed);
+    return Boolean(
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      (data.schemaVersion === 1 || data.schemaVersion === 2) &&
+      (Array.isArray(data.components) || Array.isArray(data.inputs))
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface FablangSyntaxError {
   line: number;
@@ -797,6 +815,7 @@ export function detectInputFormat(text: string): IngestFormat {
   const trimmed = text.trim();
   if (!trimmed) return 'plain_text';
 
+  if (isFablangJson(trimmed)) return 'fablang_json';
   if (isFablangDeclared(trimmed)) return 'fablang';
 
   // Cooklang token markers
@@ -815,11 +834,215 @@ export function detectInputFormat(text: string): IngestFormat {
 }
 
 /**
+ * Parses a serialized Fablang RecipeGraph JSON into a full StudioWorkspace
+ */
+export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
+  const data = JSON.parse(rawText.trim());
+  const now = new Date().toISOString();
+
+  // 1. Sections: use data.sections if provided; otherwise derive from components
+  const rawSections: any[] = Array.isArray(data.sections) && data.sections.length > 0
+    ? data.sections
+    : Array.isArray(data.components) && data.components.length > 0
+    ? data.components.map((c: any, idx: number) => ({
+        id: c.id ? c.id.replace(/^component-/, '') : `sec-${idx + 1}`,
+        name: c.name || `Section ${idx + 1}`,
+        order: idx,
+        colorIndex: idx % 6
+      }))
+    : [{ id: 'sec-main', name: 'Instructions', order: 0, colorIndex: 0 }];
+
+  const sections: CanvasSection[] = rawSections.map((s, idx) => ({
+    id: s.id || `sec-${idx + 1}`,
+    name: s.name || `Section ${idx + 1}`,
+    order: s.order ?? idx,
+    colorIndex: s.colorIndex ?? (idx % 6),
+    parentSectionId: s.parentSectionId,
+    showInlineTools: s.showInlineTools
+  }));
+
+  const defaultSectionId = sections[0].id;
+  const sectionIdSet = new Set(sections.map(s => s.id));
+
+  // 2. Build canvasNodes from components
+  const canvasNodes: CanvasStepNode[] = [];
+  const rawComponents: any[] = Array.isArray(data.components) ? data.components : [];
+
+  for (const comp of rawComponents) {
+    const rawCompSectionId = comp.id ? comp.id.replace(/^component-/, '') : defaultSectionId;
+    const targetSectionId = sectionIdSet.has(rawCompSectionId)
+      ? rawCompSectionId
+      : (sectionIdSet.has(comp.id) ? comp.id : defaultSectionId);
+
+    const steps: any[] = Array.isArray(comp.steps) ? comp.steps : [];
+    for (const step of steps) {
+      const stepId = step.id || `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const instructionText = step.instructionText || '';
+
+      const segments: StepInstructionSegment[] = [];
+      const mentions: StepMentionToken[] = [];
+
+      if (Array.isArray(step.tokens) && step.tokens.length > 0) {
+        step.tokens.forEach((token: any, tIdx: number) => {
+          const segId = `seg-${stepId}-${tIdx}`;
+          if (token.type === 'text') {
+            segments.push({ type: 'text', id: segId, text: token.text || '' });
+          } else if (token.type === 'ingredient') {
+            const mId = token.inputId || `ing-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'ingredient',
+              displayText: token.displayText || token.name || '',
+              data: {
+                ingredientId: token.inputId,
+                amount: token.amount,
+                unit: token.unit,
+                creatorNote: token.note,
+                isRemention: Boolean(token.isRemention)
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'cookware') {
+            const mId = token.vesselId || `vessel-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'cookware',
+              displayText: token.displayText || '',
+              data: {
+                vesselId: token.vesselId
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'yield') {
+            const mId = token.yieldId || `yield-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'yield',
+              displayText: token.displayText || '',
+              data: {
+                yieldId: token.yieldId,
+                yieldPartition: token.partition
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'timer') {
+            const mId = token.timerId || `timer-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'timer',
+              displayText: token.displayText || '',
+              data: {}
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          }
+        });
+      } else {
+        segments.push({
+          type: 'text',
+          id: `seg-${stepId}-0`,
+          text: instructionText
+        });
+      }
+
+      let producesYield: { name: string; vesselId: string } | undefined;
+      if (step.producesYield) {
+        producesYield = {
+          name: step.producesYield.name || '',
+          vesselId: step.producesYield.vesselId || ''
+        };
+      }
+
+      canvasNodes.push({
+        id: stepId,
+        sectionId: targetSectionId,
+        parentId: targetSectionId,
+        title: step.title || '',
+        isCountedStep: step.isCountedStep !== false,
+        isLinkedToPrevious: Boolean(step.isLinkedToPrevious),
+        instructionText,
+        segments,
+        mentions,
+        media: step.media || {},
+        showInlineTools: step.showInlineTools,
+        producesYield
+      });
+    }
+  }
+
+  const customIngredients = Array.isArray(data.inputs)
+    ? data.inputs.map((inp: any) => ({
+        id: inp.id,
+        name: inp.name || inp.id,
+        allowedUnits: inp.unit ? [inp.unit] : undefined
+      }))
+    : [];
+
+  const customCookware = Array.isArray(data.vessels)
+    ? data.vessels.map((v: any) => ({
+        id: v.id,
+        name: v.name || v.id,
+        size: v.size
+      }))
+    : [];
+
+  const graph: RecipeGraph = {
+    schemaVersion: 2,
+    id: data.id || `recipe-${Date.now()}`,
+    title: data.title || 'Untitled Recipe',
+    servings: data.servings || 4,
+    difficulty: data.difficulty || 'medium',
+    description: data.description || '',
+    tips: data.tips || '',
+    importantNotes: data.importantNotes || '',
+    leadTimeSummary: data.leadTimeSummary || '',
+    author: data.author ? { name: data.author.name || 'anonymous' } : undefined,
+    source: data.source?.url ? { url: data.source.url } : undefined,
+    media: {
+      pictureUrl: data.media?.pictureUrl || '',
+      videoUrl: data.media?.videoUrl || '',
+      galleryUrls: Array.isArray(data.media?.galleryUrls) ? data.media.galleryUrls : []
+    },
+    times: {
+      prepSec: data.times?.prepSec || 0,
+      cookSec: data.times?.cookSec || 0,
+      bakeSec: data.times?.bakeSec || 0,
+      restSec: data.times?.restSec || 0,
+      totalSec: data.times?.totalSec || 0,
+      custom: Array.isArray(data.times?.custom) ? data.times.custom : []
+    },
+    inputs: Array.isArray(data.inputs) ? data.inputs : [],
+    vessels: Array.isArray(data.vessels) ? data.vessels : [],
+    components: rawComponents,
+    sections
+  };
+
+  return {
+    id: workspaceId || data.id || `ws-${Date.now()}`,
+    title: data.title || graph.title,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+    graph,
+    sections,
+    canvasNodes,
+    customIngredients,
+    customCookware
+  };
+}
+
+/**
  * Parses raw text into a StudioWorkspace with auto-connected canvas nodes
  */
 export function parseTextToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
   const trimmed = rawText.trim();
   const format = detectInputFormat(trimmed);
+
+  if (format === 'fablang_json') {
+    return parseFablangJsonToStudioWorkspace(trimmed, workspaceId);
+  }
 
   if (format === 'fablang') {
     return parseFablang(trimmed, workspaceId).workspace;

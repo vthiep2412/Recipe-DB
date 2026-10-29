@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { authStore } from '../../services/authStore';
+import { recipeStorageService } from '../../services/recipeStorageService';
 import type { StudioWorkspace } from '../../types/orchestration';
 import { parseTextToStudioWorkspace } from '../../parser/orchestrationParser';
 import { StudioHub } from './StudioHub';
@@ -49,8 +50,69 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
       }
 
       // If not found in storage, initialize fresh workspace
-      const fresh = parseTextToStudioWorkspace('', activeWorkspaceId);
-      setActiveWorkspace(fresh);
+      // If not found in storage, attempt to fetch from cloud before initializing fresh
+      let isCancelled = false;
+      recipeStorageService
+        .fetchRecipeBySlugOrId(activeWorkspaceId)
+        .then((cloudData) => {
+          if (isCancelled) return;
+          if (cloudData) {
+            const ast = cloudData.details.sectionsAst as any;
+            const baseWorkspace = parseTextToStudioWorkspace('', cloudData.recipe.id);
+            const recoveredWorkspace: StudioWorkspace = {
+              ...baseWorkspace,
+              id: cloudData.recipe.id,
+              title: cloudData.recipe.title,
+              createdAt: cloudData.recipe.createdAt,
+              updatedAt: cloudData.recipe.updatedAt,
+              graph: {
+                ...baseWorkspace.graph,
+                id: cloudData.recipe.slug || cloudData.recipe.id,
+                title: cloudData.recipe.title,
+                description: cloudData.recipe.description,
+                importantNotes: cloudData.details.importantNotes,
+                media: {
+                  ...baseWorkspace.graph.media,
+                  pictureUrl: cloudData.recipe.imageUrl,
+                },
+                sections: ast?.sections || baseWorkspace.graph.sections,
+              },
+              sections: ast?.sections || baseWorkspace.sections,
+              canvasNodes: ast?.canvasNodes || baseWorkspace.canvasNodes,
+              customIngredients: (cloudData.details.ingredientsIndex as any[]) || baseWorkspace.customIngredients,
+              customCookware: (cloudData.details.cookwareIndex as any[]) || baseWorkspace.customCookware,
+            };
+            try {
+              const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
+              const list: StudioWorkspace[] = raw ? JSON.parse(raw) : [];
+              const idx = list.findIndex((w) => w.id === recoveredWorkspace.id);
+              if (idx !== -1) {
+                list[idx] = recoveredWorkspace;
+              } else {
+                list.unshift(recoveredWorkspace);
+              }
+              localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(list));
+            } catch {
+              // Storage write fallback
+            }
+            setActiveWorkspace(recoveredWorkspace);
+            return;
+          }
+
+          const fresh = parseTextToStudioWorkspace('', activeWorkspaceId);
+          setActiveWorkspace(fresh);
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            const fresh = parseTextToStudioWorkspace('', activeWorkspaceId);
+            setActiveWorkspace(fresh);
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+      };
+
     } else {
       setActiveWorkspace(null);
     }

@@ -246,11 +246,13 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
 
   const handleSignOut = async () => {
     await authStore.signOut();
+    toast.success('Signed out successfully.', { duration: 2500 });
     onNavigate('/');
   };
 
   const handleSignOutAll = async () => {
     await authStore.signOutAll();
+    toast.success('Signed out from all devices.', { duration: 2500 });
     onNavigate('/');
   };
 

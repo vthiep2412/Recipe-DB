@@ -280,6 +280,13 @@
   background: rgba(var(--text-accent-rgb, 255, 122, 0), 0.08);
 }
 
+.row-action-btn.orange:hover,
+.row-action-btn.archive-btn:hover {
+  border-color: #f97316;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.08);
+}
+
 .recipe-card-tag {
   display: inline-block;
   padding: 0.15rem 0.5rem;
@@ -362,27 +369,89 @@
 
 .pitch-rendered {
   padding: 1.25rem;
-  font-size: 0.875rem;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.85rem;
   color: var(--text-normal);
   line-height: 1.7;
 }
 
+.pitch-rendered h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #ffffff;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.pitch-rendered h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff;
+  margin: 0.5rem 0 0.25rem;
+}
+
 .pitch-rendered h3 {
   font-size: 0.95rem;
-  margin-bottom: 0.35rem;
-  color: var(--text-normal);
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #ffffff;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.pitch-rendered h1:first-child,
+.pitch-rendered h2:first-child,
+.pitch-rendered h3:first-child,
+.pitch-rendered p:first-child {
+  margin-top: 0;
 }
 
 .pitch-rendered p {
-  margin-bottom: 0.75rem;
-  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  color: var(--text-normal);
+  line-height: 1.7;
+}
+
+.pitch-rendered blockquote {
+  border-left: 0.25rem solid #ff7a00;
+  background-color: rgba(255, 122, 0, 0.08);
+  padding: 0.35rem 0.75rem;
+  border-radius: 0 0.35rem 0.35rem 0;
+  color: #d1d5db;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.pitch-rendered blockquote p {
+  margin: 0;
+}
+
+.pitch-rendered ul,
+.pitch-rendered ol {
+  padding-left: 1.25rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.pitch-rendered li {
+  margin: 0.2rem 0;
+  line-height: 1.7;
+}
+
+.pitch-rendered a {
+  color: var(--color-primary, #ff5722);
+  text-decoration: underline;
+}
+
+.pitch-rendered .obsidian-reading-link {
+  color: #ff9d42;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 157, 66, 0.5);
 }
 
 .pitch-raw {
   padding: 1.25rem;
-  font-family: "SF Mono", "Fira Code", monospace;
-  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.85rem;
   color: #a8b2c0;
   white-space: pre-wrap;
   word-break: break-word;

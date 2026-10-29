@@ -82,9 +82,49 @@ function scheduleCloudSync(): void {
   }, CLOUD_DEBOUNCE_MS);
 }
 
+function isAuthError(err: any): boolean {
+  if (!err) return false;
+  const status = err.status || err.statusCode;
+  if (status === 401) return true;
+  // NOTE: Do NOT treat 42501 (Postgres RLS policy violation on specific row/table) as a session-fatal auth error.
+  const code = String(err.code || '');
+  if (code === 'PGRST301') return true;
+  const msg = String(err.message || '').toLowerCase();
+  return (
+    msg.includes('jwt') ||
+    msg.includes('invalid claim') ||
+    msg.includes('token is expired') ||
+    msg.includes('session not found') ||
+    msg.includes('not authenticated')
+  );
+}
+
+export function clearCaches(): void {
+  progressCache.clear();
+  settingsCache = null;
+  bookmarksCache = null;
+  dirtyProgress.clear();
+  dirtySettings = false;
+  dirtyBookmarks.clear();
+  if (cloudTimer) {
+    clearTimeout(cloudTimer);
+    cloudTimer = null;
+  }
+  if (localTimer) {
+    clearTimeout(localTimer);
+    localTimer = null;
+  }
+}
+
 export async function flushPendingSync(): Promise<void> {
   const userId = getUserId();
   if (!userId || !isSupabaseConfigured) return;
+
+  const authState = authStore.getState();
+  if (authState.profile?.isArchived || authState.profile?.isAdminDeleted) {
+    clearCaches();
+    return;
+  }
 
   if (cloudTimer) {
     clearTimeout(cloudTimer);
@@ -108,7 +148,7 @@ export async function flushPendingSync(): Promise<void> {
     const item = progressCache.get(recipeId);
     if (!item) continue;
     try {
-      await supabase.from('user_recipe_progress').upsert({
+      const { error } = await supabase.from('user_recipe_progress').upsert({
         user_id: userId,
         recipe_id: recipeId,
         sidebar_mode: item.sidebarMode || 'prep',
@@ -119,8 +159,21 @@ export async function flushPendingSync(): Promise<void> {
         client_updated_at: item.clientUpdatedAt || new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,recipe_id' });
-    } catch {
-      // Re-queue on failure for subsequent flush
+
+      if (error) {
+        if (isAuthError(error)) {
+          clearCaches();
+          void authStore.signOut();
+          return;
+        }
+        dirtyProgress.add(recipeId);
+      }
+    } catch (err) {
+      if (isAuthError(err)) {
+        clearCaches();
+        void authStore.signOut();
+        return;
+      }
       dirtyProgress.add(recipeId);
     }
   }
@@ -128,13 +181,27 @@ export async function flushPendingSync(): Promise<void> {
   // 2. Sync Settings
   if (syncSettings && settingsCache) {
     try {
-      await supabase.from('user_settings').upsert({
+      const { error } = await supabase.from('user_settings').upsert({
         user_id: userId,
         settings: settingsCache,
         client_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
-    } catch {
+
+      if (error) {
+        if (isAuthError(error)) {
+          clearCaches();
+          void authStore.signOut();
+          return;
+        }
+        dirtySettings = true;
+      }
+    } catch (err) {
+      if (isAuthError(err)) {
+        clearCaches();
+        void authStore.signOut();
+        return;
+      }
       dirtySettings = true;
     }
   }
@@ -142,18 +209,37 @@ export async function flushPendingSync(): Promise<void> {
   // 3. Sync Bookmarks
   for (const [recipeId, action] of pendingBookmarks) {
     try {
-      if (action === 'add') {
-        await supabase.from('user_bookmarks').upsert({
-          user_id: userId,
-          recipe_id: recipeId,
-          created_at: new Date().toISOString()
-        }, { onConflict: 'user_id,recipe_id' });
-      } else {
-        await supabase.from('user_bookmarks').delete()
-          .eq('user_id', userId)
-          .eq('recipe_id', recipeId);
+      const query =
+        action === 'add'
+          ? supabase.from('user_bookmarks').upsert(
+              {
+                user_id: userId,
+                recipe_id: recipeId,
+                created_at: new Date().toISOString()
+              },
+              { onConflict: 'user_id,recipe_id' }
+            )
+          : supabase
+              .from('user_bookmarks')
+              .delete()
+              .eq('user_id', userId)
+              .eq('recipe_id', recipeId);
+
+      const { error } = await query;
+      if (error) {
+        if (isAuthError(error)) {
+          clearCaches();
+          void authStore.signOut();
+          return;
+        }
+        dirtyBookmarks.set(recipeId, action);
       }
-    } catch {
+    } catch (err) {
+      if (isAuthError(err)) {
+        clearCaches();
+        void authStore.signOut();
+        return;
+      }
       dirtyBookmarks.set(recipeId, action);
     }
   }
@@ -354,5 +440,6 @@ export const userDataSyncService = {
   isBookmarked,
   toggleBookmark,
   hydrateBookmarks,
-  flushPendingSync
+  flushPendingSync,
+  clearCaches
 };

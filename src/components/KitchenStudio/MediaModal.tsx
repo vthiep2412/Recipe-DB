@@ -32,6 +32,7 @@ export function MediaModal({
   const [urlInput, setUrlInput] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
   const [actualRef, setActualRef] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [galleryList, setGalleryList] = useState<string[]>([]);
   const [galleryPreviewMap, setGalleryPreviewMap] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
@@ -157,6 +158,14 @@ export function MediaModal({
   const handleApplyUrl = async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
+
+    const isSafe = /^https?:\/\/|^blob:|^idb:/i.test(trimmed);
+    if (!isSafe) {
+      setUrlError('Only secure HTTP, HTTPS, or uploaded media references are allowed.');
+      return;
+    }
+    setUrlError(null);
+
     if (effectiveMode === 'single') {
       const resolved = await resolveRefToPreview(trimmed);
       setPreviewUrl(resolved);
@@ -300,7 +309,10 @@ export function MediaModal({
                           : 'Or enter video URL...'
                       }
                       value={urlInput}
-                      onInput={(e) => setUrlInput((e.target as HTMLInputElement).value)}
+                      onInput={(e) => {
+                        setUrlInput((e.target as HTMLInputElement).value);
+                        if (urlError) setUrlError(null);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
@@ -317,6 +329,11 @@ export function MediaModal({
                       Load
                     </button>
                   </div>
+                  {urlError && (
+                    <div style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.8rem', marginTop: '0.4rem', textAlign: 'left' }}>
+                      {urlError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

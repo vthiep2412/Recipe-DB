@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { supabase } from './supabaseClient';
+import { userDataSyncService } from './userDataSyncService';
 import type {
   AuthState,
   AuthUser,
@@ -20,9 +21,71 @@ const initialAuthState: AuthState = {
 
 let currentAuthState: AuthState = { ...initialAuthState };
 const listeners = new Set<(state: AuthState) => void>();
+let profileSubscription: ReturnType<typeof supabase.channel> | null = null;
 
 function notifyListeners(): void {
   listeners.forEach(fn => fn(currentAuthState));
+}
+
+export function wipeAllLocalUserData(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (
+        key &&
+        (key.startsWith('recipe_view_') ||
+          key.startsWith('recipe_prep_') ||
+          key === 'recipedb_bookmarks' ||
+          key === 'recipedb_settings')
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    userDataSyncService.clearCaches();
+  } catch {
+    // Storage access fallback
+  }
+}
+
+function subscribeToProfileChanges(userId: string): void {
+  if (profileSubscription) {
+    void profileSubscription.unsubscribe();
+    profileSubscription = null;
+  }
+
+  profileSubscription = supabase
+    .channel(`profile-realtime-${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles',
+        filter: `id=eq.${userId}`
+      },
+      (payload) => {
+        if (payload.new) {
+          const updated = mapProfileRow(payload.new);
+          currentAuthState = {
+            ...currentAuthState,
+            profile: updated,
+            role: updated.role
+          };
+          notifyListeners();
+        }
+      }
+    )
+    .subscribe();
+}
+
+function unsubscribeProfileChanges(): void {
+  if (profileSubscription) {
+    void profileSubscription.unsubscribe();
+    profileSubscription = null;
+  }
 }
 
 function mapProfileRow(row: any): UserProfile {
@@ -65,7 +128,7 @@ async function fetchOrHealProfile(user: any): Promise<UserProfile | null> {
       return existing;
     }
 
-    // Profile row missing in database: auto-heal from user metadata
+    // Profile row missing in database: attempt insert from user metadata
     const meta = user.user_metadata || {};
     const fallbackUsername = (meta.username || user.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`).replace(/^@/, '');
     const fallbackDisplayName = meta.display_name || fallbackUsername;
@@ -86,22 +149,11 @@ async function fetchOrHealProfile(user: any): Promise<UserProfile | null> {
         return mapProfileRow(inserted);
       }
     } catch {
-      // Continue to in-memory profile if insert is rejected
+      // Failed to insert
     }
 
-    return {
-      id: user.id,
-      username: fallbackUsername,
-      displayName: fallbackDisplayName,
-      role: 'user',
-      usernameLastChangedAt: null,
-      displayNameLastChangedAt: null,
-      isArchived: false,
-      isAdminDeleted: false,
-      scheduledDeleteAt: null,
-      createdAt: user.created_at || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    // Never synthesize a fake active profile if RLS or backend denies the record
+    return null;
   } catch {
     return null;
   }
@@ -111,6 +163,7 @@ async function syncSession(): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
+      unsubscribeProfileChanges();
       currentAuthState = {
         ...currentAuthState,
         user: null,
@@ -128,15 +181,25 @@ async function syncSession(): Promise<void> {
     };
 
     const profile = await fetchOrHealProfile(session.user);
+    if (!profile) {
+      // Profile retrieval denied (archived/banned/deleted): terminate session
+      unsubscribeProfileChanges();
+      void authStore.signOut();
+      return;
+    }
+
+    subscribeToProfileChanges(session.user.id);
+
     currentAuthState = {
       ...currentAuthState,
       user: authUser,
       profile,
-      role: profile?.role ?? 'user',
+      role: profile.role ?? 'user',
       isAuthLoading: false
     };
     notifyListeners();
   } catch {
+    unsubscribeProfileChanges();
     currentAuthState = {
       ...currentAuthState,
       isAuthLoading: false
@@ -150,6 +213,7 @@ if (typeof window !== 'undefined') {
 
   supabase.auth.onAuthStateChange(async (_event, session) => {
     if (!session?.user) {
+      unsubscribeProfileChanges();
       currentAuthState = {
         ...currentAuthState,
         user: null,
@@ -167,11 +231,19 @@ if (typeof window !== 'undefined') {
     };
 
     const profile = await fetchOrHealProfile(session.user);
+    if (!profile) {
+      unsubscribeProfileChanges();
+      void authStore.signOut();
+      return;
+    }
+
+    subscribeToProfileChanges(session.user.id);
+
     currentAuthState = {
       ...currentAuthState,
       user: authUser,
       profile,
-      role: profile?.role ?? 'user',
+      role: profile.role ?? 'user',
       isAuthLoading: false
     };
     notifyListeners();
@@ -286,9 +358,11 @@ export const authStore: AuthStoreAPI = {
   },
 
   async signOut(): Promise<void> {
+    unsubscribeProfileChanges();
     try {
       await supabase.auth.signOut();
     } finally {
+      wipeAllLocalUserData();
       currentAuthState = {
         ...currentAuthState,
         user: null,
@@ -301,9 +375,11 @@ export const authStore: AuthStoreAPI = {
   },
 
   async signOutAll(): Promise<void> {
+    unsubscribeProfileChanges();
     try {
       await supabase.auth.signOut({ scope: 'global' });
     } finally {
+      wipeAllLocalUserData();
       currentAuthState = {
         ...currentAuthState,
         user: null,

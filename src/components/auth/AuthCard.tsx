@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { Eye, EyeOff } from 'lucide-preact';
+import { toast } from 'sonner';
 import { authStore } from '../../services/authStore';
 import { evaluatePassword } from '../../services/passwordStrength';
 
@@ -25,7 +26,6 @@ export function AuthCard({
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Sign up form state
@@ -34,8 +34,6 @@ export function AuthCard({
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
-  const [signupError, setSignupError] = useState<string | null>(null);
-  const [signupSuccess, setSignupSuccess] = useState<string | null>(null);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -53,29 +51,27 @@ export function AuthCard({
 
   const switchMode = (mode: 'login' | 'signup') => {
     setView(mode);
-    setLoginError(null);
-    setSignupError(null);
     onSwitchView?.(mode);
   };
 
   const handleLoginSubmit = async (e: Event) => {
     e.preventDefault();
     if (!loginIdentifier.trim() || !loginPassword) {
-      setLoginError('Please enter your email or username and password.');
+      toast.error('Please enter your email or username and password.', { duration: 4000 });
       return;
     }
     setLoginLoading(true);
-    setLoginError(null);
 
     try {
       const res = await authStore.signIn(loginIdentifier.trim(), loginPassword);
       if (res?.error) {
-        setLoginError(res.error);
+        toast.error(res.error || 'Failed to sign in.', { duration: 4000 });
       } else {
+        toast.success('Signed in successfully.', { duration: 2500 });
         onSuccess?.();
       }
     } catch (err: unknown) {
-      setLoginError(err instanceof Error ? err.message : 'Failed to sign in.');
+      toast.error(err instanceof Error ? err.message : 'Failed to sign in.', { duration: 4000 });
     } finally {
       setLoginLoading(false);
     }
@@ -85,30 +81,29 @@ export function AuthCard({
     e.preventDefault();
     const cleanUsername = signupUsername.trim().replace(/^@/, '');
     if (!cleanUsername) {
-      setSignupError('Username is required.');
+      toast.error('Username is required.', { duration: 6500 });
       return;
     }
     if (!signupEmail.trim()) {
-      setSignupError('Email address is required.');
+      toast.error('Email address is required.', { duration: 6500 });
       return;
     }
     if (signupPassword.length < 8) {
-      setSignupError('Password must be at least 8 characters.');
+      toast.error('Password must be at least 8 characters.', { duration: 6500 });
       return;
     }
     if (signupPassword !== signupConfirmPassword) {
-      setSignupError('Passwords do not match.');
+      toast.error('Passwords do not match.', { duration: 6500 });
       return;
     }
 
     const strength = evaluatePassword(signupPassword, [cleanUsername, signupEmail.trim()]);
     if (strength.score < 2) {
-      setSignupError(strength.warning || 'Please choose a stronger password.');
+      toast.error(strength.warning || 'Password must be at least "Fair" strength.', { duration: 6500 });
       return;
     }
 
     setSignupLoading(true);
-    setSignupError(null);
 
     try {
       const res = await authStore.signUp({
@@ -117,15 +112,13 @@ export function AuthCard({
         username: cleanUsername,
       });
       if (res?.error) {
-        setSignupError(res.error);
+        toast.error(res.error, { duration: 6500 });
       } else {
-        setSignupSuccess('Account created successfully. Check your email to confirm registration.');
-        setTimeout(() => {
-          onSuccess?.();
-        }, 1200);
+        toast.success('Account created successfully!', { duration: 2500 });
+        onSuccess?.();
       }
     } catch (err: unknown) {
-      setSignupError(err instanceof Error ? err.message : 'Failed to create account.');
+      toast.error(err instanceof Error ? err.message : 'Failed to create account.', { duration: 6500 });
     } finally {
       setSignupLoading(false);
     }
@@ -152,8 +145,6 @@ export function AuthCard({
                 {contextCaption || 'Log in to access your saved recipes and studio.'}
               </div>
             </div>
-
-            {loginError && <div className="auth-msg-banner error">{loginError}</div>}
 
             <form onSubmit={handleLoginSubmit} className="auth-field" style={{ gap: '0.9rem' }}>
               <div className="auth-field">
@@ -224,9 +215,6 @@ export function AuthCard({
               </div>
             </div>
 
-            {signupError && <div className="auth-msg-banner error">{signupError}</div>}
-            {signupSuccess && <div className="auth-msg-banner success">{signupSuccess}</div>}
-
             <form onSubmit={handleSignupSubmit} className="auth-field" style={{ gap: '0.85rem' }}>
               <div className="auth-field">
                 <label htmlFor="mobile-signup-username">Username</label>
@@ -293,8 +281,9 @@ export function AuthCard({
                       ))}
                     </div>
                     <div className="password-meter-label">
-                      <span>Strength: {passwordStrength.label}</span>
-                      {passwordStrength.warning && <span>{passwordStrength.warning}</span>}
+                      <span>
+                        Strength: <span style={{ color: passwordStrength.color, fontWeight: 600 }}>{passwordStrength.label}</span>
+                      </span>
                     </div>
                   </div>
                 )}
@@ -353,7 +342,7 @@ export function AuthCard({
   return (
     <div className={`pc-auth-container ${view === 'signup' ? 'is-signup' : ''}`}>
       {/* Left Static Half: Revealed when user is in Sign Up mode */}
-      <div className="pc-base-half">
+      <div className="pc-base-half" inert={view !== 'signup' ? true : undefined}>
         <div className="card-recipedb-brand">RecipeDB</div>
         <h3>Already have an account?</h3>
         <p>Log back in to manage your sent recipes, edit drafts, and access your cooking profile.</p>
@@ -367,7 +356,7 @@ export function AuthCard({
       </div>
 
       {/* Right Static Half: Revealed when user is in Log In mode */}
-      <div className="pc-base-half">
+      <div className="pc-base-half" inert={view !== 'login' ? true : undefined}>
         <div className="card-recipedb-brand">RecipeDB</div>
         <h3>New here?</h3>
         <p>Create an account to find recipes, suggest recipes, and share feedback.</p>
@@ -384,7 +373,7 @@ export function AuthCard({
       <div className="pc-sliding-box">
         <div className="pc-slider-track">
           {/* Form 1: Log In */}
-          <div className="pc-form-pane">
+          <div className="pc-form-pane" inert={view !== 'login' ? true : undefined}>
             <div>
               <div className="auth-title">
                 {contextCaption ? 'Log in required' : 'Welcome back'}
@@ -393,8 +382,6 @@ export function AuthCard({
                 {contextCaption || 'Sign in to your creator workspace.'}
               </div>
             </div>
-
-            {loginError && <div className="auth-msg-banner error">{loginError}</div>}
 
             <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               <div className="auth-field">
@@ -445,16 +432,13 @@ export function AuthCard({
           </div>
 
           {/* Form 2: Sign Up */}
-          <div className="pc-form-pane">
+          <div className="pc-form-pane" inert={view !== 'signup' ? true : undefined}>
             <div>
               <div className="auth-title">Create account</div>
               <div className="auth-caption">
                 Start your journey as a home cook or recipe creator.
               </div>
             </div>
-
-            {signupError && <div className="auth-msg-banner error">{signupError}</div>}
-            {signupSuccess && <div className="auth-msg-banner success">{signupSuccess}</div>}
 
             <form onSubmit={handleSignupSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div className="auth-field">
@@ -522,8 +506,9 @@ export function AuthCard({
                       ))}
                     </div>
                     <div className="password-meter-label">
-                      <span>Strength: {passwordStrength.label}</span>
-                      {passwordStrength.warning && <span>{passwordStrength.warning}</span>}
+                      <span>
+                        Strength: <span style={{ color: passwordStrength.color, fontWeight: 600 }}>{passwordStrength.label}</span>
+                      </span>
                     </div>
                   </div>
                 )}

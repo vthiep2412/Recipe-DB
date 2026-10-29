@@ -42,3 +42,13 @@ export async function runUserDataSyncServiceSelfCheck(): Promise<boolean> {
 
   return true;
 }
+
+if ((import.meta as unknown as Record<string, unknown>).main) {
+  runUserDataSyncServiceSelfCheck().then(() => {
+    console.log('userDataSyncService self-check passed.');
+  }).catch((err) => {
+    console.error('userDataSyncService self-check failed:', err);
+    const proc = (globalThis as Record<string, unknown>).process as { exit?: (code: number) => void } | undefined;
+    proc?.exit?.(1);
+  });
+}
