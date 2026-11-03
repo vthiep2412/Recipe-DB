@@ -327,7 +327,7 @@
 }
 
 .ui-segmented-btn:not(.is-active):hover:not(:disabled) {
-  color: #ffffff;
+  color: var(--text-normal);
 }
 
 .ui-segmented-btn:focus-visible {
@@ -502,6 +502,17 @@
 
 .confirm-modal-btn.btn-primary:hover:not(:disabled) {
   background: var(--interactive-accent-hover);
+}
+
+.confirm-modal-btn.btn-danger {
+  background: var(--color-red, #ef4444);
+  border: 1px solid var(--color-red, #ef4444);
+  color: #ffffff;
+}
+
+.confirm-modal-btn.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
 }
 
 .confirm-modal-btn:disabled {

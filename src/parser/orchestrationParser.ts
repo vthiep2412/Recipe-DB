@@ -45,7 +45,10 @@ export function isFablangDeclared(text: string): boolean {
   if (/^---\s*[\s\S]*?\n(isFabLang|isFablang|format|syntax)\s*:\s*(true|['"]?fablang['"]?)/i.test(trimmed)) {
     return true;
   }
-  if (/(?:^|\n)\s*!{1,3}=\s*[^=]+| - \[title:| -> \*[^*]+\*|\bclip:\s*\d+:\d+/i.test(trimmed)) {
+  if (/(?:^|\n)\s*!{1,3}=\s*[^=]+| - \[(?:title:|link|tools)| -> \*[^*]+\*|\bclip:\s*\d+:\d+|\bdesc:\s*/i.test(trimmed)) {
+    return true;
+  }
+  if (/^---\s*[\s\S]*?---\s*[\s\S]*?(?:^|\n)\s*[-+]\s+/m.test(trimmed) && /(?:^|\n)\s*!?=\s*[^=]+=/m.test(trimmed)) {
     return true;
   }
   return false;
@@ -75,7 +78,7 @@ export function validateFablang(rawText: string): FablangSyntaxError[] {
     if (!trimmed || trimmed.startsWith('--')) continue;
 
     // 1. Strict subsection depth rule: only depth 1 allowed
-    if (/^\s*!{2,}=/.test(line)) {
+    if (/^\s*!{2,}=|^\s*!={2,}/.test(line)) {
       errors.push({
         line: lineNum,
         message: 'Invalid subsection depth: only 1 depth level is allowed with !=',
@@ -370,6 +373,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
   const inputsMap = new Map<string, RecipeInput>();
   const vesselsMap = new Map<string, RecipeVessel>();
   const yieldProducerMap = new Map<string, string>();
+  const firstIngredientDeclarations = new Map<string, { mentionId: string; name: string }>();
 
   let currentRootSectionId = 'sec-main';
   let currentSectionId = 'sec-main';
@@ -591,8 +595,8 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
           const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
           let name = working;
-          let amount: number | string = 1;
-          let unit = 'piece';
+          let amount: number | string | undefined = undefined;
+          let unit: string | undefined = undefined;
 
           if (braceMatch) {
             name = braceMatch[1].trim();
@@ -611,14 +615,35 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           }
 
           const inputSlug = name.toLowerCase().replace(/\s+/g, '-');
-          if (!isHidden && !inputsMap.has(inputSlug)) {
-            inputsMap.set(inputSlug, {
-              id: inputSlug,
-              name,
-              amount,
-              unit,
-              notes: creatorNote
-            });
+          let originalMentionId: string | undefined;
+
+          if (!isHidden) {
+            if (!firstIngredientDeclarations.has(inputSlug)) {
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name });
+            }
+            if (!inputsMap.has(inputSlug)) {
+              inputsMap.set(inputSlug, {
+                id: inputSlug,
+                name,
+                amount: amount ?? 1,
+                unit: unit ?? '',
+                notes: creatorNote
+              });
+            }
+          } else {
+            const firstDecl = firstIngredientDeclarations.get(inputSlug);
+            if (firstDecl) {
+              originalMentionId = firstDecl.mentionId;
+            } else if (!inputsMap.has(inputSlug)) {
+              inputsMap.set(inputSlug, {
+                id: inputSlug,
+                name,
+                amount: 1,
+                unit: '',
+                notes: creatorNote
+              });
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name });
+            }
           }
 
           const mention: StepMentionToken = {
@@ -627,10 +652,11 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             displayText: name,
             data: {
               ingredientId: inputSlug,
-              amount,
-              unit,
+              amount: isHidden ? undefined : amount,
+              unit: isHidden ? undefined : unit,
               creatorNote,
-              isRemention: isHidden
+              isRemention: isHidden,
+              originalMentionId
             }
           };
           mentions.push(mention);
@@ -655,7 +681,8 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             vesselsMap.set(vesselSlug, {
               id: vesselSlug,
               name,
-              type: 'bowl'
+              type: 'bowl',
+              size: (size as any)
             });
           }
 
@@ -665,7 +692,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             displayText: name,
             data: {
               vesselId: vesselSlug,
-              vesselSize: size === 'large' ? 'Large' : size === 'small' ? 'Small' : 'Normal',
+              vesselSize: (size as any) || 'Normal',
               creatorNote
             }
           };
@@ -712,7 +739,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         });
       }
 
-      const parentId = isLinked && previousStepId ? previousStepId : (previousStepId || currentSectionId);
+      const parentId = isLinked && previousStepId ? previousStepId : currentSectionId;
       const activeSection = sections.find(s => s.id === currentSectionId);
 
       const stepNode: CanvasStepNode = {
@@ -769,6 +796,86 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
   ensureDefaultSection();
 
+  const knownSectionIds = new Set(sections.map(s => s.id));
+  const nodesById = new Map(canvasNodes.map(n => [n.id, n]));
+  const defaultSecId = sections[0].id;
+
+  const components = sections.map(sec => {
+    const secNodes = canvasNodes.filter(n => {
+      const sId = resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId);
+      return sId === sec.id;
+    });
+
+    const secSteps: RecipeStepNode[] = secNodes.map(n => {
+      const tokens: RecipeToken[] = [];
+      if (n.segments && n.segments.length > 0) {
+        for (const seg of n.segments) {
+          if (seg.type === 'text') {
+            if (seg.text) tokens.push({ type: 'text', text: seg.text });
+          } else if (seg.type === 'mention' && seg.mention) {
+            const m = seg.mention;
+            if (m.type === 'yield') {
+              tokens.push({
+                type: 'yield',
+                yieldId: m.data?.yieldId || m.id,
+                sourceStepId: m.data?.yieldId || m.id,
+                displayText: m.displayText,
+                partition: m.data?.yieldPartition
+              });
+            } else if (m.type === 'ingredient') {
+              tokens.push({
+                type: 'ingredient',
+                inputId: m.data?.ingredientId || m.id,
+                displayText: m.displayText,
+                amount: m.data?.amount,
+                unit: m.data?.unit,
+                note: m.data?.creatorNote,
+                isRemention: m.data?.isRemention
+              });
+            } else if (m.type === 'cookware') {
+              tokens.push({
+                type: 'cookware',
+                vesselId: m.data?.vesselId || m.id,
+                displayText: m.displayText
+              });
+            } else if (m.type === 'timer') {
+              tokens.push({
+                type: 'timer',
+                timerId: m.id,
+                displayText: m.displayText
+              });
+            }
+          }
+        }
+      } else {
+        tokens.push({ type: 'text', text: n.instructionText });
+      }
+
+      return {
+        id: n.id,
+        componentId: `component-${sec.id}`,
+        title: n.title,
+        isCountedStep: n.isCountedStep,
+        isLinkedToPrevious: n.isLinkedToPrevious,
+        instructionText: n.instructionText,
+        tokens,
+        media: n.media,
+        showInlineTools: n.showInlineTools,
+        producesYield: n.producesYield ? {
+          id: `yield-${n.id}`,
+          name: n.producesYield.name,
+          vesselId: n.producesYield.vesselId
+        } : undefined
+      };
+    });
+
+    return {
+      id: `component-${sec.id}`,
+      name: sec.name,
+      steps: secSteps
+    };
+  });
+
   const finalGraph: RecipeGraph = {
     schemaVersion: 2,
     id: workspaceId,
@@ -788,11 +895,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     times,
     inputs: Array.from(inputsMap.values()),
     vessels: Array.from(vesselsMap.values()),
-    components: sections.map(s => ({
-      id: `component-${s.id}`,
-      name: s.name,
-      steps: []
-    })),
+    components,
     sections
   };
 
@@ -804,8 +907,16 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     graph: finalGraph,
     sections,
     canvasNodes,
-    customIngredients: [],
-    customCookware: []
+    customIngredients: Array.from(inputsMap.values()).map(i => ({
+      id: i.id,
+      name: i.name,
+      allowedUnits: i.unit ? [i.unit] : ['g', 'ml', 'piece']
+    })),
+    customCookware: Array.from(vesselsMap.values()).map(v => ({
+      id: v.id,
+      name: v.name,
+      size: v.size
+    }))
   };
 
   return { workspace, errors };

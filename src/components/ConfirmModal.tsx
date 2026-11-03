@@ -1,4 +1,5 @@
 import { ComponentChildren } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useEffect, useRef } from 'preact/hooks';
 
 export interface ConfirmModalProps {
@@ -89,10 +90,11 @@ export function ConfirmModal({
 
   if (!isOpen) return null;
 
-  return (
+  const content = (
     <div
       className="confirm-modal-overlay"
       onClick={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget && !isLoading) {
           onCancel();
         }
@@ -105,6 +107,7 @@ export function ConfirmModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
+        onClick={(e) => e.stopPropagation()}
       >
         <h3 id="confirm-modal-title" className="confirm-modal-title">
           {title}
@@ -120,7 +123,10 @@ export function ConfirmModal({
               type="button"
               className="confirm-modal-btn btn-danger"
               style={{ marginRight: 'auto' }}
-              onClick={onDiscard}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDiscard();
+              }}
               disabled={isLoading}
             >
               {discardLabel}
@@ -129,7 +135,10 @@ export function ConfirmModal({
           <button
             type="button"
             className="confirm-modal-btn btn-cancel"
-            onClick={onCancel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
             disabled={isLoading}
           >
             {cancelLabel}
@@ -138,7 +147,10 @@ export function ConfirmModal({
             type="button"
             ref={confirmBtnRef}
             className={`confirm-modal-btn btn-${confirmVariant}`}
-            onClick={onConfirm}
+            onClick={(e) => {
+              e.stopPropagation();
+              onConfirm();
+            }}
             disabled={isLoading}
           >
             {isLoading ? 'Saving...' : confirmLabel}
@@ -147,4 +159,8 @@ export function ConfirmModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(content, document.body)
+    : content;
 }

@@ -11,7 +11,7 @@ export interface SegmentedOption<T extends string = string> {
 export interface SegmentedControlProps<T extends string = string> {
   options: SegmentedOption<T>[]
   value: T
-  onChange: (val: T) => void
+  onChange: (val: T, event?: MouseEvent) => void
   className?: string
   ariaLabel?: string
   disabled?: boolean
@@ -83,7 +83,7 @@ export function SegmentedControl<T extends string = string>({
             onClick={e => {
               e.stopPropagation()
               if (disabled || opt.disabled) return
-              onChange(opt.value)
+              onChange(opt.value, e)
             }}
             onKeyDown={e => handleKeyDown(e, idx)}
           >

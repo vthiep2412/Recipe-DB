@@ -166,7 +166,7 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
                     <SegmentedControl
                       options={themeOptions}
                       value={settings.theme}
-                      onChange={theme => updateSettings({ theme })}
+                      onChange={(theme, e) => updateSettings({ theme }, e ? { x: e.clientX, y: e.clientY } : undefined)}
                       ariaLabel="Theme selection"
                     />
                   </div>

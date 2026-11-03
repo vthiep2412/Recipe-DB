@@ -48,7 +48,7 @@
 .creator-app-title {
   font-size: 1.75rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin: 0;
 }
 
@@ -60,7 +60,7 @@
 
 .creator-unified-card {
   background: var(--background-secondary, #242424);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.08));
   border-radius: 0.75rem;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
@@ -72,13 +72,13 @@
 
 .creator-card-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--background-modifier-border, rgba(255, 255, 255, 0.08));
   margin: 1.5rem 0;
 }
 
 .creator-guidelines-card {
   background: var(--background-secondary, #242424);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.08));
   border-radius: 0.75rem;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.75rem;
@@ -87,7 +87,7 @@
 .creator-guidelines-title {
   font-size: 1.05rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin: 0 0 0.75rem;
   display: flex;
   align-items: center;
@@ -113,7 +113,7 @@
 }
 
 .creator-guidelines-list li strong {
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
 }
 
 .creator-guidelines-bullet {
@@ -129,12 +129,12 @@
   border-radius: 0 0.5rem 0.5rem 0;
   font-size: 0.88rem;
   line-height: 1.5;
-  color: #e5e7eb;
+  color: var(--text-normal, #e5e7eb);
 }
 
 .creator-editor-card {
   background: var(--background-secondary, #242424);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.08));
   border-radius: 0.75rem;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.5rem;
@@ -152,7 +152,7 @@
 .creator-editor-label {
   font-size: 1rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
 }
 
 .creator-editor-sublabel {
@@ -207,7 +207,7 @@
   font-size: 1.45rem;
   font-weight: 700;
   line-height: 1.35;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin-top: 0.6rem;
   margin-bottom: 0.3rem;
 }
@@ -216,7 +216,7 @@
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.35;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin-top: 0.5rem;
   margin-bottom: 0.25rem;
 }
@@ -225,7 +225,7 @@
   font-size: 1.1rem;
   font-weight: 600;
   line-height: 1.35;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin-top: 0.4rem;
   margin-bottom: 0.2rem;
 }
@@ -236,7 +236,7 @@
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin-top: 0.35rem;
   margin-bottom: 0.15rem;
 }
@@ -277,7 +277,7 @@
   background-color: rgba(255, 122, 0, 0.08);
   padding: 0.35rem 0.75rem;
   border-radius: 0 0.35rem 0.35rem 0;
-  color: #d1d5db;
+  color: var(--text-normal, #d1d5db);
   margin: 0.4rem 0 0.6rem;
 }
 
@@ -341,6 +341,12 @@
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
+[data-theme="light"] .creator-status-badge.pending {
+  background: rgba(234, 88, 12, 0.1);
+  color: #c2410c;
+  border-color: rgba(234, 88, 12, 0.3);
+}
+
 .creator-status-badge.approved {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;
@@ -355,7 +361,7 @@
 
 .creator-already-submitted-card {
   background: var(--background-secondary, #242424);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.08));
   border-radius: 0.75rem;
   padding: 1.75rem;
   margin-bottom: 1.5rem;
@@ -373,7 +379,7 @@
 .creator-already-submitted-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-normal, #ffffff);
   margin: 0;
   display: flex;
   align-items: center;

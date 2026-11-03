@@ -6,11 +6,15 @@ import type {
   CloudRecipeStatus,
   CloudRecipeStorageAPI
 } from '../types/cloud';
+import { exportStudioWorkspaceToRecipeGraph } from '../parser/orchestrationParser';
+import { generateFablang } from '../parser/fablangGenerator';
+import { recipeGraphToRecipeJSON } from '../parser/graphAdapter';
 import { getAllRecipes } from '../recipes';
 import { supabase } from './supabaseClient';
 import { authStore } from './authStore';
 import { localMediaStore } from './localMediaStore';
 import { uploadAsset } from './cloudinaryUpload';
+import { WorkspaceStorageService } from './workspaceStorageService';
 
 export function slugifyRecipeTitle(title: string): string {
   if (!title) return '';
@@ -37,8 +41,6 @@ export interface RecipeStorageProvider {
     options?: { overwrite?: boolean; format?: 'json' | 'fablang' }
   ): Promise<{ ok: boolean; path?: string; error?: string }>;
 }
-
-const WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
 
 export function mapRecipeRow(row: any): CloudRecipe {
   return {
@@ -174,21 +176,18 @@ export class LocalRecipeStorageProvider implements RecipeStorageProvider {
     }
 
     try {
-      const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
-      if (raw) {
-        const workspaces: StudioWorkspace[] = JSON.parse(raw);
-        const matchWs = workspaces.find(w => {
-          if (currentWorkspaceId && w.id === currentWorkspaceId) return false;
-          return slugifyRecipeTitle(w.title) === cleanSlug;
-        });
+      const workspaces = await WorkspaceStorageService.loadWorkspaces();
+      const matchWs = workspaces.find(w => {
+        if (currentWorkspaceId && w.id === currentWorkspaceId) return false;
+        return slugifyRecipeTitle(w.title) === cleanSlug;
+      });
 
-        if (matchWs) {
-          return {
-            isTaken: true,
-            source: 'workspace',
-            existingTitle: matchWs.title
-          };
-        }
+      if (matchWs) {
+        return {
+          isTaken: true,
+          source: 'workspace',
+          existingTitle: matchWs.title
+        };
       }
     } catch {
       // Storage access fallback
@@ -343,6 +342,11 @@ export class SupabaseRecipeStorageProvider
 
     try {
       const cleanWorkspace = await uploadAllLocalRefsInWorkspace(workspace);
+      const compiledGraph = exportStudioWorkspaceToRecipeGraph(cleanWorkspace);
+      const adaptedRecipe = recipeGraphToRecipeJSON(compiledGraph);
+      const rawFablang = generateFablang(compiledGraph, cleanWorkspace.canvasNodes, cleanWorkspace);
+      const ingredientsPayload = adaptedRecipe.ingredients || [];
+      const cookwarePayload = compiledGraph.vessels || [];
 
       const heroImage =
         cleanWorkspace.graph?.media?.pictureUrl ||
@@ -423,11 +427,12 @@ export class SupabaseRecipeStorageProvider
               recipe_id: existingRecipe.id,
               sections_ast: {
                 sections: cleanWorkspace.sections || [],
-                canvasNodes: cleanWorkspace.canvasNodes || []
+                canvasNodes: cleanWorkspace.canvasNodes || [],
+                graph: compiledGraph
               },
-              ingredients_index: cleanWorkspace.customIngredients || [],
-              cookware_index: cleanWorkspace.customCookware || [],
-              raw_fablang: (cleanWorkspace.graph as any)?.rawFablang || '',
+              ingredients_index: ingredientsPayload,
+              cookware_index: cookwarePayload,
+              raw_fablang: rawFablang,
               important_notes: cleanWorkspace.graph?.importantNotes || ''
             });
 
@@ -466,11 +471,12 @@ export class SupabaseRecipeStorageProvider
           recipe_id: recipeData.id,
           sections_ast: {
             sections: cleanWorkspace.sections || [],
-            canvasNodes: cleanWorkspace.canvasNodes || []
+            canvasNodes: cleanWorkspace.canvasNodes || [],
+            graph: compiledGraph
           },
-          ingredients_index: cleanWorkspace.customIngredients || [],
-          cookware_index: cleanWorkspace.customCookware || [],
-          raw_fablang: (cleanWorkspace.graph as any)?.rawFablang || '',
+          ingredients_index: ingredientsPayload,
+          cookware_index: cookwarePayload,
+          raw_fablang: rawFablang,
           important_notes: cleanWorkspace.graph?.importantNotes || ''
         });
 

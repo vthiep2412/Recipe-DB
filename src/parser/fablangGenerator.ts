@@ -26,6 +26,7 @@ export function generateFablang(
 
   // 1. YAML Frontmatter
   lines.push('---');
+  lines.push('isFablang: true');
   lines.push(`title: "${escapeRawYamlString(graph.title || 'Untitled Recipe')}"`);
 
   if (graph.difficulty) {
@@ -92,6 +93,14 @@ export function generateFablang(
       for (const g of media.galleryUrls) {
         lines.push(`    - "${escapeRawYamlString(g)}"`);
       }
+    }
+  }
+
+  const rawTags = (graph as any)?.tags;
+  if (Array.isArray(rawTags) && rawTags.length > 0) {
+    lines.push('tags:');
+    for (const tag of rawTags) {
+      lines.push(`  - "${escapeRawYamlString(String(tag))}"`);
     }
   }
 
@@ -236,8 +245,9 @@ export function generateFablang(
             const name = m.displayText;
             const noteStr = m.data?.creatorNote ? `(${m.data.creatorNote})` : '';
 
-            if (isRemention && !m.data?.amount) {
-              return `${prefixChar}${name}${noteStr || (name.includes(' ') ? '{}' : '')}`;
+            if (isRemention) {
+              const needsBraces = name.includes(' ') || Boolean(noteStr);
+              return `${prefixChar}${name}${needsBraces ? '{}' : ''}${noteStr}`;
             }
 
             let amtStr = '';
@@ -245,7 +255,7 @@ export function generateFablang(
               const formattedAmt = typeof m.data.amount === 'number' ? formatFraction(m.data.amount) : String(m.data.amount);
               const u = m.data?.unit ? `%${m.data.unit}` : '';
               amtStr = `{${formattedAmt}${u}}`;
-            } else if (name.includes(' ') && !noteStr) {
+            } else if (name.includes(' ') || Boolean(noteStr)) {
               amtStr = '{}';
             }
             return `${prefixChar}${name}${amtStr}${noteStr}`;
@@ -253,8 +263,10 @@ export function generateFablang(
 
           if (m.type === 'cookware') {
             const name = m.displayText;
-            const sizeStr = m.data?.vesselSize ? `{${m.data.vesselSize}}` : (name.includes(' ') ? '{}' : '');
             const noteStr = m.data?.creatorNote ? `(${m.data.creatorNote})` : '';
+            const sizeStr = m.data?.vesselSize
+              ? `{${m.data.vesselSize}}`
+              : (name.includes(' ') || Boolean(noteStr) ? '{}' : '');
             return `#${name}${sizeStr}${noteStr}`;
           }
 

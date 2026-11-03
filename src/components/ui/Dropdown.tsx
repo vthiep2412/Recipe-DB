@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef, useEffect, useMemo } from 'preact/hooks'
 import { ChevronDown, Check } from 'lucide-preact'
 
 export interface DropdownOption {
@@ -35,9 +35,11 @@ export function Dropdown({
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const closeTimeoutRef = useRef<number | null>(null)
+  const isKeyboardNavRef = useRef(false)
 
-  const normalizedOptions: DropdownOption[] = options.map(opt =>
-    typeof opt === 'string' ? { value: opt, label: opt } : opt
+  const normalizedOptions: DropdownOption[] = useMemo(
+    () => options.map(opt => (typeof opt === 'string' ? { value: opt, label: opt } : opt)),
+    [options]
   )
 
   const selectedItem = normalizedOptions.find(opt => opt.value === value)
@@ -96,10 +98,23 @@ export function Dropdown({
   }, [])
 
   useEffect(() => {
-    if (!isOpen || isClosing) return
+    if (isOpen && !isClosing) {
+      const selectedIdx = normalizedOptions.findIndex(opt => opt.value === value)
+      const initialIdx = selectedIdx >= 0 ? selectedIdx : 0
+      setHighlightedIndex(initialIdx)
+      requestAnimationFrame(() => {
+        if (menuRef.current) {
+          const items = menuRef.current.querySelectorAll<HTMLElement>('.ui-dropdown-item')
+          if (items[initialIdx]) {
+            items[initialIdx].scrollIntoView({ block: 'nearest' })
+          }
+        }
+      })
+    }
+  }, [isOpen, isClosing])
 
-    const selectedIdx = normalizedOptions.findIndex(opt => opt.value === value)
-    setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0)
+  useEffect(() => {
+    if (!isOpen || isClosing) return
 
     const handleOutsideClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -115,6 +130,7 @@ export function Dropdown({
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
+        isKeyboardNavRef.current = true
         setHighlightedIndex(prev => {
           let next = prev + 1
           while (next < normalizedOptions.length && normalizedOptions[next].disabled) {
@@ -124,6 +140,7 @@ export function Dropdown({
         })
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
+        isKeyboardNavRef.current = true
         setHighlightedIndex(prev => {
           let next = prev - 1
           while (next >= 0 && normalizedOptions[next].disabled) {
@@ -151,10 +168,11 @@ export function Dropdown({
       document.removeEventListener('mousedown', handleOutsideClick)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, isClosing, value, normalizedOptions])
+  }, [isOpen, isClosing, normalizedOptions, onChange])
 
   useEffect(() => {
-    if (isOpen && !isClosing && menuRef.current && highlightedIndex >= 0) {
+    if (isKeyboardNavRef.current && isOpen && !isClosing && menuRef.current && highlightedIndex >= 0) {
+      isKeyboardNavRef.current = false
       const items = menuRef.current.querySelectorAll<HTMLElement>('.ui-dropdown-item')
       if (items[highlightedIndex]) {
         items[highlightedIndex].scrollIntoView({ block: 'nearest' })
@@ -207,7 +225,10 @@ export function Dropdown({
                   onChange(opt.value)
                   closeDropdown()
                 }}
-                onMouseEnter={() => setHighlightedIndex(idx)}
+                onMouseEnter={() => {
+                  isKeyboardNavRef.current = false
+                  setHighlightedIndex(idx)
+                }}
               >
                 <span className="ui-dropdown-item-label">{opt.label}</span>
                 {isSelected && (

@@ -22,6 +22,7 @@ import { AccountSuspendedModal } from './components/auth/AccountSuspendedModal';
 import { SupportPage } from './components/SupportPage';
 import { CreatorApplicationPage } from './components/CreatorApplicationPage';
 import { AdminPanel } from './components/AdminPanel';
+import { DevToolBox } from './components/DevToolBox';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { authStore } from './services/authStore';
 import { getAllRecipes, getRecipeById } from './recipes';
@@ -307,10 +308,27 @@ export function App() {
       {/* Auth Modal Overlay rendered at root */}
       <AuthModal onNavigate={navigate} />
 
-      {/* Floating Notifications (Top Right) */}
-      <Toaster position="top-right" duration={4000} richColors theme={settings.theme as any} />
+      {/* Floating Notifications (Top Right, positioned below navbar) */}
+      <Toaster position="top-right" offset="4.25rem" duration={4000} richColors theme={settings.theme as any} />
+
+      {/* Global Dev Tool Box */}
+      <DevToolBox />
     </>
   );
 }
 
 render(<App />, document.getElementById('app')!);
+
+// Expose DevTools console helper to open the tool box
+if (typeof window !== 'undefined') {
+  (window as any).openDevTools = () => {
+    try {
+      localStorage.setItem('recipedevtool', 'true');
+      window.dispatchEvent(new Event('recipedevtool-change'));
+      window.dispatchEvent(new Event('recipedevtool-open'));
+      return 'Dev tool box opened.';
+    } catch {
+      return 'Unable to access localStorage.';
+    }
+  };
+}

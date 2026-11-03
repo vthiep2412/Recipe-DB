@@ -1,11 +1,10 @@
 import { recipeGraphToRecipeJSON, normalizeWorkspace } from '../parser/graphAdapter';
 import { exportStudioWorkspaceToRecipeGraph } from '../parser/orchestrationParser';
 import type { RecipeJSON } from '../types/recipe';
-import type { StudioWorkspace } from '../types/orchestration';
+import type { RecipeGraph, StudioWorkspace } from '../types/orchestration';
 import type { CloudRecipe, CloudRecipeDetails } from '../types/cloud';
 import { recipeStorageService } from '../services/recipeStorageService';
-
-const WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
+import { WorkspaceStorageService } from '../services/workspaceStorageService';
 
 /**
  * Maps raw cloud recipe rows to the client-facing RecipeJSON format.
@@ -15,69 +14,55 @@ export function mapCloudToRecipeJSON(cloud: {
   details: CloudRecipeDetails;
 }): RecipeJSON {
   const { recipe, details } = cloud;
-  const sectionsAst = details.sectionsAst as any;
-  const rawSections = sectionsAst?.sections || [];
-  const rawCanvasNodes = sectionsAst?.canvasNodes || [];
+  const sectionsAst = (details?.sectionsAst as any) || {};
 
-  const steps = rawCanvasNodes.map((n: any, idx: number) => ({
-    index: idx + 1,
-    rawText: n.instructionText || n.title || '',
-    tokens: (n.segments || []).map((seg: any) => {
-      if (seg.type === 'mention') {
-        const m = seg.mention;
-        return {
-          type:
-            m.type === 'ingredient'
-              ? 'ingredient'
-              : m.type === 'cookware'
-              ? 'cookware'
-              : m.type === 'timer'
-              ? 'timer'
-              : 'text',
-          name: m.displayText || '',
-          value: m.displayText || '',
-          durationText: m.data?.durationText || '',
-        };
-      }
-      return { type: 'text', value: seg.text || '' };
-    }),
-    id: n.id,
-    title: n.title,
-    sectionId: n.sectionId,
-    image: n.media?.pictureUrl,
-  }));
+  let compiledGraph: RecipeGraph;
 
-  const mappedSections =
-    rawSections.length > 0 && rawSections[0]?.steps
-      ? rawSections
-      : rawSections.length > 0
-      ? rawSections.map((sec: any) => ({
-          id: sec.id,
-          name: sec.name || 'Main',
-          steps: steps.filter((s: any) => s.sectionId === sec.id),
-        }))
-      : [
-          {
-            id: 'sec-main',
-            name: 'Instructions',
-            steps,
-          },
-        ];
+  if (sectionsAst.graph && Array.isArray(sectionsAst.graph.components)) {
+    compiledGraph = sectionsAst.graph as RecipeGraph;
+  } else {
+    const rawSections = Array.isArray(sectionsAst?.sections) ? sectionsAst.sections : [];
+    const rawCanvasNodes = Array.isArray(sectionsAst?.canvasNodes) ? sectionsAst.canvasNodes : [];
+    const fallbackWs: StudioWorkspace = {
+      id: recipe.slug || recipe.id,
+      title: recipe.title,
+      createdAt: recipe.createdAt,
+      updatedAt: recipe.updatedAt,
+      graph: {
+        schemaVersion: 2,
+        id: recipe.slug || recipe.id,
+        title: recipe.title,
+        servings: 4,
+        description: recipe.description || '',
+        importantNotes: details.importantNotes || '',
+        media: {
+          pictureUrl: recipe.imageUrl,
+        },
+        times: {},
+        inputs: Array.isArray(details.ingredientsIndex) ? (details.ingredientsIndex as any) : [],
+        vessels: Array.isArray(details.cookwareIndex) ? (details.cookwareIndex as any) : [],
+        components: [],
+        sections: rawSections,
+      },
+      sections: rawSections,
+      canvasNodes: rawCanvasNodes,
+      customIngredients: [],
+      customCookware: [],
+    };
+    compiledGraph = exportStudioWorkspaceToRecipeGraph(fallbackWs);
+  }
+
+  const baseJson = recipeGraphToRecipeJSON(compiledGraph);
 
   return {
+    ...baseJson,
     id: recipe.slug || recipe.id,
-    title: recipe.title,
-    description: recipe.description || '',
-    image: recipe.imageUrl,
-    gallery: [],
-    importantNotes: details.importantNotes || '',
-    servings: { base: 4, unitName: 'servings' },
-    times: { total: '30m' },
-    tags: recipe.tags || [],
-    metadata: {},
-    ingredients: (details.ingredientsIndex as any[]) || [],
-    sections: mappedSections,
-    rawCooklang: details.rawFablang || '',
+    title: recipe.title || baseJson.title,
+    description: recipe.description || baseJson.description,
+    image: recipe.imageUrl || baseJson.image,
+    tags: Array.isArray(recipe.tags) && recipe.tags.length > 0 ? recipe.tags : baseJson.tags,
+    rawCooklang: details.rawFablang || baseJson.rawCooklang || '',
+    importantNotes: details.importantNotes || baseJson.importantNotes || '',
   };
 }
 
@@ -133,17 +118,14 @@ export async function getRecipeById(id: string): Promise<RecipeJSON | null> {
 
   // Check Kitchen Studio local storage
   try {
-    const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
-    if (raw) {
-      const workspaces: StudioWorkspace[] = JSON.parse(raw);
-      const match = workspaces.find(ws => ws.id === id || ws.graph?.id === id);
-      if (match) {
-        const normalized = normalizeWorkspace(match);
-        const compiledGraph = exportStudioWorkspaceToRecipeGraph(normalized);
-        const mapped = recipeGraphToRecipeJSON(compiledGraph);
-        parsedRecipeCache.set(id, mapped);
-        return mapped;
-      }
+    const workspaces = await WorkspaceStorageService.loadWorkspaces();
+    const match = workspaces.find(ws => ws.id === id || ws.graph?.id === id);
+    if (match) {
+      const normalized = normalizeWorkspace(match);
+      const compiledGraph = exportStudioWorkspaceToRecipeGraph(normalized);
+      const mapped = recipeGraphToRecipeJSON(compiledGraph);
+      parsedRecipeCache.set(id, mapped);
+      return mapped;
     }
   } catch {
     // Storage fallback

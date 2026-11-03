@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { supabase } from './supabaseClient';
 import { userDataSyncService } from './userDataSyncService';
+import { WorkspaceStorageService } from './workspaceStorageService';
 import type {
   AuthState,
   AuthUser,
@@ -30,6 +31,7 @@ function notifyListeners(): void {
 export function wipeAllLocalUserData(): void {
   if (typeof window === 'undefined') return;
   try {
+    WorkspaceStorageService.clearSessionKey();
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -213,6 +215,7 @@ if (typeof window !== 'undefined') {
 
   supabase.auth.onAuthStateChange(async (_event, session) => {
     if (!session?.user) {
+      WorkspaceStorageService.clearSessionKey();
       unsubscribeProfileChanges();
       currentAuthState = {
         ...currentAuthState,

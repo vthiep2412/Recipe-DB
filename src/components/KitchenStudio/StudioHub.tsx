@@ -7,8 +7,7 @@ import { NewRecipeModal } from './NewRecipeModal';
 import { ConfirmModal } from '../ConfirmModal';
 import { authStore } from '../../services/authStore';
 import { recipeStorageService } from '../../services/recipeStorageService';
-
-const WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
+import { WorkspaceStorageService } from '../../services/workspaceStorageService';
 
 interface StudioHubProps {
   onOpenWorkspace: (workspaceId: string) => void;
@@ -17,6 +16,7 @@ interface StudioHubProps {
 
 export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
   const [workspaces, setWorkspaces] = useState<StudioWorkspace[]>([]);
+  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'sent'>('editor');
   const [sentRecipes, setSentRecipes] = useState<CloudRecipe[]>([]);
@@ -24,22 +24,31 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
 
   const authState = authStore.getState();
   const role = authState.role || authState.profile?.role;
-  const isCreator = role === 'recipe_creator' || role === 'admin';
+  const isAdmin = role === 'admin';
+  const showTabs = role === 'recipe_creator' && !isAdmin;
+  const currentTab = isAdmin ? 'editor' : activeTab;
   const [workspaceToDelete, setWorkspaceToDelete] = useState<StudioWorkspace | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(WORKSPACES_STORAGE_KEY);
-      if (raw) {
-        setWorkspaces(JSON.parse(raw));
-      }
-    } catch {
-      setWorkspaces([]);
-    }
-  }, []);
+    let isCancelled = false;
+    setIsLoadingWorkspaces(true);
+    WorkspaceStorageService.loadWorkspaces()
+      .then((list) => {
+        if (!isCancelled) setWorkspaces(list);
+      })
+      .catch(() => {
+        if (!isCancelled) setWorkspaces([]);
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingWorkspaces(false);
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [authState.user?.id]);
 
   useEffect(() => {
-    if (activeTab === 'sent' && authState.user && !authState.isAuthLoading) {
+    if (!isAdmin && currentTab === 'sent' && authState.user && !authState.isAuthLoading) {
       setSentLoading(true);
       recipeStorageService
         .listUserRecipes(authState.user.id)
@@ -53,15 +62,11 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
           setSentLoading(false);
         });
     }
-  }, [activeTab, authState.user]);
+  }, [isAdmin, currentTab, authState.user]);
 
   const saveWorkspaces = (updated: StudioWorkspace[]) => {
     setWorkspaces(updated);
-    try {
-      localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // Storage quota fallback
-    }
+    void WorkspaceStorageService.saveWorkspaces(updated);
   };
 
   const handleCreateNew = (rawText = '') => {
@@ -103,7 +108,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
           </p>
         </div>
 
-        {activeTab === 'editor' && (
+        {currentTab === 'editor' && (
           <button
             type="button"
             className="studio-btn studio-btn-primary studio-hub-add-btn"
@@ -115,8 +120,8 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
         )}
       </header>
 
-      {/* Tabs for Creator Role */}
-      {isCreator && (
+      {/* Tabs for Creator Role (hidden for Admins who only need editor workspaces) */}
+      {showTabs && (
         <div
           style={{
             display: 'flex',
@@ -127,7 +132,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
         >
           <button
             type="button"
-            className={`filter-pill ${activeTab === 'editor' ? 'active' : ''}`}
+            className={`filter-pill ${currentTab === 'editor' ? 'active' : ''}`}
             onClick={() => setActiveTab('editor')}
             style={{ borderRadius: 'var(--radius-s) var(--radius-s) 0 0' }}
           >
@@ -135,7 +140,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
           </button>
           <button
             type="button"
-            className={`filter-pill ${activeTab === 'sent' ? 'active' : ''}`}
+            className={`filter-pill ${currentTab === 'sent' ? 'active' : ''}`}
             onClick={() => setActiveTab('sent')}
             style={{ borderRadius: 'var(--radius-s) var(--radius-s) 0 0' }}
           >
@@ -146,9 +151,14 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
       )}
 
       {/* Tab 1: Editor Workspaces */}
-      {activeTab === 'editor' && (
+      {currentTab === 'editor' && (
         <>
-          {workspaces.length === 0 ? (
+          {isLoadingWorkspaces ? (
+            <div className="studio-hub-loading-card" role="status" aria-label="Loading workspaces">
+              <div className="studio-hub-spinner" aria-hidden="true" />
+              <span>Loading recipe workspaces...</span>
+            </div>
+          ) : workspaces.length === 0 ? (
             <div className="studio-hub-empty-card">
               <div className="studio-hub-empty-icon">
                 <CookingPot size={48} />
@@ -208,7 +218,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
       )}
 
       {/* Tab 2: Sent Recipes (Creator Only) */}
-      {activeTab === 'sent' && (
+      {currentTab === 'sent' && (
         <div>
           {sentLoading ? (
             <div className="admin-empty-state">Loading your submissions...</div>

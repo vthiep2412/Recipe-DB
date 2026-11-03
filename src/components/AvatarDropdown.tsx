@@ -5,8 +5,6 @@ import {
   Moon,
   Sun,
   LogOut,
-  LogIn,
-  UserPlus,
   CircleUser,
   UserRoundCog,
   Monitor,
@@ -34,15 +32,56 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
   const menuRef = useRef<HTMLDivElement>(null);
   const closeTimeoutRef = useRef<number | null>(null);
 
+  const hasLocalSession = typeof window !== 'undefined' && Object.keys(localStorage).some(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+  const isAuthenticated = !!authState.user || (authState.isAuthLoading && hasLocalSession);
+  const prevAuthRef = useRef(isAuthenticated);
+
+  // Animation & transition states
+  const [isInitialMount, setIsInitialMount] = useState(true);
+  const [isMorphSignup, setIsMorphSignup] = useState(!isAuthenticated);
+  const [isLoginSlideIn, setIsLoginSlideIn] = useState(!isAuthenticated);
+  const [isGearVisible, setIsGearVisible] = useState(!isAuthenticated);
+
+  const isSigningOutRef = useRef(false);
+  const logoutTimer1Ref = useRef<number | null>(null);
+  const logoutTimer2Ref = useRef<number | null>(null);
+
+  // Clear initial mount flag after first render so initial state does not animate
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIsInitialMount(false);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = authStore.subscribe((state) => {
+      if (state.isAuthLoading) return;
+
+      const isAuthNow = !!state.user;
+      const wasAuth = prevAuthRef.current;
       setAuthState(state);
+
+      if (!wasAuth && isAuthNow) {
+        // User logged in: trigger reverse transition
+        prevAuthRef.current = true;
+        setIsMorphSignup(false);
+        setIsLoginSlideIn(false);
+        setIsGearVisible(false);
+      } else if (wasAuth && !isAuthNow && !isSigningOutRef.current) {
+        // External sign-out (from another tab or settings modal)
+        prevAuthRef.current = false;
+        setIsMorphSignup(true);
+        setIsLoginSlideIn(true);
+        setIsGearVisible(true);
+      }
     });
+
     return () => {
       unsubscribe();
-      if (closeTimeoutRef.current !== null) {
-        clearTimeout(closeTimeoutRef.current);
-      }
+      if (closeTimeoutRef.current !== null) clearTimeout(closeTimeoutRef.current);
+      if (logoutTimer1Ref.current !== null) clearTimeout(logoutTimer1Ref.current);
+      if (logoutTimer2Ref.current !== null) clearTimeout(logoutTimer2Ref.current);
     };
   }, []);
 
@@ -105,64 +144,91 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
     authStore.openAuthModal(undefined, mode);
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
+    if (isSigningOutRef.current) return;
+    isSigningOutRef.current = true;
     closeMenu();
-    await authStore.signOut();
-    toast.success('Signed out successfully.', { duration: 2500 });
-    if (onNavigate) {
-      onNavigate('/');
-    } else {
-      window.history.pushState({}, '', '/');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
+
+    // Stage 1: Avatar button morphs into orange [Sign up] pill & settings gear expands
+    setIsMorphSignup(true);
+    setIsGearVisible(true);
+
+    // Stage 2: Slide out [Log in] button at approved 25% overlap (~130ms)
+    logoutTimer1Ref.current = window.setTimeout(() => {
+      setIsLoginSlideIn(true);
+    }, 130);
+
+    // Stage 3: Complete sign out after full animation settles (~650ms)
+    logoutTimer2Ref.current = window.setTimeout(async () => {
+      await authStore.signOut();
+      toast.success('Signed out successfully.', { duration: 2500 });
+      isSigningOutRef.current = false;
+      prevAuthRef.current = false;
+      if (onNavigate) {
+        onNavigate('/');
+      } else {
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+    }, 650);
   };
 
   const role = authState.role || authState.profile?.role;
-  const isAuthenticated = !!authState.user;
   const isScheduled = !!authState.profile?.scheduledDeleteAt;
   const activePath = currentPath ?? (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAccountPage = activePath === '/account';
 
   return (
-    <div className="avatar-menu-wrapper" ref={menuRef}>
+    <div
+      className={`auth-nav-cluster avatar-menu-wrapper ${isInitialMount ? 'no-anim' : ''}`}
+      ref={menuRef}
+    >
+      {/* Stage 2: Log in ghost button */}
       <button
         type="button"
-        className="nav-avatar-btn"
-        onClick={toggleMenu}
-        aria-label="User profile menu"
+        className={`nav-login-btn ${isLoginSlideIn ? 'slide-in' : ''}`}
+        onClick={() => handleOpenAuth('login')}
+        aria-label="Log in"
       >
-        <User size={18} />
+        Log in
       </button>
 
-      {isOpen && (
+      {/* Stage 1: Avatar morph button (Circle <-> Orange [Sign up] Pill) */}
+      <div className="morph-wrapper">
+        <button
+          type="button"
+          className={`nav-avatar-btn nav-morph-btn ${isMorphSignup ? 'is-signup' : ''}`}
+          onClick={() => {
+            if (isMorphSignup) {
+              handleOpenAuth('signup');
+            } else {
+              toggleMenu();
+            }
+          }}
+          aria-label={isMorphSignup ? 'Sign up' : 'User profile menu'}
+        >
+          <span className="morph-icon">
+            <User size={18} />
+          </span>
+          <span className="morph-text">Sign up</span>
+        </button>
+      </div>
+
+      {/* Settings Gear: smooth non-snapping expansion alongside Stage 1 */}
+      <button
+        type="button"
+        className={`nav-gear-btn ${isGearVisible ? 'visible' : ''}`}
+        onClick={onOpenSettings}
+        aria-label="App settings"
+        title="App settings"
+      >
+        <Settings size={18} />
+      </button>
+
+      {isOpen && isAuthenticated && (
         <div className={`avatar-dropdown ${isClosing ? 'anim-exit' : 'anim-enter'}`}>
-          {/* Unauthenticated: Split Log in and Sign up buttons */}
-          {!isAuthenticated ? (
-            <>
-              <div className="dropdown-auth-split">
-                <button
-                  type="button"
-                  className="dropdown-auth-btn"
-                  onClick={() => handleOpenAuth('login')}
-                >
-                  <LogIn size={16} />
-                  <span>Log in</span>
-                </button>
-                <button
-                  type="button"
-                  className="dropdown-auth-btn"
-                  onClick={() => handleOpenAuth('signup')}
-                >
-                  <UserPlus size={16} />
-                  <span>Sign up</span>
-                </button>
-              </div>
-              <div className="dropdown-divider" />
-            </>
-          ) : (
-            <>
-              {/* Authenticated user merged header: avatar + name + settings button */}
-              <div className="dropdown-user-header">
+          {/* Authenticated user merged header: avatar + name + settings button */}
+          <div className="dropdown-user-header">
                 <div className="dropdown-user-info">
                   <div className="dropdown-user-avatar">
                     <CircleUser size={32} />
@@ -244,8 +310,6 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
                   </span>
                 </button>
               )}
-            </>
-          )}
 
           {/* App Settings */}
           <button
@@ -303,7 +367,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
                 className={`dropdown-theme-btn ${settings.theme === 'system' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateSettings({ theme: 'system' });
+                  updateSettings({ theme: 'system' }, { x: e.clientX, y: e.clientY });
                 }}
               >
                 <Monitor size={15} style={{ transform: 'translateY(0.0625rem)' }} />
@@ -316,7 +380,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
                 className={`dropdown-theme-btn ${settings.theme === 'light' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateSettings({ theme: 'light' });
+                  updateSettings({ theme: 'light' }, { x: e.clientX, y: e.clientY });
                 }}
               >
                 <Sun size={13} />
@@ -329,7 +393,7 @@ export function AvatarDropdown({ onOpenSettings, onNavigate, currentPath }: Prop
                 className={`dropdown-theme-btn ${settings.theme === 'dark' ? 'active' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateSettings({ theme: 'dark' });
+                  updateSettings({ theme: 'dark' }, { x: e.clientX, y: e.clientY });
                 }}
               >
                 <Moon size={13} />

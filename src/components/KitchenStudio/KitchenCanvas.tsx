@@ -15,7 +15,7 @@ import { PreviewDrawer } from './PreviewDrawer';
 import { MediaModal } from './MediaModal';
 import { CustomItemModal } from './CustomItemModal';
 import { RecipeMetadataModal } from './RecipeMetadataModal';
-import { CascadeDeleteModal } from './CascadeDeleteModal';
+import { ConfirmModal } from '../ConfirmModal';
 import { RequestPublishModal } from './RequestPublishModal';
 import { ReparentSectionModal } from './ReparentSectionModal';
 import { authStore } from '../../services/authStore';
@@ -335,12 +335,11 @@ export function KitchenCanvas({
   const handleWheel = (e: WheelEvent) => {
     const target = e.target as HTMLElement;
     if (
-      target.closest('.json-drawer-content') ||
       target.closest('.studio-preview-drawer') ||
       target.closest('.universal-dropdown-list') ||
       target.closest('.universal-dropdown-container') ||
-      target.closest('.compact-dropdown-menu') ||
-      target.closest('.compact-dropdown-container') ||
+      target.closest('.ui-dropdown-menu') ||
+      target.closest('.ui-dropdown-container') ||
       target.closest('.studio-inspector-card') ||
       target.closest('.studio-modal-card') ||
       target.closest('.metadata-modal-dialog')
@@ -1856,11 +1855,27 @@ export function KitchenCanvas({
       )}
 
       {/* Cascade Deletion Confirmation Dialog */}
-      <CascadeDeleteModal
+      <ConfirmModal
         isOpen={Boolean(deleteModalState?.isOpen)}
-        type={deleteModalState?.type || 'step'}
-        title={deleteModalState?.title || ''}
-        itemCount={deleteModalState?.itemCount || 0}
+        title={
+          deleteModalState?.type === 'section'
+            ? `Delete Section "${deleteModalState.title}"?`
+            : 'Delete Step and Attached Notes?'
+        }
+        message={
+          <>
+            <p>
+              {deleteModalState?.type === 'section'
+                ? `This section contains ${deleteModalState.itemCount} step${deleteModalState.itemCount === 1 ? '' : 's'}. Deleting this section root will permanently delete all steps inside this column.`
+                : `This step has ${deleteModalState?.itemCount ?? 0} attached sub-note${deleteModalState?.itemCount === 1 ? '' : 's'}. Deleting it will permanently remove all connected child notes.`}
+            </p>
+            <p style={{ marginTop: '0.5rem', color: 'var(--color-danger, #ef4444)', fontSize: '0.85rem' }}>
+              This action cannot be undone.
+            </p>
+          </>
+        }
+        confirmLabel="Delete Permanently"
+        confirmVariant="danger"
         onConfirm={() => {
           if (!deleteModalState) return;
           if (deleteModalState.type === 'section') {

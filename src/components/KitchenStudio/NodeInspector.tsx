@@ -15,7 +15,7 @@ import {
   formatSecondsToDisplay
 } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
-import { CompactDropdown } from './CompactDropdown';
+import { Dropdown } from '../ui/Dropdown';
 import { parseFraction } from '../../parser/cooklangParser';
 
 interface NodeInspectorProps {
@@ -417,7 +417,7 @@ export function NodeInspector({
                               onBlur={handleAmountBlur}
                             />
 
-                            <CompactDropdown
+                            <Dropdown
                               className="inspector-unit-compact-select"
                               value={activeMention.data?.unit || availableUnits[0]}
                               options={availableUnits}

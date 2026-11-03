@@ -347,13 +347,16 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const saved = localStorage.getItem('timer_anim_speed');
     return saved ? parseFloat(saved) || 1 : 1;
   });
-  const [isDevToolOpen, setIsDevToolOpen] = useState(false);
-  const [isDevToolEnabled, setIsDevToolEnabled] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsDevToolEnabled(localStorage.getItem('recipedevtool') === 'true');
-    }
+    if (typeof window === 'undefined') return;
+    const syncSpeed = () => {
+      const saved = localStorage.getItem('timer_anim_speed');
+      if (saved) setAnimSpeed(parseFloat(saved) || 1);
+    };
+    syncSpeed();
+    window.addEventListener('recipedevtool-change', syncSpeed);
+    return () => window.removeEventListener('recipedevtool-change', syncSpeed);
   }, []);
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -1816,105 +1819,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         onDismissTimer={handleDismissTimer}
         onEditTimer={handleOpenTimePicker}
       />
-
-      {/* Floating Dev Tool Panel when recipedevtool is true in localStorage */}
-      {isDevToolEnabled && typeof document !== 'undefined' && createPortal(
-        <div style={{ position: 'fixed', bottom: '2rem', left: '2rem', zIndex: 999999 }}>
-          <button
-            type="button"
-            style={{
-              padding: '0.85rem 1.5rem',
-              borderRadius: '0.85rem',
-              backgroundColor: '#f59e0b',
-              color: '#111827',
-              fontWeight: 800,
-              fontSize: '1rem',
-              border: '2px solid #ffffff',
-              boxShadow: '0 0.75rem 2rem rgba(0, 0, 0, 0.6), 0 0 1rem rgba(245, 158, 11, 0.5)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              letterSpacing: '0.02rem'
-            }}
-            onClick={() => setIsDevToolOpen(prev => !prev)}
-          >
-            🛠 Dev Tool ({animSpeed}x)
-          </button>
-
-          {isDevToolOpen && (
-            <div
-              style={{
-                marginBottom: '0.75rem',
-                position: 'absolute',
-                bottom: '100%',
-                left: 0,
-                padding: '1.25rem',
-                backgroundColor: '#1c1c1f',
-                color: '#f3f4f6',
-                borderRadius: '1rem',
-                border: '1px solid rgba(255, 255, 255, 0.25)',
-                boxShadow: '0 1.5rem 3rem rgba(0, 0, 0, 0.75)',
-                width: '19rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.85rem'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.95rem', fontWeight: 800 }}>Timer Animation Speed</span>
-                <span style={{ fontSize: '0.9rem', color: '#f59e0b', fontWeight: 700 }}>{animSpeed}x</span>
-              </div>
-
-              <input
-                type="range"
-                min="0.1"
-                max="1"
-                step="0.05"
-                value={animSpeed}
-                onChange={(e: any) => {
-                  const val = parseFloat(e.target.value) || 1;
-                  setAnimSpeed(val);
-                  localStorage.setItem('timer_anim_speed', String(val));
-                }}
-                style={{ width: '100%', accentColor: '#f59e0b', height: '1.5rem', cursor: 'pointer' }}
-              />
-
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                {[1, 0.7, 0.5, 0.25, 0.1].map(spd => (
-                  <button
-                    key={spd}
-                    type="button"
-                    onClick={() => {
-                      setAnimSpeed(spd);
-                      localStorage.setItem('timer_anim_speed', String(spd));
-                    }}
-                    style={{
-                      flex: '1 1 auto',
-                      padding: '0.35rem 0.5rem',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                      borderRadius: '0.45rem',
-                      border: '1px solid rgba(255, 255, 255, 0.2)',
-                      backgroundColor: animSpeed === spd ? '#f59e0b' : 'rgba(255, 255, 255, 0.1)',
-                      color: animSpeed === spd ? '#111827' : '#f3f4f6',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {spd}x
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ fontSize: '0.78rem', color: '#9ca3af', lineHeight: 1.4 }}>
-                Flight: {Math.round(800 / animSpeed)}ms<br />
-                Glow: {Math.round(150 / animSpeed)}ms
-              </div>
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

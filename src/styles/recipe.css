@@ -24,13 +24,18 @@
   position: relative;
   flex-shrink: 0;
   height: 3.5rem;
-  z-index: 1000;
+  z-index: 10000;
   background-color: var(--background-primary);
   border-bottom: 1px solid var(--background-modifier-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
+}
+
+/* Stacking boost when account dropdown is open so it renders above toasts */
+.nav-bar:has(.avatar-dropdown) {
+  z-index: 100200;
 }
 
 .nav-brand {
@@ -87,6 +92,215 @@
   transform: scale(1.04);
 }
 
+/* ========================================================
+   Navbar Auth Cluster & Morph Transition
+   ======================================================== */
+.auth-nav-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+/* Initial mount: suppress transitions so static state doesn't animate on page load */
+.auth-nav-cluster.no-anim,
+.auth-nav-cluster.no-anim * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Stage 2: Ghost Log in button */
+.nav-login-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.45rem 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(12px);
+  margin-right: -0.5rem;
+  pointer-events: none;
+  transition: 
+    max-width 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.42s ease,
+    transform 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    padding 0.52s ease,
+    margin-right 0.52s ease,
+    color 0.15s ease;
+}
+
+.nav-login-btn:hover {
+  color: var(--text-normal);
+}
+
+.nav-login-btn.slide-in {
+  max-width: 6rem;
+  opacity: 1;
+  transform: translateX(0);
+  padding: 0.45rem 0.75rem;
+  margin-right: 0;
+  pointer-events: auto;
+}
+
+/* Stage 1: Avatar Morph Button Wrapper */
+.morph-wrapper {
+  perspective: 1000px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.25rem;
+}
+
+/* Morph Button: Avatar Circle <-> Orange Sign Up Pill */
+.nav-morph-btn {
+  height: 2.25rem;
+  width: 2.25rem;
+  border-radius: 1.125rem;
+  background: linear-gradient(135deg, var(--interactive-accent), #b45309);
+  border: none;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 700;
+  user-select: none;
+  -webkit-user-select: none;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  transition: 
+    width 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    border-radius 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    background 0.42s cubic-bezier(0.25, 1, 0.5, 1),
+    transform 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 0.42s cubic-bezier(0.25, 1, 0.5, 1),
+    filter 0.15s ease;
+}
+
+.nav-morph-btn:hover.is-signup {
+  filter: brightness(1.08);
+}
+
+.nav-morph-btn:hover:not(.is-signup) {
+  filter: brightness(1.1);
+  transform: scale(1.04);
+}
+
+/* Inner Contents: Avatar Icon vs "Sign up" Text */
+.morph-icon, .morph-text {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Avatar Icon (Option 2: 90° Turn & Fade) */
+.morph-icon {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+  color: #ffffff;
+  transition: 
+    opacity 0.32s ease 0.12s,
+    transform 0.52s cubic-bezier(0.25, 1, 0.5, 1) 0s;
+}
+
+.nav-morph-btn.is-signup .morph-icon {
+  opacity: 0;
+  transform: scale(0.5) rotate(90deg);
+  transition: 
+    opacity 0.2s ease 0s,
+    transform 0.52s cubic-bezier(0.25, 1, 0.5, 1) 0s;
+}
+
+/* Sign up text (Delayed fade in forward, instant 0s delay fade out on reverse) */
+.morph-text {
+  opacity: 0;
+  transform: scale(0.85);
+  white-space: nowrap;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: 
+    opacity 0.12s ease 0s,
+    transform 0.15s ease 0s;
+}
+
+.nav-morph-btn.is-signup .morph-text {
+  opacity: 1;
+  transform: scale(1);
+  transition: 
+    opacity 0.35s ease 0.18s,
+    transform 0.45s cubic-bezier(0.25, 1, 0.5, 1) 0.12s;
+}
+
+/* State: Transformed into [Sign up] Button */
+.nav-morph-btn.is-signup {
+  width: 5.5rem;
+  border-radius: var(--radius-s);
+  background: var(--interactive-accent);
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 0.125rem 0.65rem rgba(255, 122, 0, 0.3);
+}
+
+/* Settings Gear Button: Smooth non-snapping expansion alongside Stage 1 */
+.nav-gear-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  max-width: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+  transition: 
+    max-width 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.42s ease,
+    transform 0.52s cubic-bezier(0.25, 1, 0.5, 1),
+    color 0.15s ease;
+}
+
+.nav-gear-btn:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.nav-gear-btn.visible {
+  max-width: 2.25rem;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .nav-login-btn,
+  .nav-morph-btn,
+  .morph-icon,
+  .morph-text,
+  .nav-gear-btn {
+    transition-duration: 0.01s !important;
+    animation-duration: 0.01s !important;
+  }
+}
+
 /* Avatar Dropdown Menu */
 .avatar-menu-wrapper {
   position: relative;
@@ -107,9 +321,14 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  z-index: 1001;
+  z-index: 100201;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Toast notifications layering: above modals but under open account dropdown */
+[data-sonner-toaster] {
+  z-index: 100100 !important;
 }
 
 /* Pointy tip pointing directly to the avatar button */
@@ -748,8 +967,8 @@
 }
 
 .modal-tab-btn:hover:not(.active) {
-  background-color: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 
 .modal-tab-btn.active {
@@ -845,7 +1064,7 @@
 }
 
 .tag-pill-remove-btn:hover {
-  color: #ffffff;
+  color: var(--text-normal);
 }
 
 .search-bar-row {
@@ -2782,6 +3001,12 @@
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-s);
   border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+[data-theme="light"] .cook-step-note-badge {
+  background-color: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.35);
 }
 
 /* Step media and clips */
