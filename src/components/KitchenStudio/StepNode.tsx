@@ -25,6 +25,11 @@ import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
 
 const EMPTY_URLS: string[] = [];
 
+function computeMentionsSignature(mentions?: StepMentionToken[]): string {
+  if (!mentions || mentions.length === 0) return '';
+  return mentions.map(m => m.id).join(',');
+}
+
 interface StepNodeProps {
   node: CanvasStepNode;
   stepNumber: number | string;
@@ -302,6 +307,8 @@ export function StepNode({
   const mentionsMap = useRef<Map<string, StepMentionToken>>(new Map());
   const lastRenderedNodeId = useRef<string | null>(null);
   const lastInstructionText = useRef<string | undefined>(node.instructionText);
+  const mentionsSignature = useMemo(() => computeMentionsSignature(node.mentions), [node.mentions]);
+  const lastMentionsSignature = useRef<string>(mentionsSignature);
 
   useEffect(() => {
     if (isEditingTitle) {
@@ -346,10 +353,12 @@ export function StepNode({
     if (!editorRef.current) return;
     const isNewNode = lastRenderedNodeId.current !== node.id;
     const isExternalTextChange = node.instructionText !== lastInstructionText.current;
+    const isExternalMentionsChange = mentionsSignature !== lastMentionsSignature.current;
 
-    if (isNewNode || isExternalTextChange) {
+    if (isNewNode || isExternalTextChange || isExternalMentionsChange) {
       lastRenderedNodeId.current = node.id;
       lastInstructionText.current = node.instructionText;
+      lastMentionsSignature.current = mentionsSignature;
       if (node.mentions) {
         node.mentions.forEach(m => mentionsMap.current.set(m.id, m));
       }
@@ -362,7 +371,7 @@ export function StepNode({
       }
       populateEditor(editorRef.current, segments, selectedMentionId, allNodes);
     }
-  }, [node.id, node.instructionText, segments, selectedMentionId, allNodes]);
+  }, [node.id, node.instructionText, mentionsSignature, segments, selectedMentionId, allNodes]);
 
   // Update token contents and selection highlight in place when inspector edits occur
   useEffect(() => {
@@ -395,6 +404,7 @@ export function StepNode({
     if (!editorRef.current) return;
     const parsed = parseEditorDom(editorRef.current, mentionsMap.current);
     lastInstructionText.current = parsed.instructionText;
+    lastMentionsSignature.current = computeMentionsSignature(parsed.mentions);
     onChange({
       segments: parsed.segments,
       mentions: parsed.mentions,

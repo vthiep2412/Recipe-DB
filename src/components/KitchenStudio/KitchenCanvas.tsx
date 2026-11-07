@@ -434,6 +434,18 @@ export function KitchenCanvas({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not trigger canvas undo/redo while any modal is open
+      if (
+        isMetadataModalOpen ||
+        isExportModalOpen ||
+        isReparentModalOpen ||
+        Boolean(deleteModalState?.isOpen) ||
+        Boolean(mediaModalType) ||
+        Boolean(customItemModalType)
+      ) {
+        return;
+      }
+
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
       if (!isCtrlOrMeta) return;
 
@@ -465,7 +477,17 @@ export function KitchenCanvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [past, future, workspace]);
+  }, [
+    past,
+    future,
+    workspace,
+    isMetadataModalOpen,
+    isExportModalOpen,
+    isReparentModalOpen,
+    deleteModalState,
+    mediaModalType,
+    customItemModalType
+  ]);
 
   // Backfill explicit sectionId on any unassigned canvas nodes
   useEffect(() => {
@@ -1477,7 +1499,12 @@ export function KitchenCanvas({
       if (s.id === sectionId) return { ...s, ...updated };
       return s;
     });
-    updateWorkspaceState({ ...workspace, sections: nextSections });
+    const isTyping = updated.name !== undefined || updated.description !== undefined;
+    updateWorkspaceState(
+      { ...workspace, sections: nextSections },
+      true,
+      isTyping ? 'typing' : 'structural'
+    );
   };
 
   // Section and subsection creation with strict depth 1 rules
@@ -2284,7 +2311,12 @@ export function KitchenCanvas({
                         }
                         return n;
                       });
-                      updateWorkspaceState({ ...workspace, canvasNodes: updatedNodes });
+                      const isTyping = Boolean(yieldData);
+                      updateWorkspaceState(
+                        { ...workspace, canvasNodes: updatedNodes },
+                        true,
+                        isTyping ? 'typing' : 'structural'
+                      );
                     }}
                     onOpenCustomItemModal={type => setCustomItemModalType(type)}
                   />
@@ -2325,14 +2357,17 @@ export function KitchenCanvas({
           onClose={() => setIsMetadataModalOpen(false)}
           onOpenMediaModal={type => setMediaModalType(type)}
           onSave={updatedGraph => {
-            updateWorkspaceState({
-              ...workspace,
-              title: updatedGraph.title ?? workspace.title,
-              graph: {
-                ...workspace.graph,
-                ...updatedGraph
-              }
-            });
+            updateWorkspaceState(
+              {
+                ...workspace,
+                title: updatedGraph.title ?? workspace.title,
+                graph: {
+                  ...workspace.graph,
+                  ...updatedGraph
+                }
+              },
+              false
+            );
           }}
         />
       )}
@@ -2352,8 +2387,8 @@ export function KitchenCanvas({
                 ? `This section contains ${deleteModalState.itemCount} step${deleteModalState.itemCount === 1 ? '' : 's'}. Deleting this section root will permanently delete all steps inside this column.`
                 : `This step has ${deleteModalState?.itemCount ?? 0} attached sub-note${deleteModalState?.itemCount === 1 ? '' : 's'}. Deleting it will permanently remove all connected child notes.`}
             </p>
-            <p style={{ marginTop: '0.5rem', color: 'var(--color-danger, #ef4444)', fontSize: '0.85rem' }}>
-              This action cannot be undone.
+            <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted, #71717a)', fontSize: '0.85rem' }}>
+              Tip: You can undo this deletion anytime using the Undo button or Ctrl+Z.
             </p>
           </>
         }
@@ -2431,14 +2466,17 @@ export function KitchenCanvas({
               ? (wasExisting ? `Updated (${slug})!` : `Published (${slug})!`)
               : `Submitted for review (${slug})!`
           );
-          updateWorkspaceState({
-            ...workspace,
-            id: recipeId || workspace.id,
-            graph: {
-              ...workspace.graph,
-              id: slug
-            }
-          });
+          updateWorkspaceState(
+            {
+              ...workspace,
+              id: recipeId || workspace.id,
+              graph: {
+                ...workspace.graph,
+                id: slug
+              }
+            },
+            false
+          );
         }}
       />
 
