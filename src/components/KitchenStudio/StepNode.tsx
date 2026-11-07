@@ -301,6 +301,7 @@ export function StepNode({
   const editorRef = useRef<HTMLDivElement>(null);
   const mentionsMap = useRef<Map<string, StepMentionToken>>(new Map());
   const lastRenderedNodeId = useRef<string | null>(null);
+  const lastInstructionText = useRef<string | undefined>(node.instructionText);
 
   useEffect(() => {
     if (isEditingTitle) {
@@ -340,11 +341,15 @@ export function StepNode({
     }
   }, [node.mentions, node.segments]);
 
-  // Initial populate or switch to another step node
+  // Initial populate, switch to another step node, or external update (Undo/Redo)
   useEffect(() => {
     if (!editorRef.current) return;
-    if (lastRenderedNodeId.current !== node.id) {
+    const isNewNode = lastRenderedNodeId.current !== node.id;
+    const isExternalTextChange = node.instructionText !== lastInstructionText.current;
+
+    if (isNewNode || isExternalTextChange) {
       lastRenderedNodeId.current = node.id;
+      lastInstructionText.current = node.instructionText;
       if (node.mentions) {
         node.mentions.forEach(m => mentionsMap.current.set(m.id, m));
       }
@@ -357,7 +362,7 @@ export function StepNode({
       }
       populateEditor(editorRef.current, segments, selectedMentionId, allNodes);
     }
-  }, [node.id, segments, selectedMentionId, allNodes]);
+  }, [node.id, node.instructionText, segments, selectedMentionId, allNodes]);
 
   // Update token contents and selection highlight in place when inspector edits occur
   useEffect(() => {
@@ -389,6 +394,7 @@ export function StepNode({
   const syncDomToState = () => {
     if (!editorRef.current) return;
     const parsed = parseEditorDom(editorRef.current, mentionsMap.current);
+    lastInstructionText.current = parsed.instructionText;
     onChange({
       segments: parsed.segments,
       mentions: parsed.mentions,

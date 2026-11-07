@@ -440,10 +440,10 @@ export function KitchenCanvas({
       const key = e.key.toLowerCase();
       if (key === 'z') {
         const target = e.target as HTMLElement | null;
-        const isInputField = Boolean(
-          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        const isNativeInput = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
         );
-        if (isInputField) return;
+        if (isNativeInput) return;
 
         e.preventDefault();
         if (e.shiftKey) {
@@ -453,10 +453,10 @@ export function KitchenCanvas({
         }
       } else if (key === 'y') {
         const target = e.target as HTMLElement | null;
-        const isInputField = Boolean(
-          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        const isNativeInput = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
         );
-        if (isInputField) return;
+        if (isNativeInput) return;
 
         e.preventDefault();
         handleRedo();
