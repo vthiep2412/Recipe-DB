@@ -360,8 +360,8 @@ export function KitchenCanvas({
   // Auto save state
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
 
-  // 30-action Undo / Redo History Stack
-  const MAX_HISTORY = 30;
+  // 50-action Undo / Redo History Stack
+  const MAX_HISTORY = 50;
   const [past, setPast] = useState<StudioWorkspace[]>([]);
   const [future, setFuture] = useState<StudioWorkspace[]>([]);
   const isUndoRedoAction = useRef(false);
