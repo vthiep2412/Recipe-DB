@@ -15,6 +15,15 @@ export const LEGACY_WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
 export class WorkspaceStorageService {
   private static sessionKey: { userId: string; key: string } | null = null;
   private static isMigrating = false;
+  private static cachedWorkspaces: StudioWorkspace[] | null = null;
+  private static saveQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * Retrieves the current synchronously cached workspaces in memory.
+   */
+  static getCachedWorkspaces(): StudioWorkspace[] | null {
+    return this.cachedWorkspaces;
+  }
 
   /**
    * Returns the partitioned storage key for a given user or guest.
@@ -139,7 +148,9 @@ export class WorkspaceStorageService {
       try {
         const decryptedJson = await WorkspaceCryptoService.decryptData(raw, key);
         const parsed = JSON.parse(decryptedJson);
-        return Array.isArray(parsed) ? parsed : [];
+        const result = Array.isArray(parsed) ? parsed : [];
+        this.cachedWorkspaces = result;
+        return result;
       } catch {
         return [];
       }
@@ -148,7 +159,9 @@ export class WorkspaceStorageService {
     // Plaintext payload (guest mode or pre-encrypted local draft)
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      const result = Array.isArray(parsed) ? parsed : [];
+      this.cachedWorkspaces = result;
+      return result;
     } catch {
       return [];
     }
@@ -156,9 +169,23 @@ export class WorkspaceStorageService {
 
   /**
    * Encrypts and writes workspaces to the user-scoped local storage key.
-   * Zero server network requests during saving.
+   * Serializes write operations through a queue to prevent async race conditions.
    */
   static async saveWorkspaces(workspaces: StudioWorkspace[]): Promise<void> {
+    this.cachedWorkspaces = workspaces;
+
+    this.saveQueue = this.saveQueue
+      .then(async () => {
+        await this.executeSave(this.cachedWorkspaces || workspaces);
+      })
+      .catch(err => {
+        console.error('[WorkspaceStorageService] Error in save queue:', err);
+      });
+
+    return this.saveQueue;
+  }
+
+  private static async executeSave(workspaces: StudioWorkspace[]): Promise<void> {
     if (typeof window === 'undefined' || !window.localStorage) {
       return;
     }
@@ -168,20 +195,32 @@ export class WorkspaceStorageService {
     const targetKey = this.getStorageKey(user?.id);
     const json = JSON.stringify(workspaces);
 
-    if (user) {
-      const key = await this.getUserEncryptionKey(user.id);
-      if (key) {
-        try {
-          const encrypted = await WorkspaceCryptoService.encryptData(json, key);
-          localStorage.setItem(targetKey, encrypted);
-          return;
-        } catch {
-          // If Web Crypto fails unexpectedly, fallback to saving directly
+    try {
+      if (user) {
+        const key = await this.getUserEncryptionKey(user.id);
+        if (key) {
+          try {
+            const encrypted = await WorkspaceCryptoService.encryptData(json, key);
+            localStorage.setItem(targetKey, encrypted);
+            return;
+          } catch (cryptoErr: any) {
+            if (cryptoErr?.name === 'QuotaExceededError' || cryptoErr?.code === 22) {
+              throw cryptoErr;
+            }
+            // If encryption failed unexpectedly, fallback to plaintext save
+          }
         }
       }
-    }
 
-    // Guest or fallback save
-    localStorage.setItem(targetKey, json);
+      // Guest or fallback save
+      localStorage.setItem(targetKey, json);
+    } catch (err: any) {
+      const isQuota = err?.name === 'QuotaExceededError' || err?.code === 22;
+      if (isQuota) {
+        console.warn('[WorkspaceStorageService] Local storage quota full. Changes preserved in-memory.');
+      } else {
+        console.error('[WorkspaceStorageService] Failed to persist workspaces to localStorage:', err);
+      }
+    }
   }
 }

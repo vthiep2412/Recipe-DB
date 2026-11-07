@@ -121,18 +121,31 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
       updatedAt: new Date().toISOString()
     };
     setActiveWorkspace(timestamped);
-    WorkspaceStorageService.loadWorkspaces()
-      .then((list) => {
-        const updatedList = [...list];
-        const idx = updatedList.findIndex((w) => w.id === timestamped.id);
-        if (idx !== -1) {
-          updatedList[idx] = timestamped;
-        } else {
-          updatedList.unshift(timestamped);
-        }
-        void WorkspaceStorageService.saveWorkspaces(updatedList);
-      })
-      .catch(() => {});
+
+    const cached = WorkspaceStorageService.getCachedWorkspaces();
+    if (cached) {
+      const updatedList = [...cached];
+      const idx = updatedList.findIndex((w) => w.id === timestamped.id);
+      if (idx !== -1) {
+        updatedList[idx] = timestamped;
+      } else {
+        updatedList.unshift(timestamped);
+      }
+      void WorkspaceStorageService.saveWorkspaces(updatedList);
+    } else {
+      WorkspaceStorageService.loadWorkspaces()
+        .then((list) => {
+          const updatedList = [...list];
+          const idx = updatedList.findIndex((w) => w.id === timestamped.id);
+          if (idx !== -1) {
+            updatedList[idx] = timestamped;
+          } else {
+            updatedList.unshift(timestamped);
+          }
+          void WorkspaceStorageService.saveWorkspaces(updatedList);
+        })
+        .catch(() => {});
+    }
     return true;
   };
 

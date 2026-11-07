@@ -1327,9 +1327,10 @@ export function KitchenCanvas({
         parentId = targetSectionId;
         insertIndex = workspace.canvasNodes.length;
       } else {
-        const lastStep = sectionSteps[sectionSteps.length - 1];
-        parentId = lastStep.id;
-        insertIndex = workspace.canvasNodes.findIndex(n => n.id === lastStep.id) + 1;
+        // Insert at the TOP of the section as Step 1
+        const firstStep = sectionSteps[0];
+        parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.findIndex(n => n.id === firstStep.id);
       }
     } else {
       targetSectionId = defaultSecId;
@@ -1346,6 +1347,10 @@ export function KitchenCanvas({
       }
     }
 
+    const sectionSteps = workspace.canvasNodes.filter(n =>
+      resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+    );
+
     const newId = `step-${Date.now()}`;
     const newNode: CanvasStepNode = {
       id: newId,
@@ -1358,9 +1363,16 @@ export function KitchenCanvas({
       mentions: []
     };
 
-    // Re-wire any downstream node that was parented to anchor node so it attaches to newNode
+    // Re-wire downstream nodes:
+    // 1. If inserted at the top of a section (section selected with existing steps),
+    //    re-parent the former first step to newNode.
+    // 2. If inserted after an anchor step (step selected), re-parent any downstream
+    //    step that was attached to the anchor to newNode.
     const updatedExistingNodes = workspace.canvasNodes.map(node => {
-      if (node.parentId === parentId && node.id !== newId) {
+      if (selectedSection && sectionSteps.length > 0 && node.id === sectionSteps[0].id) {
+        return { ...node, parentId: newId };
+      }
+      if (selectedStep && node.parentId === parentId && node.id !== newId) {
         return { ...node, parentId: newId };
       }
       return node;
