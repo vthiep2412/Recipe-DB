@@ -11,7 +11,11 @@ import type {
   StepInstructionSegment
 } from '../types/orchestration';
 import { parseFraction } from './cooklangParser';
-import { parseTimeStringToSeconds } from '../constants/standardKitchenData';
+import {
+  parseTimeStringToSeconds,
+  resolveStandardIngredient,
+  resolveStandardCookware
+} from '../constants/standardKitchenData';
 
 export type IngestFormat = 'fablang' | 'fablang_json' | 'cooklang' | 'app_markdown' | 'plain_text';
 
@@ -670,17 +674,19 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             }
           }
 
-          const inputSlug = name.toLowerCase().replace(/\s+/g, '-');
+          const std = resolveStandardIngredient(name);
+          const inputSlug = std ? std.id : name.toLowerCase().replace(/\s+/g, '-');
+          const canonicalName = std ? std.name : name;
           let originalMentionId: string | undefined;
 
           if (!isHidden) {
             if (!firstIngredientDeclarations.has(inputSlug)) {
-              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name });
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name: canonicalName });
             }
             if (!inputsMap.has(inputSlug)) {
               inputsMap.set(inputSlug, {
                 id: inputSlug,
-                name,
+                name: canonicalName,
                 amount: amount ?? 1,
                 unit: unit ?? '',
                 notes: creatorNote
@@ -693,12 +699,12 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             } else if (!inputsMap.has(inputSlug)) {
               inputsMap.set(inputSlug, {
                 id: inputSlug,
-                name,
+                name: canonicalName,
                 amount: 1,
                 unit: '',
                 notes: creatorNote
               });
-              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name });
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name: canonicalName });
             }
           }
 
@@ -731,14 +737,16 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
           const name = (braceMatch ? braceMatch[1] : working).trim();
           const size = braceMatch && braceMatch[2] ? braceMatch[2].trim() : undefined;
-          const vesselSlug = name.toLowerCase().replace(/\s+/g, '-');
+          const stdCookware = resolveStandardCookware(name);
+          const vesselSlug = stdCookware ? stdCookware.id : name.toLowerCase().replace(/\s+/g, '-');
+          const canonicalCookwareName = stdCookware ? stdCookware.name : name;
 
           if (!vesselsMap.has(vesselSlug)) {
             vesselsMap.set(vesselSlug, {
               id: vesselSlug,
-              name,
-              type: 'bowl',
-              size: (size as any)
+              name: canonicalCookwareName,
+              type: stdCookware?.type || 'bowl',
+              size: (size as any) || stdCookware?.defaultSize
             });
           }
 
@@ -748,7 +756,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             displayText: name,
             data: {
               vesselId: vesselSlug,
-              vesselSize: (size as any) || 'Normal',
+              vesselSize: (size as any) || stdCookware?.defaultSize || 'Normal',
               creatorNote
             }
           };
@@ -977,16 +985,20 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     graph: finalGraph,
     sections,
     canvasNodes,
-    customIngredients: Array.from(inputsMap.values()).map(i => ({
-      id: i.id,
-      name: i.name,
-      allowedUnits: i.unit ? [i.unit] : ['g', 'ml', 'piece']
-    })),
-    customCookware: Array.from(vesselsMap.values()).map(v => ({
-      id: v.id,
-      name: v.name,
-      size: v.size
-    }))
+    customIngredients: Array.from(inputsMap.values())
+      .filter(i => !resolveStandardIngredient(i.name) && !resolveStandardIngredient(i.id))
+      .map(i => ({
+        id: i.id,
+        name: i.name,
+        allowedUnits: i.unit ? [i.unit] : ['g', 'ml', 'piece']
+      })),
+    customCookware: Array.from(vesselsMap.values())
+      .filter(v => !resolveStandardCookware(v.name) && !resolveStandardCookware(v.id))
+      .map(v => ({
+        id: v.id,
+        name: v.name,
+        size: v.size
+      }))
   };
 
   return { workspace, errors };
@@ -1299,19 +1311,23 @@ export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: 
   }
 
   const customIngredients = Array.isArray(data.inputs)
-    ? data.inputs.map((inp: any) => ({
-        id: inp.id,
-        name: inp.name || inp.id,
-        allowedUnits: inp.unit ? [inp.unit] : undefined
-      }))
+    ? data.inputs
+        .filter((inp: any) => !resolveStandardIngredient(inp.name) && !resolveStandardIngredient(inp.id))
+        .map((inp: any) => ({
+          id: inp.id,
+          name: inp.name || inp.id,
+          allowedUnits: inp.unit ? [inp.unit] : undefined
+        }))
     : [];
 
   const customCookware = Array.isArray(data.vessels)
-    ? data.vessels.map((v: any) => ({
-        id: v.id,
-        name: v.name || v.id,
-        size: v.size
-      }))
+    ? data.vessels
+        .filter((v: any) => !resolveStandardCookware(v.name) && !resolveStandardCookware(v.id))
+        .map((v: any) => ({
+          id: v.id,
+          name: v.name || v.id,
+          size: v.size
+        }))
     : [];
 
   const graph: RecipeGraph = {
@@ -1547,6 +1563,37 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
     tags: parsedTags.length > 0 ? parsedTags : undefined
   };
 
+  const customIngredientsMap = new Map<string, { id: string; name: string; allowedUnits?: string[] }>();
+  const customCookwareMap = new Map<string, { id: string; name: string; size?: any }>();
+
+  for (const node of canvasNodes) {
+    for (const m of node.mentions) {
+      if (m.type === 'ingredient') {
+        const std = resolveStandardIngredient(m.displayText) || resolveStandardIngredient(m.data?.ingredientId);
+        if (!std && m.data?.ingredientId) {
+          if (!customIngredientsMap.has(m.data.ingredientId)) {
+            customIngredientsMap.set(m.data.ingredientId, {
+              id: m.data.ingredientId,
+              name: m.displayText,
+              allowedUnits: m.data.unit ? [m.data.unit] : ['g', 'ml', 'piece']
+            });
+          }
+        }
+      } else if (m.type === 'cookware') {
+        const std = resolveStandardCookware(m.displayText) || resolveStandardCookware(m.data?.vesselId);
+        if (!std && m.data?.vesselId) {
+          if (!customCookwareMap.has(m.data.vesselId)) {
+            customCookwareMap.set(m.data.vesselId, {
+              id: m.data.vesselId,
+              name: m.displayText,
+              size: m.data.vesselSize || 'Normal'
+            });
+          }
+        }
+      }
+    }
+  }
+
   return {
     id: workspaceId,
     title,
@@ -1555,8 +1602,8 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
     graph: initialGraph,
     sections: [{ id: 'sec-main', name: 'Main', order: 0, showInlineTools: false }],
     canvasNodes,
-    customIngredients: [],
-    customCookware: []
+    customIngredients: Array.from(customIngredientsMap.values()),
+    customCookware: Array.from(customCookwareMap.values())
   };
 }
 
@@ -1623,12 +1670,15 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
         }
       }
 
+      const std = resolveStandardIngredient(name);
+      const ingredientId = std ? std.id : name.toLowerCase().replace(/\s+/g, '-');
+
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'ingredient',
         displayText: name,
         data: {
-          ingredientId: name.toLowerCase().replace(/\s+/g, '-'),
+          ingredientId,
           amount,
           unit,
           creatorNote
@@ -1644,14 +1694,16 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
       const tokenContent = fullMatch.slice(1);
       const braceMatch = tokenContent.match(/^([^{]+)(?:\{[^}]*\})?$/);
       const name = (braceMatch ? braceMatch[1] : tokenContent).trim();
+      const stdCookware = resolveStandardCookware(name);
+      const vesselId = stdCookware ? stdCookware.id : name.toLowerCase().replace(/\s+/g, '-');
 
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'cookware',
         displayText: name,
         data: {
-          vesselId: name.toLowerCase().replace(/\s+/g, '-'),
-          vesselSize: 'Normal'
+          vesselId,
+          vesselSize: (stdCookware?.defaultSize as any) || 'Normal'
         }
       };
       mentions.push(mention);

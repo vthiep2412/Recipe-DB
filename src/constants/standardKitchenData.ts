@@ -146,6 +146,74 @@ export const STANDARD_COOKWARE: StandardCookware[] = [
   { id: 'electric-mixer', name: 'Hand Mixer', type: 'tool', defaultSize: 'Normal' }
 ];
 
+/**
+ * Resolves an ingredient name, slug, or alias to a StandardIngredient.
+ * Case-insensitive, punctuation-resilient, and checks densityTable aliases.
+ */
+export function resolveStandardIngredient(rawNameOrId?: string): StandardIngredient | null {
+  if (!rawNameOrId) return null;
+  const clean = rawNameOrId.trim();
+  if (!clean) return null;
+
+  const lower = clean.toLowerCase();
+  const slug = lower.replace(/[_\s]+/g, '-');
+
+  // 1. Direct ID or exact name match in STANDARD_INGREDIENTS
+  const direct = STANDARD_INGREDIENTS.find(
+    i => i.id === clean || i.id === slug || i.name.toLowerCase() === lower
+  );
+  if (direct) return direct;
+
+  // 2. Check densityTable aliases
+  const densityEntries = (densityTable.ingredients || []) as DensityIngredientSchema[];
+  for (const entry of densityEntries) {
+    if (entry.id === clean || entry.id === slug || entry.name.toLowerCase() === lower) {
+      return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+    }
+    if (entry.aliases && Array.isArray(entry.aliases)) {
+      if (entry.aliases.some(a => a.toLowerCase().trim() === lower)) {
+        return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+      }
+    }
+  }
+
+  // 3. Normalized name match (stripping punctuation/parentheses)
+  const normalized = lower.replace(/\([^)]*\)/g, ' ').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (normalized && normalized !== lower) {
+    const normSlug = normalized.replace(/[_\s]+/g, '-');
+    const normMatch = STANDARD_INGREDIENTS.find(
+      i => i.id === normSlug || i.name.toLowerCase() === normalized
+    );
+    if (normMatch) return normMatch;
+
+    for (const entry of densityEntries) {
+      if (entry.aliases && Array.isArray(entry.aliases)) {
+        if (entry.aliases.some(a => a.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim() === normalized)) {
+          return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolves a cookware name or slug to a StandardCookware case-insensitively.
+ */
+export function resolveStandardCookware(rawNameOrId?: string): StandardCookware | null {
+  if (!rawNameOrId) return null;
+  const clean = rawNameOrId.trim();
+  if (!clean) return null;
+
+  const lower = clean.toLowerCase();
+  const slug = lower.replace(/[_\s]+/g, '-');
+
+  return STANDARD_COOKWARE.find(
+    c => c.id === clean || c.id === slug || c.name.toLowerCase() === lower
+  ) || null;
+}
+
 export const VESSEL_SIZES: VesselSize[] = [
   'Small',
   'Med-small',
