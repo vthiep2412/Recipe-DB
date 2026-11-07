@@ -765,8 +765,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const isStepCurrentlyActiveInSec = (sectionActiveSteps[secName] ?? -1) === stepIndex;
 
     if (isSectionCurrentlyActive && isStepCurrentlyActiveInSec) {
-      // Unfocusing this section: pause/remove active focus without scrolling
+      // Completely unfocus and clear remembered focus for this section
       setActiveSectionId('');
+      setSectionActiveSteps(prev => {
+        const next = { ...prev };
+        delete next[secName];
+        return next;
+      });
       return;
     }
 
