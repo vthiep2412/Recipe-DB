@@ -3,6 +3,7 @@ import { createPortal } from 'preact/compat';
 import { Image, Video, RefreshCw, Trash2, X } from 'lucide-preact';
 import { localMediaStore } from '../../services/localMediaStore';
 import { getYouTubeEmbedUrl } from '../../utils/media';
+import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -413,7 +414,7 @@ export function MediaModal({
                     {galleryList.map((ref, idx) => (
                       <div key={idx} className="studio-gallery-item-card">
                         <img
-                          src={galleryPreviewMap[ref] || ref}
+                          src={getOptimizedImageUrl(galleryPreviewMap[ref] || ref)}
                           alt={`Gallery item ${idx + 1}`}
                           className="studio-gallery-thumb"
                         />

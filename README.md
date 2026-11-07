@@ -79,8 +79,9 @@ bun run tunnel
   - **Dynamic Hero Splits**: Automatically adapts layout for 1 photo (full-width), 2 photos (50/50 split), 3+ photos (left slot darkened with `+N` overlay, right slot clear), or video pinned to right (native MP4 or YouTube embed via `youtube-nocookie`).
   - **Ghost-Button Lightbox**: Clean image viewer with borderless ghost navigation arrows, position counter (`1 / N`), thumbnail scrub strip, and keyboard navigation (`ArrowLeft`, `ArrowRight`, `Escape`).
   - **Studio Media Ingest**: 2×2 image management grid in Kitchen Studio with per-image deletion, URL loading, file uploads, and an `×N` cover badge in recipe settings.
-- **Universal Cloudinary Media Pipeline & Migration**:
-  - **Automatic Ingest**: Routes all non-Cloudinary images (drag-and-drop local files, base64 strings, and external HTTP/HTTPS URLs) through Cloudinary upon publish or update in Kitchen Studio. Master assets are compressed and optimized on delivery, while YouTube embeds remain untouched.
+- **Universal Cloudinary Media Pipeline & Streaming Optimization**:
+  - **Automatic Ingest**: Routes all non-Cloudinary images (drag-and-drop local files, base64 strings, and external HTTP/HTTPS URLs) through Cloudinary upon publish or update in Kitchen Studio while preserving YouTube embeds.
+  - **Bandwidth-Saving Lossy Streams**: Enforces dynamic `f_auto,q_auto:good,fl_strip_profile` streaming transformations across viewer, search, and studio delivery to serve lossy AVIF (and WebP fallback) with perceptual quality calibration, stripped metadata, and zero dimensional downscaling.
   - **One-Time Database Migration Tool**: Standalone migration runner (`scripts/migrate-media-to-cloudinary.ts`) to scan Supabase `recipes` and `recipe_details`, ingest external image URLs to Cloudinary, and update database rows in batch with `--dry-run` inspection.
 - **Creator Application Workflow**: Dedicated application portal equipped with an Obsidian-style live Markdown editor, guidelines for aspiring creators, and status tracking connected to review workflows.
 - **Theme**: Obsidian dark grey aesthetic (`#1e1e1e` / `#242424`) with warm orange accents.

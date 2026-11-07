@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
 import { Search as SearchIcon, Clock, ChefHat, Tag, X } from 'lucide-preact';
 import type { RecipeJSON } from '../types/recipe';
 import { searchPlaceholders } from '../data/searchPlaceholders';
+import { getOptimizedImageUrl } from '../services/cloudinaryUpload';
 
 interface Props {
   recipes: RecipeJSON[];
@@ -368,7 +369,7 @@ export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
               >
                 {recipe.image && (
                   <img
-                    src={recipe.image}
+                    src={getOptimizedImageUrl(recipe.image)}
                     alt={recipe.title}
                     className="recipe-card-img"
                     loading="lazy"

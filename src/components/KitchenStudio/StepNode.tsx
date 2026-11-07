@@ -19,6 +19,7 @@ import type {
 } from '../../types/orchestration';
 import { formatFraction } from '../../parser/cooklangParser';
 import { MediaModal } from './MediaModal';
+import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
 
 interface StepNodeProps {
   node: CanvasStepNode;
@@ -713,7 +714,7 @@ export function StepNode({
         {node.media?.galleryUrls?.[0] ? (
           <div className="step-image-row-populated">
             <div className="step-image-preview-wrap">
-              <img src={node.media.galleryUrls[0]} alt={`Step ${stepNumber}`} />
+              <img src={getOptimizedImageUrl(node.media.galleryUrls[0])} alt={`Step ${stepNumber}`} />
               <button
                 type="button"
                 className="step-image-delete-btn"

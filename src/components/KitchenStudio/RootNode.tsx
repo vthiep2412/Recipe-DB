@@ -5,6 +5,7 @@ import {
   formatSecondsToDisplay
 } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
+import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
 
 interface RootNodeProps {
   graph: RecipeGraph;
@@ -147,7 +148,7 @@ export function RootNode({
         >
           {graph.media?.pictureUrl ? (
             <div className="root-media-filled">
-              <img src={graph.media.pictureUrl} alt="Recipe picture" />
+              <img src={getOptimizedImageUrl(graph.media.pictureUrl)} alt="Recipe picture" />
               <div className="root-media-overlay">Change Picture</div>
             </div>
           ) : (

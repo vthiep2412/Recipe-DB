@@ -32,6 +32,7 @@ import { escapeHtmlAttr } from '../utils/html';
 import { sanitizeHtml } from '../utils/sanitizer';
 import { getYouTubeEmbedUrl } from '../utils/media';
 import { localMediaStore } from '../services/localMediaStore';
+import { getOptimizedImageUrl } from '../services/cloudinaryUpload';
 
 export { escapeHtmlAttr };
 
@@ -57,7 +58,7 @@ function sanitizeMarkdown(raw?: string): string {
     return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
   };
   renderer.image = ({ href, title, text }) => {
-    const safeSrc = href && /^https?:\/\//i.test(href.trim()) ? escapeHtmlAttr(href.trim()) : '';
+    const safeSrc = href && /^https?:\/\//i.test(href.trim()) ? escapeHtmlAttr(getOptimizedImageUrl(href.trim())) : '';
     if (!safeSrc) return '';
     const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
     const altAttr = text ? ` alt="${escapeHtmlAttr(text)}"` : '';
@@ -251,9 +252,10 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     };
   }, [recipe?.image, recipe?.gallery]);
 
-  const heroImages = resolvedHeroImages.length > 0
+  const heroImages = (resolvedHeroImages.length > 0
     ? resolvedHeroImages
-    : ([recipe.image, ...(recipe.gallery || [])].filter(Boolean) as string[]);
+    : ([recipe.image, ...(recipe.gallery || [])].filter(Boolean) as string[])
+  ).map((url) => getOptimizedImageUrl(url));
 
   const youtubeEmbedUrl = useMemo(() => {
     return getYouTubeEmbedUrl(recipe.video);
@@ -263,8 +265,9 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const isMultiMedia = hasVideo || heroImages.length > 1;
 
   const openLightbox = (index: number, customList?: string[]) => {
-    const list = customList && customList.length > 0 ? customList : heroImages;
-    if (!list.length) return;
+    const rawList = customList && customList.length > 0 ? customList : heroImages;
+    if (!rawList.length) return;
+    const list = rawList.map((url) => getOptimizedImageUrl(url));
     const safeIdx = Math.max(0, Math.min(index, list.length - 1));
     setLightboxList(list);
     setLightboxIndex(safeIdx);
@@ -1359,7 +1362,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               }}
             >
               <img
-                src={primaryImage}
+                src={getOptimizedImageUrl(primaryImage)}
                 alt={step.title || `Step ${step.index}`}
                 className="step-media-banner"
                 loading="lazy"
@@ -1383,7 +1386,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                     aria-label={`View step image ${gIdx + 2}`}
                   >
                     <img
-                      src={url}
+                      src={getOptimizedImageUrl(url)}
                       alt={`Step media ${gIdx + 2}`}
                       className="cook-step-gallery-thumb"
                       loading="lazy"
@@ -1880,7 +1883,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
               {section.image && (
                 <img
-                  src={section.image}
+                  src={getOptimizedImageUrl(section.image)}
                   alt={section.name}
                   className="section-media-banner"
                   loading="lazy"
@@ -2160,7 +2163,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
             <div className="cook-lightbox-center-container" onClick={(e) => e.stopPropagation()}>
               <div className="cook-lightbox-img-wrap">
-                <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+                <img src={getOptimizedImageUrl(lightboxImage)} alt={recipe.title} className="cook-lightbox-img" />
               </div>
 
               {lightboxList.length > 1 && (
@@ -2180,7 +2183,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         }}
                         aria-label={`Jump to image ${idx + 1}`}
                       >
-                        <img src={url} alt={`Thumbnail ${idx + 1}`} />
+                        <img src={getOptimizedImageUrl(url)} alt={`Thumbnail ${idx + 1}`} />
                       </button>
                     ))}
                   </div>

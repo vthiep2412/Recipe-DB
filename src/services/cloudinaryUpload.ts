@@ -8,50 +8,46 @@ const CLOUD_NAME = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string) || '';
 const UPLOAD_PRESET = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string) || '';
 const API_KEY = (import.meta.env.VITE_CLOUDINARY_API_KEY as string) || '';
 
-async function downscaleIfNeeded(blob: Blob): Promise<Blob> {
-  if (blob.size <= 4 * 1024 * 1024) {
-    return blob;
+export const STREAM_IMAGE_TRANSFORMATION = 'f_auto,q_auto:good,fl_strip_profile';
+
+export function getStreamMasterUrl(url: string): string {
+  return getOptimizedImageUrl(url);
+}
+
+export function getOptimizedImageUrl(
+  url?: string | null,
+  _variant?: 'hero' | 'step' | 'thumb' | 'card' | 'lightbox' | string
+): string {
+  if (!url || typeof url !== 'string' || !url.includes('cloudinary.com') || !url.includes('/upload/')) {
+    return url || '';
   }
 
-  if (typeof window === 'undefined' || typeof createImageBitmap === 'undefined') {
-    return blob;
+  // Already transformed with the stream configuration
+  if (url.includes(`/upload/${STREAM_IMAGE_TRANSFORMATION}/`)) {
+    return url;
   }
 
-  let bitmap: ImageBitmap | null = null;
-  try {
-    bitmap = await createImageBitmap(blob);
-    const maxDim = Math.max(bitmap.width, bitmap.height);
-    const scale = Math.min(1, 2560 / maxDim);
-    const targetWidth = Math.round(bitmap.width * scale);
-    const targetHeight = Math.round(bitmap.height * scale);
+  const uploadIndex = url.indexOf('/upload/');
+  if (uploadIndex === -1) return url;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
+  const afterUpload = url.slice(uploadIndex + '/upload/'.length);
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return blob;
+  // Check if afterUpload begins with an existing transformation segment
+  const firstSlashIdx = afterUpload.indexOf('/');
+  if (firstSlashIdx !== -1) {
+    const firstSegment = afterUpload.slice(0, firstSlashIdx);
+    const isTransformSegment =
+      /^(w_|h_|c_|f_|q_|ar_|fl_|b_|e_|dpr_|co_|[a-z0-9_,]+)/i.test(firstSegment) &&
+      !/^v\d+$/i.test(firstSegment) &&
+      firstSegment !== 'recipes';
+
+    if (isTransformSegment) {
+      const rest = afterUpload.slice(firstSlashIdx + 1);
+      return `${url.slice(0, uploadIndex)}/upload/${STREAM_IMAGE_TRANSFORMATION}/${rest}`;
     }
-
-    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
-
-    return await new Promise<Blob>(resolve => {
-      canvas.toBlob(
-        resultBlob => {
-          canvas.width = 0;
-          canvas.height = 0;
-          resolve(resultBlob || blob);
-        },
-        'image/jpeg',
-        0.92
-      );
-    });
-  } catch {
-    return blob;
-  } finally {
-    bitmap?.close?.();
   }
+
+  return `${url.slice(0, uploadIndex)}/upload/${STREAM_IMAGE_TRANSFORMATION}/${afterUpload}`;
 }
 
 export async function uploadAsset(
@@ -67,13 +63,7 @@ export async function uploadAsset(
   const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
   const form = new FormData();
 
-  if (typeof source === 'string') {
-    form.append('file', source);
-  } else {
-    const finalBlob = type === 'image' ? await downscaleIfNeeded(source) : source;
-    form.append('file', finalBlob);
-  }
-
+  form.append('file', source);
   form.append('upload_preset', UPLOAD_PRESET);
   if (API_KEY) {
     form.append('api_key', API_KEY);
@@ -92,24 +82,6 @@ export async function uploadAsset(
 
   const result = (await res.json()) as CloudinaryResult;
   return result;
-}
-
-export function getOptimizedImageUrl(
-  url: string,
-  variant: 'hero' | 'step' | 'thumb'
-): string {
-  if (!url || !url.includes('cloudinary.com')) {
-    return url;
-  }
-
-  let transform = 'w_1200,c_limit,f_auto,q_80,fl_strip_profile';
-  if (variant === 'step') {
-    transform = 'w_800,c_limit,f_auto,q_80,fl_strip_profile';
-  } else if (variant === 'thumb') {
-    transform = 'w_320,c_fill,ar_16:10,f_auto,q_80,fl_strip_profile';
-  }
-
-  return url.replace('/upload/', `/upload/${transform}/`);
 }
 
 export const cloudinaryService: CloudinaryServiceAPI = {

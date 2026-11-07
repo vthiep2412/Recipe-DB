@@ -11,6 +11,7 @@ import { MediaModal } from './MediaModal';
 import { ObsidianSourceEditor, escapeHtmlAttr } from './ObsidianSourceEditor';
 import { TagManagerModal } from './TagManagerModal';
 import { getYouTubeEmbedUrl } from '../../utils/media';
+import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
 
 interface RecipeMetadataModalProps {
   isOpen: boolean;
@@ -399,7 +400,7 @@ export function RecipeMetadataModal({
                 >
                   {allImages.length > 0 ? (
                     <div className="root-media-filled">
-                      <img src={allImages[0]} alt="Recipe picture" />
+                      <img src={getOptimizedImageUrl(allImages[0])} alt="Recipe picture" />
                       {allImages.length > 1 && (
                         <div className="studio-media-counter-badge">
                           ×{allImages.length}

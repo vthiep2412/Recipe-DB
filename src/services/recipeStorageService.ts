@@ -13,7 +13,7 @@ import { getAllRecipes } from '../recipes';
 import { supabase } from './supabaseClient';
 import { authStore } from './authStore';
 import { localMediaStore } from './localMediaStore';
-import { uploadAsset } from './cloudinaryUpload';
+import { uploadAsset, getStreamMasterUrl } from './cloudinaryUpload';
 import { WorkspaceStorageService } from './workspaceStorageService';
 
 export function slugifyRecipeTitle(title: string): string {
@@ -151,7 +151,7 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
         const blob = (await localMediaStore.loadBlob(fullKey)) || (await localMediaStore.loadBlob(rawKey));
         if (blob) {
           const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
-          replacementMap.set(fullKey, uploaded.secure_url);
+          replacementMap.set(fullKey, getStreamMasterUrl(uploaded.secure_url));
         }
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload IDB asset to Cloudinary: ${fullKey}`, err);
@@ -167,7 +167,7 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
         const blob = await dataUrlToBlob(dataUrl);
         if (blob) {
           const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
-          replacementMap.set(dataUrl, uploaded.secure_url);
+          replacementMap.set(dataUrl, getStreamMasterUrl(uploaded.secure_url));
         }
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload base64 asset to Cloudinary`, err);
@@ -180,7 +180,7 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
     if (!replacementMap.has(extUrl)) {
       try {
         const uploaded = await uploadAsset(extUrl, 'image', 'recipes/images');
-        replacementMap.set(extUrl, uploaded.secure_url);
+        replacementMap.set(extUrl, getStreamMasterUrl(uploaded.secure_url));
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload external image to Cloudinary: ${extUrl}`, err);
       }
