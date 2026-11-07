@@ -12,8 +12,7 @@ import {
   Info,
   X,
   ArrowUp,
-  ArrowDown,
-  GripVertical
+  ArrowDown
 } from 'lucide-preact';
 import type {
   CanvasStepNode,
@@ -616,16 +615,6 @@ export function StepNode({
           >
             <ArrowUp size={16} />
           </button>
-
-          <div
-            className="step-drag-handle"
-            title="Step reorder"
-            role="button"
-            tabIndex={0}
-            aria-label="Reorder handle"
-          >
-            <GripVertical size={18} />
-          </div>
 
           <button
             type="button"

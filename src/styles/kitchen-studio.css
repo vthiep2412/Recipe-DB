@@ -3740,7 +3740,7 @@ input[type=number] {
   border: 1px solid var(--background-modifier-border);
   box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.2);
   border-radius: 9999px;
-  padding: 0.5rem 0.25rem;
+  padding: 0.35rem 0.25rem;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
@@ -3792,35 +3792,6 @@ input[type=number] {
 
 .step-reorder-btn:disabled,
 .step-reorder-btn.is-disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.step-drag-handle {
-  cursor: grab;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.2rem 0.15rem;
-  border-radius: 0.25rem;
-  transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
-  user-select: none;
-  touch-action: none;
-}
-
-.step-drag-handle:hover {
-  color: var(--interactive-accent);
-  background-color: var(--background-modifier-hover);
-  transform: scale(1.15);
-}
-
-.step-drag-handle:active {
-  cursor: grabbing;
-  color: var(--interactive-accent);
-}
-
-.step-drag-handle.is-disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
