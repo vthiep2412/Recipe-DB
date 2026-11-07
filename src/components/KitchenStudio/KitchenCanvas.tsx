@@ -117,6 +117,68 @@ function clusterSectionsHierarchically(sections: CanvasSection[]): CanvasSection
   return result.map((s, idx) => ({ ...s, order: idx }));
 }
 
+function checkBundleConsumesYieldFrom(
+  consumerBundle: CanvasStepNode[],
+  producerBundle: CanvasStepNode[]
+): string | null {
+  const producedYields = new Map<string, string>();
+  for (const p of producerBundle) {
+    if (p.producesYield && p.producesYield.name) {
+      const name = p.producesYield.name.trim();
+      const lower = name.toLowerCase();
+      producedYields.set(p.id, name);
+      producedYields.set(`yield-${p.id}`, name);
+      producedYields.set(lower, name);
+    }
+  }
+
+  if (producedYields.size === 0) return null;
+
+  for (const c of consumerBundle) {
+    for (const m of (c.mentions || [])) {
+      if (m.type === 'ingredient' || m.type === 'yield') {
+        const yId = m.data?.yieldId;
+        if (yId && producedYields.has(yId)) {
+          return producedYields.get(yId)!;
+        }
+        const ingId = m.data?.ingredientId;
+        if (ingId && producedYields.has(ingId)) {
+          return producedYields.get(ingId)!;
+        }
+        const yName = m.data?.yieldName?.toLowerCase().trim();
+        if (yName && producedYields.has(yName)) {
+          return producedYields.get(yName)!;
+        }
+        const text = m.displayText?.toLowerCase().trim();
+        if (text && (m.type === 'yield' || m.data?.yieldId || ingId?.startsWith('yield-')) && producedYields.has(text)) {
+          return producedYields.get(text)!;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function partitionSectionIntoBundles(sectionNodes: CanvasStepNode[]): CanvasStepNode[][] {
+  const bundles: CanvasStepNode[][] = [];
+  let currentBundle: CanvasStepNode[] = [];
+  for (const n of sectionNodes) {
+    if (!n.isLinkedToPrevious || (bundles.length === 0 && currentBundle.length === 0)) {
+      if (currentBundle.length > 0) {
+        bundles.push(currentBundle);
+      }
+      currentBundle = [n];
+    } else {
+      currentBundle.push(n);
+    }
+  }
+  if (currentBundle.length > 0) {
+    bundles.push(currentBundle);
+  }
+  return bundles;
+}
+
 export function computeCanvasStepNumbers(
   sections: CanvasSection[],
   canvasNodes: CanvasStepNode[]
@@ -540,6 +602,107 @@ export function KitchenCanvas({
     () => computeCanvasStepNumbers(orderedSections, workspace.canvasNodes),
     [orderedSections, workspace.canvasNodes]
   );
+
+  const stepReorderInfoMap = useMemo(() => {
+    const map = new Map<string, {
+      canMoveUp: boolean;
+      canMoveDown: boolean;
+      moveUpTooltip?: string;
+      moveDownTooltip?: string;
+    }>();
+
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
+
+    const nodesBySection: Record<string, CanvasStepNode[]> = {};
+    for (const sec of currentSections) {
+      nodesBySection[sec.id] = [];
+    }
+    for (const node of workspace.canvasNodes) {
+      const sId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+      if (!nodesBySection[sId]) nodesBySection[sId] = [];
+      nodesBySection[sId].push(node);
+    }
+
+    for (const sNodes of Object.values(nodesBySection)) {
+      const bundles = partitionSectionIntoBundles(sNodes);
+
+      for (let bIdx = 0; bIdx < bundles.length; bIdx++) {
+        const bundle = bundles[bIdx];
+        const leadNode = bundle[0];
+
+        const isFirstBundle = bIdx === 0;
+        const isLastBundle = bIdx === bundles.length - 1;
+
+        let canMoveUp = !isFirstBundle;
+        let moveUpTooltip = isFirstBundle ? 'First step in section' : 'Move step up';
+        if (!isFirstBundle) {
+          const prevBundle = bundles[bIdx - 1];
+          const consumedYield = checkBundleConsumesYieldFrom(bundle, prevBundle);
+          if (consumedYield) {
+            canMoveUp = false;
+            moveUpTooltip = `Cannot move above step producing: ${consumedYield}`;
+          }
+        }
+
+        let canMoveDown = !isLastBundle;
+        let moveDownTooltip = isLastBundle ? 'Last step in section' : 'Move step down';
+        if (!isLastBundle) {
+          const nextBundle = bundles[bIdx + 1];
+          const consumedYield = checkBundleConsumesYieldFrom(nextBundle, bundle);
+          if (consumedYield) {
+            canMoveDown = false;
+            moveDownTooltip = `Cannot move below step consuming: ${consumedYield}`;
+          }
+        }
+
+        map.set(leadNode.id, {
+          canMoveUp,
+          canMoveDown,
+          moveUpTooltip,
+          moveDownTooltip
+        });
+
+        for (let subIdx = 1; subIdx < bundle.length; subIdx++) {
+          const subNode = bundle[subIdx];
+          const isFirstSub = subIdx === 1;
+          const isLastSub = subIdx === bundle.length - 1;
+
+          let subCanUp = !isFirstSub;
+          let subUpTooltip = isFirstSub ? 'Cannot move substep above parent step' : 'Move substep up';
+          if (!isFirstSub) {
+            const prevSub = bundle[subIdx - 1];
+            const consumedYield = checkBundleConsumesYieldFrom([subNode], [prevSub]);
+            if (consumedYield) {
+              subCanUp = false;
+              subUpTooltip = `Cannot move above step producing: ${consumedYield}`;
+            }
+          }
+
+          let subCanDown = !isLastSub;
+          let subDownTooltip = isLastSub ? 'Last substep of this step' : 'Move substep down';
+          if (!isLastSub) {
+            const nextSub = bundle[subIdx + 1];
+            const consumedYield = checkBundleConsumesYieldFrom([nextSub], [subNode]);
+            if (consumedYield) {
+              subCanDown = false;
+              subDownTooltip = `Cannot move below step consuming: ${consumedYield}`;
+            }
+          }
+
+          map.set(subNode.id, {
+            canMoveUp: subCanUp,
+            canMoveDown: subCanDown,
+            moveUpTooltip: subUpTooltip,
+            moveDownTooltip: subDownTooltip
+          });
+        }
+      }
+    }
+
+    return map;
+  }, [workspace.canvasNodes, currentSections]);
 
   // Compute dynamic positions for sections and child steps with real-time sliding
   const nodePositions = useMemo(() => {
@@ -1394,6 +1557,105 @@ export function KitchenCanvas({
     setSelectedNodeId(newId);
   };
 
+  // Safe vertical step reordering with parent step bundling and yield linkage guards
+  const handleMoveStep = (stepId: string, direction: 'up' | 'down') => {
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
+    const targetNode = nodesById.get(stepId);
+    if (!targetNode) return;
+
+    const sId = resolveNodeSectionId(targetNode, nodesById, knownSectionIds, defaultSecId);
+    const sectionNodes = workspace.canvasNodes.filter(n =>
+      resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === sId
+    );
+
+    const bundles = partitionSectionIntoBundles(sectionNodes);
+    const bIdx = bundles.findIndex(b => b.some(n => n.id === targetNode.id));
+    if (bIdx === -1) return;
+
+    const targetBundle = bundles[bIdx];
+    const isLeadNode = targetBundle[0].id === targetNode.id;
+
+    if (isLeadNode) {
+      if (direction === 'up') {
+        if (bIdx === 0) return;
+        const prevBundle = bundles[bIdx - 1];
+        const consumedYield = checkBundleConsumesYieldFrom(targetBundle, prevBundle);
+        if (consumedYield) {
+          toast.error(`Cannot move above step producing: ${consumedYield}`);
+          return;
+        }
+        bundles[bIdx - 1] = targetBundle;
+        bundles[bIdx] = prevBundle;
+      } else {
+        if (bIdx === bundles.length - 1) return;
+        const nextBundle = bundles[bIdx + 1];
+        const consumedYield = checkBundleConsumesYieldFrom(nextBundle, targetBundle);
+        if (consumedYield) {
+          toast.error(`Cannot move below step consuming: ${consumedYield}`);
+          return;
+        }
+        bundles[bIdx + 1] = targetBundle;
+        bundles[bIdx] = nextBundle;
+      }
+    } else {
+      const subIdx = targetBundle.findIndex(n => n.id === targetNode.id);
+      if (subIdx === -1) return;
+
+      if (direction === 'up') {
+        if (subIdx <= 1) return;
+        const prevSub = targetBundle[subIdx - 1];
+        const consumedYield = checkBundleConsumesYieldFrom([targetNode], [prevSub]);
+        if (consumedYield) {
+          toast.error(`Cannot move above step producing: ${consumedYield}`);
+          return;
+        }
+        targetBundle[subIdx - 1] = targetNode;
+        targetBundle[subIdx] = prevSub;
+      } else {
+        if (subIdx >= targetBundle.length - 1) return;
+        const nextSub = targetBundle[subIdx + 1];
+        const consumedYield = checkBundleConsumesYieldFrom([nextSub], [targetNode]);
+        if (consumedYield) {
+          toast.error(`Cannot move below step consuming: ${consumedYield}`);
+          return;
+        }
+        targetBundle[subIdx + 1] = targetNode;
+        targetBundle[subIdx] = nextSub;
+      }
+    }
+
+    const nextSectionNodes: CanvasStepNode[] = [];
+    for (const b of bundles) {
+      nextSectionNodes.push(...b);
+    }
+
+    for (let i = 0; i < nextSectionNodes.length; i++) {
+      if (i === 0) {
+        nextSectionNodes[0] = { ...nextSectionNodes[0], parentId: sId, isLinkedToPrevious: false };
+      } else {
+        const prev = nextSectionNodes[i - 1];
+        nextSectionNodes[i] = { ...nextSectionNodes[i], parentId: prev.id };
+      }
+    }
+
+    let secIdx = 0;
+    const nextCanvasNodes = workspace.canvasNodes.map(node => {
+      const candSecId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+      if (candSecId === sId) {
+        return nextSectionNodes[secIdx++];
+      }
+      return node;
+    });
+
+    const reordered = reorderSectionsAndNodes(currentSections, nextCanvasNodes);
+    updateWorkspaceState({
+      ...workspace,
+      canvasNodes: reordered.canvasNodes
+    });
+  };
+
   // Cascade delete logic
   const handleRequestDeleteSection = (sectionId: string) => {
     const section = currentSections.find(s => s.id === sectionId);
@@ -1774,6 +2036,8 @@ export function KitchenCanvas({
           const stepSlideDelta = reorderAnimatingDeltas[nodeSecId] || 0;
           const isStepSliding = !isStepParentDragged && (Boolean(draggingSectionId) || stepSlideDelta !== 0);
 
+          const reorderMeta = stepReorderInfoMap.get(node.id);
+
           return (
             <div
               key={node.id}
@@ -1808,6 +2072,12 @@ export function KitchenCanvas({
                   setIsYieldMode(true);
                   setActiveMentionId(null);
                 }}
+                onMoveUp={() => handleMoveStep(node.id, 'up')}
+                onMoveDown={() => handleMoveStep(node.id, 'down')}
+                canMoveUp={reorderMeta?.canMoveUp}
+                canMoveDown={reorderMeta?.canMoveDown}
+                moveUpTooltip={reorderMeta?.moveUpTooltip}
+                moveDownTooltip={reorderMeta?.moveDownTooltip}
               />
 
               {/* Sliding Inspector Card placed right beside the active step node */}

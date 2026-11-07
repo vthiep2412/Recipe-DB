@@ -1299,9 +1299,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       ...(step.media?.galleryUrls || [])
     ].filter((url, idx, arr) => arr.indexOf(url) === idx);
 
-    const primaryImage = allStepImages[0];
-    const extraGalleryUrls = allStepImages.slice(1);
-
     const inlineToolTokens = step.tokens.filter(
       (t): t is Extract<StepToken, { type: 'ingredient' | 'cookware' }> =>
         (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
@@ -1341,48 +1338,137 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             <div className="cook-step-title">{step.title}</div>
           )}
 
-          {primaryImage && (
-            <button
-              type="button"
-              className="cook-step-single-img-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                openLightbox(0, [primaryImage]);
-              }}
-            >
-              <img
-                src={getOptimizedImageUrl(primaryImage)}
-                alt={step.title || `Step ${step.index}`}
-                className="step-media-banner"
-                loading="lazy"
-              />
-            </button>
+          {/* Step Multiple Images Banner: Facebook Style (1 image, 2 split, 3+ split with +N overlay) */}
+          {allStepImages.length === 1 && (
+            <div className="cook-step-media-banner-wrap single">
+              <div
+                className="cook-step-media-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(0, allStepImages);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="View step image"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLightbox(0, allStepImages);
+                  }
+                }}
+              >
+                <img
+                  src={getOptimizedImageUrl(allStepImages[0])}
+                  alt={step.title || `Step ${step.index}`}
+                  loading="lazy"
+                />
+              </div>
+            </div>
           )}
 
-          {extraGalleryUrls.length > 0 && (
-            <div className="cook-step-gallery-grid">
-              {extraGalleryUrls.map((url, gIdx) => {
-                const stepImageList = [primaryImage, ...extraGalleryUrls].filter(Boolean) as string[];
-                return (
-                  <button
-                    key={gIdx}
-                    type="button"
-                    className="cook-step-gallery-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openLightbox(primaryImage ? gIdx + 1 : gIdx, stepImageList);
-                    }}
-                    aria-label={`View step image ${gIdx + 2}`}
-                  >
-                    <img
-                      src={getOptimizedImageUrl(url)}
-                      alt={`Step media ${gIdx + 2}`}
-                      className="cook-step-gallery-thumb"
-                      loading="lazy"
-                    />
-                  </button>
-                );
-              })}
+          {allStepImages.length === 2 && (
+            <div className="cook-step-media-banner-wrap split">
+              <div
+                className="cook-step-media-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(0, allStepImages);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="View step image 1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLightbox(0, allStepImages);
+                  }
+                }}
+              >
+                <img
+                  src={getOptimizedImageUrl(allStepImages[0])}
+                  alt={`${step.title || `Step ${step.index}`} 1`}
+                  loading="lazy"
+                />
+              </div>
+              <div
+                className="cook-step-media-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(1, allStepImages);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="View step image 2"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLightbox(1, allStepImages);
+                  }
+                }}
+              >
+                <img
+                  src={getOptimizedImageUrl(allStepImages[1])}
+                  alt={`${step.title || `Step ${step.index}`} 2`}
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          )}
+
+          {allStepImages.length >= 3 && (
+            <div className="cook-step-media-banner-wrap split">
+              <div
+                className="cook-step-media-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(0, allStepImages);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="View step image 1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLightbox(0, allStepImages);
+                  }
+                }}
+              >
+                <img
+                  src={getOptimizedImageUrl(allStepImages[0])}
+                  alt={`${step.title || `Step ${step.index}`} 1`}
+                  loading="lazy"
+                />
+              </div>
+              <div
+                className="cook-step-media-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(1, allStepImages);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`View all ${allStepImages.length} images`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLightbox(1, allStepImages);
+                  }
+                }}
+              >
+                <img
+                  src={getOptimizedImageUrl(allStepImages[1])}
+                  alt={`${step.title || `Step ${step.index}`} 2`}
+                  loading="lazy"
+                />
+                <div className="cook-step-media-overlay-badge">
+                  <span>+{allStepImages.length}</span>
+                </div>
+              </div>
             </div>
           )}
 

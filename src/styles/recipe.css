@@ -3569,6 +3569,80 @@
   border: 1px solid var(--background-modifier-border);
 }
 
+/* Step Facebook-style media banner */
+.cook-step-media-banner-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  margin-top: 0.25rem;
+  margin-bottom: 0.65rem;
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: var(--background-secondary);
+  aspect-ratio: 21 / 9;
+  max-height: 12rem;
+  display: grid;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cook-step-media-banner-wrap:hover {
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.cook-step-media-banner-wrap.single {
+  grid-template-columns: 1fr;
+}
+
+.cook-step-media-banner-wrap.split {
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.cook-step-media-item {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--background-secondary);
+}
+
+.cook-step-media-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.cook-step-media-item:hover img {
+  transform: scale(1.02);
+}
+
+.cook-step-media-overlay-badge {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  z-index: 2;
+  user-select: none;
+}
+
+.cook-step-media-overlay-badge:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
 .cook-step-single-img-btn {
   position: relative;
   background: var(--background-secondary);

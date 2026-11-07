@@ -1374,11 +1374,32 @@
   background: var(--background-primary-alt);
 }
 
+.step-image-preview-wrap.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.step-image-preview-wrap.is-clickable:hover {
+  border-color: var(--interactive-accent);
+}
+
+.step-image-preview-wrap.is-clickable:hover img {
+  transform: scale(1.03);
+}
+
 .step-image-preview-wrap img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.2s ease;
+}
+
+.step-image-preview-wrap .studio-media-counter-badge {
+  top: 0.35rem;
+  right: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
 }
 
 .step-image-delete-btn {
@@ -3701,6 +3722,105 @@ input[type=number] {
 }
 
 .section-drag-handle.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Step Left Reorder Toolbar - Floating vertical pill on the left side of step card */
+.step-left-reorder-toolbar {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 0.45rem);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.2);
+  border-radius: 9999px;
+  padding: 0.5rem 0.25rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  z-index: 50;
+}
+
+/* Hover hit-area bridge connecting toolbar to step card left edge */
+.step-left-reorder-toolbar::after {
+  content: '';
+  position: absolute;
+  top: -0.5rem;
+  bottom: -0.5rem;
+  left: -0.5rem;
+  right: -1rem;
+  background: transparent;
+  z-index: -1;
+}
+
+.studio-step-node:hover .step-left-reorder-toolbar,
+.studio-step-node.is-selected .step-left-reorder-toolbar,
+.step-left-reorder-toolbar:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.studio-step-node.is-selected .step-left-reorder-toolbar,
+.step-left-reorder-toolbar:hover {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0.35rem 1rem rgba(255, 122, 0, 0.2);
+}
+
+.step-reorder-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  transition: color 0.15s ease, transform 0.1s ease;
+}
+
+.step-reorder-btn:hover:not(:disabled) {
+  color: var(--interactive-accent);
+  transform: scale(1.18);
+}
+
+.step-reorder-btn:disabled,
+.step-reorder-btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.step-drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.15rem;
+  border-radius: 0.25rem;
+  transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  touch-action: none;
+}
+
+.step-drag-handle:hover {
+  color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+  transform: scale(1.15);
+}
+
+.step-drag-handle:active {
+  cursor: grabbing;
+  color: var(--interactive-accent);
+}
+
+.step-drag-handle.is-disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }

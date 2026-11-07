@@ -40,6 +40,7 @@ export function MediaModal({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const createdUrlsRef = useRef<Set<string>>(new Set());
+  const prevIsOpenRef = useRef(false);
 
   // Resolve IDB blobs to preview URLs
   const resolveRefToPreview = async (ref: string): Promise<string> => {
@@ -73,7 +74,7 @@ export function MediaModal({
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setUrlInput(currentUrl);
       setActualRef(currentUrl);
 
@@ -94,6 +95,7 @@ export function MediaModal({
         setGalleryPreviewMap({ ...map });
       });
     }
+    prevIsOpenRef.current = isOpen;
   }, [isOpen, currentUrl, currentUrls]);
 
   if (!isOpen) return null;

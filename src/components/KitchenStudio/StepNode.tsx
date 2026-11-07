@@ -10,7 +10,10 @@ import {
   Clock,
   Sparkles,
   Info,
-  X
+  X,
+  ArrowUp,
+  ArrowDown,
+  GripVertical
 } from 'lucide-preact';
 import type {
   CanvasStepNode,
@@ -20,6 +23,8 @@ import type {
 import { formatFraction } from '../../parser/cooklangParser';
 import { MediaModal } from './MediaModal';
 import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
+
+const EMPTY_URLS: string[] = [];
 
 interface StepNodeProps {
   node: CanvasStepNode;
@@ -34,6 +39,12 @@ interface StepNodeProps {
   onSelectMention: (mention: StepMentionToken) => void;
   onJumpToStep?: (targetStepId: string) => void;
   onToggleYield: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  moveUpTooltip?: string;
+  moveDownTooltip?: string;
 }
 
 function formatSecToMMSS(sec: number): string {
@@ -273,7 +284,13 @@ export function StepNode({
   onChange,
   onSelectMention,
   onJumpToStep,
-  onToggleYield
+  onToggleYield,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = false,
+  canMoveDown = false,
+  moveUpTooltip,
+  moveDownTooltip
 }: StepNodeProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -586,6 +603,43 @@ export function StepNode({
         className="studio-node-port studio-node-port-in"
       />
 
+      {/* Floating Left Reorder Toolbar */}
+      {(onMoveUp || onMoveDown) && (
+        <div className="step-left-reorder-toolbar" onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`step-reorder-btn ${!canMoveUp ? 'is-disabled' : ''}`}
+            onClick={canMoveUp ? onMoveUp : undefined}
+            disabled={!canMoveUp}
+            title={moveUpTooltip || (canMoveUp ? 'Move step up' : 'Cannot move up')}
+            aria-label="Move step up"
+          >
+            <ArrowUp size={16} />
+          </button>
+
+          <div
+            className="step-drag-handle"
+            title="Step reorder"
+            role="button"
+            tabIndex={0}
+            aria-label="Reorder handle"
+          >
+            <GripVertical size={18} />
+          </div>
+
+          <button
+            type="button"
+            className={`step-reorder-btn ${!canMoveDown ? 'is-disabled' : ''}`}
+            onClick={canMoveDown ? onMoveDown : undefined}
+            disabled={!canMoveDown}
+            title={moveDownTooltip || (canMoveDown ? 'Move step down' : 'Cannot move down')}
+            aria-label="Move step down"
+          >
+            <ArrowDown size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Step Header with Title and Checkboxes */}
       <div className="step-node-header">
         <div className="step-node-title-wrap">
@@ -711,29 +765,28 @@ export function StepNode({
       {/* Top Media Zone: Placed directly below header checkboxes and above instruction text */}
       <div className="step-top-media-zone" onClick={e => e.stopPropagation()}>
         {/* Step Image Section */}
-        {node.media?.galleryUrls?.[0] ? (
+        {node.media?.galleryUrls && node.media.galleryUrls.length > 0 ? (
           <div className="step-image-row-populated">
-            <div className="step-image-preview-wrap">
+            <div
+              className="step-image-preview-wrap is-clickable"
+              onClick={() => setIsMediaModalOpen(true)}
+              role="button"
+              tabIndex={0}
+              title="Manage step pictures"
+            >
               <img src={getOptimizedImageUrl(node.media.galleryUrls[0])} alt={`Step ${stepNumber}`} />
-              <button
-                type="button"
-                className="step-image-delete-btn"
-                title="Remove step image"
-                onClick={() => {
-                  const nextMedia = { ...node.media };
-                  delete nextMedia.galleryUrls;
-                  onChange({ media: nextMedia });
-                }}
-              >
-                <Trash2 size={13} />
-              </button>
+              {node.media.galleryUrls.length > 1 && (
+                <div className="studio-media-counter-badge">
+                  ×{node.media.galleryUrls.length}
+                </div>
+              )}
             </div>
             <div
               className="step-image-add-card"
               onClick={() => setIsMediaModalOpen(true)}
               role="button"
               tabIndex={0}
-              title="Add or change picture"
+              title="Add or manage pictures"
             >
               <Plus size={20} />
               <span className="step-image-add-card-label">Add picture</span>
@@ -1062,14 +1115,14 @@ export function StepNode({
         <MediaModal
           isOpen={true}
           mediaType="picture"
-          mode="single"
-          title={`Step ${node.isCountedStep ? stepNumber : 'Note'} Picture`}
-          currentUrl={node.media?.galleryUrls?.[0] || ''}
+          mode="gallery"
+          title={`Step ${node.isCountedStep ? stepNumber : 'Note'} Images`}
+          currentUrls={node.media?.galleryUrls || EMPTY_URLS}
           onClose={() => setIsMediaModalOpen(false)}
-          onSave={url => {
+          onSaveGallery={urls => {
             const nextMedia = { ...node.media };
-            if (url) {
-              nextMedia.galleryUrls = [url];
+            if (urls && urls.length > 0) {
+              nextMedia.galleryUrls = urls;
             } else {
               delete nextMedia.galleryUrls;
             }
