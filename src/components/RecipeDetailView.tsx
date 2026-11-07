@@ -847,6 +847,10 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     let val = baseVal * scaleRatio
     let u = unit || ''
 
+    if ((u.toLowerCase() === 'piece' || u.toLowerCase() === 'pieces') && val === 1) {
+      return ''
+    }
+
     if (settings.standardUnit !== 'off') {
       const converted = convertUnit(val, u, {
         unitConversionMode: settings.standardUnit,
@@ -867,12 +871,20 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       }
     }
 
+    if (u.toLowerCase() === 'piece' || u.toLowerCase() === 'pieces') {
+      u = ''
+    }
+
     const formatted = formatFraction(val)
     return u ? `${formatted} ${u}` : formatted
   }
 
   const scaleTokenQty = (qtyText?: string, ingredientName?: string) => {
     if (!qtyText) return ''
+    const cleanQty = qtyText.trim().toLowerCase()
+    if (cleanQty === '1 piece' || cleanQty === '1piece' || cleanQty === 'piece') {
+      return ''
+    }
 
     const match = qtyText.trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(\.\d+)?)\s*(.*)$/)
     if (match) {

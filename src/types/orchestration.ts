@@ -78,8 +78,8 @@ export interface RecipeGraph {
 export interface RecipeInput {
   id: string;
   name: string;
-  amount: number | string;
-  unit: string;
+  amount?: number | string;
+  unit?: string;
   prepState?: string;
   leadTimeSec?: number;
   notes?: string;

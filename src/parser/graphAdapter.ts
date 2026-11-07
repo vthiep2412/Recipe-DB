@@ -28,14 +28,21 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
     }
 
-    const unitStr = inp.unit ? ` ${inp.unit}` : '';
-    const quantityText = displayAmt ? `${displayAmt}${unitStr}`.trim() : null;
+    const isSyntheticPiece =
+      inp.unit &&
+      (inp.unit.toLowerCase() === 'piece' || inp.unit.toLowerCase() === 'pieces') &&
+      (numVal === 1 || displayAmt === '1');
+
+    const effectiveUnit = isSyntheticPiece ? null : inp.unit || null;
+    const effectiveNum = isSyntheticPiece ? null : numVal;
+    const unitStr = effectiveUnit ? ` ${effectiveUnit}` : '';
+    const quantityText = isSyntheticPiece || !displayAmt ? null : `${displayAmt}${unitStr}`.trim();
 
     return {
       id: inp.id || `ing-${idx + 1}`,
       name: inp.name,
-      quantityValue: numVal,
-      unit: inp.unit || null,
+      quantityValue: effectiveNum,
+      unit: effectiveUnit,
       quantityText,
       note: inp.notes || null,
       isHidden: false
@@ -60,8 +67,13 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
           const parsed = parseFraction(rawAmt);
           displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
         }
-        const unitStr = tok.unit ? ` ${tok.unit}` : '';
-        const quantityText = tok.isRemention
+        const isSyntheticPiece =
+          tok.unit &&
+          (tok.unit.toLowerCase() === 'piece' || tok.unit.toLowerCase() === 'pieces') &&
+          (rawAmt === 1 || rawAmt === '1' || displayAmt === '1');
+
+        const unitStr = tok.unit && !isSyntheticPiece ? ` ${tok.unit}` : '';
+        const quantityText = tok.isRemention || isSyntheticPiece
           ? undefined
           : (displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined);
 

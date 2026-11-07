@@ -1604,8 +1604,8 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
 
       const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
       let name = working;
-      let amount: number | string = 1;
-      let unit = 'piece';
+      let amount: number | string | undefined = undefined;
+      let unit: string | undefined = undefined;
 
       if (braceMatch) {
         name = braceMatch[1].trim();
@@ -1614,11 +1614,11 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
           if (details.includes('%')) {
             const [q, u] = details.split('%');
             const trimmedQ = q.trim();
-            amount = trimmedQ.includes('/') ? trimmedQ : (parseFloat(trimmedQ) || parseFraction(trimmedQ) || 1);
-            unit = u.trim();
+            amount = trimmedQ.includes('/') ? trimmedQ : (parseFloat(trimmedQ) || parseFraction(trimmedQ) || undefined);
+            unit = u.trim() || undefined;
           } else {
             const trimmedD = details.trim();
-            amount = trimmedD.includes('/') ? trimmedD : (parseFloat(trimmedD) || parseFraction(trimmedD) || 1);
+            amount = trimmedD.includes('/') ? trimmedD : (parseFloat(trimmedD) || parseFraction(trimmedD) || undefined);
           }
         }
       }
@@ -1814,19 +1814,19 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
         if (!inputsMap.has(inputId)) {
           const rawAmount = mention.data.amount;
           const finalAmount =
-            typeof rawAmount === 'string' && rawAmount.includes('/')
+            rawAmount === undefined || rawAmount === null || rawAmount === ''
+              ? undefined
+              : typeof rawAmount === 'string' && rawAmount.includes('/')
               ? rawAmount
               : typeof rawAmount === 'number'
               ? rawAmount
-              : rawAmount
-              ? parseFraction(rawAmount) || rawAmount || 1
-              : 1;
+              : parseFraction(rawAmount) || rawAmount || undefined;
 
           inputsMap.set(inputId, {
             id: inputId,
             name: mention.displayText,
             amount: finalAmount,
-            unit: mention.data.unit || 'piece',
+            unit: mention.data.unit || undefined,
             notes: mention.data.creatorNote
           });
         }
