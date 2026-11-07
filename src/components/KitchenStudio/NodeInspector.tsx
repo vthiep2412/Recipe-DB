@@ -10,6 +10,7 @@ import {
   STANDARD_INGREDIENTS,
   STANDARD_COOKWARE,
   ALL_MEASUREMENT_UNITS,
+  NO_UNIT_OPTION,
   VESSEL_SIZES,
   parseTimeStringToSeconds,
   formatSecondsToDisplay
@@ -232,7 +233,8 @@ export function NodeInspector({
       ? `remention-${activeMention.data?.ingredientId || activeMention.displayText.toLowerCase()}`
       : (activeMention.data?.ingredientId || activeMention.displayText.toLowerCase());
     const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId || i.name.toLowerCase() === currentIngId.toLowerCase())
-    const availableUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
+    const baseUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
+    const availableUnits = baseUnits.includes(NO_UNIT_OPTION) ? baseUnits : [NO_UNIT_OPTION, ...baseUnits];
 
     return (
       <aside className="studio-inspector-card" aria-label="Ingredient Inspector">
@@ -419,9 +421,10 @@ export function NodeInspector({
 
                             <Dropdown
                               className="inspector-unit-compact-select"
-                              value={activeMention.data?.unit || availableUnits[0]}
+                              value={(!activeMention.data?.unit || activeMention.data.unit === NO_UNIT_OPTION) ? NO_UNIT_OPTION : activeMention.data.unit}
                               options={availableUnits}
                               onChange={newUnit => {
+                                const isNoUnit = newUnit === NO_UNIT_OPTION || !newUnit;
                                 const targetIsMetric = newUnit === 'g' || newUnit === 'ml';
                                 let updatedAmount = activeMention.data?.amount;
                                 if (targetIsMetric && typeof updatedAmount === 'string' && updatedAmount.includes('/')) {
@@ -432,7 +435,11 @@ export function NodeInspector({
                                   }
                                 }
                                 onUpdateMention(activeMention.id, {
-                                  data: { ...activeMention.data, unit: newUnit, amount: updatedAmount }
+                                  data: {
+                                    ...activeMention.data,
+                                    unit: isNoUnit ? undefined : newUnit,
+                                    amount: updatedAmount
+                                  }
                                 });
                               }}
                             />

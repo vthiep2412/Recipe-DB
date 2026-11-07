@@ -103,7 +103,10 @@ function buildStandardIngredients(): StandardIngredient[] {
   return Array.from(map.values())
 }
 
+export const NO_UNIT_OPTION = '(No Unit)'
+
 export const ALL_MEASUREMENT_UNITS = [
+  NO_UNIT_OPTION,
   'g',
   'kg',
   'oz',

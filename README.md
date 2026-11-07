@@ -61,8 +61,9 @@ bun run tunnel
   - **Active Filter Chips**: Selected tags appear above the search bar with instant click-to-remove.
   - **Responsive Multi-Column Grid**: Dynamic grid scaling smoothly from single-column mobile view to multi-column desktop layout.
 - **Two-Column Rich UI**: Desktop view features a left-hand ingredient sidebar and a right-hand media hero and step-by-step method panel.
-- **Cooklang Parsing Engine**:
+- **Cooklang & Fablang Parsing Engine**:
   - `@ingredient{quantity%unit}(note)`: Standard ingredient with amounts and notes.
+  - `@ingredient{quantity}`: Ingredients without units ("(No Unit)"), displaying raw count without arbitrary measurement labels.
   - `@@ingredient{quantity%unit}`: Hidden ingredients visible in method steps but excluded from ingredient checklists.
   - `#cookware{quantity}`: Kitchen tools and equipment.
   - `~timer{duration%unit}`: Active timers with countdowns.

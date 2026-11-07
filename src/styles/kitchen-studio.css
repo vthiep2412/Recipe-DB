@@ -310,6 +310,42 @@
   color: #4caf50;
 }
 
+.canvas-history-btn-group {
+  display: inline-flex;
+  align-items: center;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 0.4rem;
+  overflow: hidden;
+  margin-left: 0.5rem;
+}
+
+.canvas-history-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-normal);
+  padding: 0.38rem 0.55rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.canvas-history-btn:first-child {
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.canvas-history-btn:hover:not(:disabled) {
+  background-color: var(--background-modifier-hover);
+  color: var(--interactive-accent);
+}
+
+.canvas-history-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .canvas-top-right {
   display: flex;
   align-items: center;

@@ -253,7 +253,7 @@ export function generateFablang(
             let amtStr = '';
             if (m.data?.amount !== undefined && m.data.amount !== '') {
               const formattedAmt = typeof m.data.amount === 'number' ? formatFraction(m.data.amount) : String(m.data.amount);
-              const u = m.data?.unit ? `%${m.data.unit}` : '';
+              const u = m.data?.unit && m.data.unit !== '(No Unit)' ? `%${m.data.unit}` : '';
               amtStr = `{${formattedAmt}${u}}`;
             } else if (name.includes(' ') || Boolean(noteStr)) {
               amtStr = '{}';

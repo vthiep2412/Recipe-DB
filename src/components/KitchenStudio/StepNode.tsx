@@ -114,7 +114,7 @@ function updateTokenContent(span: HTMLElement, mention: StepMentionToken, allNod
     if (!mention.data?.isRemention && mention.data?.amount !== undefined && mention.data?.amount !== '') {
       const amtSpan = document.createElement('span');
       amtSpan.className = 'cook-amt';
-      const unitText = mention.data.unit ? ` ${mention.data.unit}` : '';
+      const unitText = mention.data.unit && mention.data.unit !== '(No Unit)' ? ` ${mention.data.unit}` : '';
       const displayAmt = typeof mention.data.amount === 'number'
         ? formatFraction(mention.data.amount)
         : mention.data.amount;

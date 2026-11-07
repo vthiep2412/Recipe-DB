@@ -843,6 +843,9 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     if (baseVal === null) return ''
     let val = baseVal * scaleRatio
     let u = unit || ''
+    if (u === '(No Unit)') {
+      u = ''
+    }
 
     if ((u.toLowerCase() === 'piece' || u.toLowerCase() === 'pieces') && val === 1) {
       return ''
@@ -890,7 +893,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       const num = parseFraction(numPart)
       if (num !== null) {
         let scaled = num * scaleRatio
-        let u = unitPart
+        let u = unitPart === '(No Unit)' ? '' : unitPart
         if (settings.standardUnit !== 'off' && u) {
           const converted = convertUnit(scaled, u, {
             unitConversionMode: settings.standardUnit,

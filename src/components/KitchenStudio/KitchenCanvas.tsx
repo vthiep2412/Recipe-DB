@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
-import { ArrowLeft, Settings } from 'lucide-preact';
+import { ArrowLeft, Settings, Undo2, Redo2 } from 'lucide-preact';
 import { toast } from 'sonner';
 import type {
   StudioWorkspace,
@@ -360,7 +360,41 @@ export function KitchenCanvas({
   // Auto save state
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
 
-  const updateWorkspaceState = (updated: StudioWorkspace) => {
+  // 30-action Undo / Redo History Stack
+  const MAX_HISTORY = 30;
+  const [past, setPast] = useState<StudioWorkspace[]>([]);
+  const [future, setFuture] = useState<StudioWorkspace[]>([]);
+  const isUndoRedoAction = useRef(false);
+  const lastTextEditTime = useRef<number>(0);
+  const pendingTypingWorkspace = useRef<StudioWorkspace | null>(null);
+
+  const updateWorkspaceState = (
+    updated: StudioWorkspace,
+    recordHistory = true,
+    actionType: 'structural' | 'typing' = 'structural'
+  ) => {
+    if (recordHistory && !isUndoRedoAction.current) {
+      const now = Date.now();
+      if (actionType === 'typing') {
+        if (!pendingTypingWorkspace.current) {
+          pendingTypingWorkspace.current = workspace;
+        }
+        if (now - lastTextEditTime.current > 600) {
+          const snapshotToRecord = pendingTypingWorkspace.current || workspace;
+          setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), snapshotToRecord]);
+          setFuture([]);
+          pendingTypingWorkspace.current = workspace;
+        }
+        lastTextEditTime.current = now;
+      } else {
+        const snapshotToRecord = pendingTypingWorkspace.current || workspace;
+        setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), snapshotToRecord]);
+        setFuture([]);
+        pendingTypingWorkspace.current = null;
+        lastTextEditTime.current = 0;
+      }
+    }
+
     setSaveStatus('saving');
     const result = onUpdateWorkspace(updated);
     if (result === false) {
@@ -369,6 +403,69 @@ export function KitchenCanvas({
       setTimeout(() => setSaveStatus('saved'), 300);
     }
   };
+
+  const handleUndo = () => {
+    if (past.length === 0) return;
+    isUndoRedoAction.current = true;
+    const previous = past[past.length - 1];
+    setPast(prev => prev.slice(0, -1));
+    setFuture(prev => [workspace, ...prev.slice(0, MAX_HISTORY - 1)]);
+    pendingTypingWorkspace.current = null;
+    updateWorkspaceState(previous, false);
+    toast.info('Undone');
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 50);
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) return;
+    isUndoRedoAction.current = true;
+    const next = future[0];
+    setFuture(prev => prev.slice(1));
+    setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), workspace]);
+    pendingTypingWorkspace.current = null;
+    updateWorkspaceState(next, false);
+    toast.info('Redone');
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 50);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        const target = e.target as HTMLElement | null;
+        const isInputField = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        );
+        if (isInputField) return;
+
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (key === 'y') {
+        const target = e.target as HTMLElement | null;
+        const isInputField = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        );
+        if (isInputField) return;
+
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [past, future, workspace]);
 
   // Backfill explicit sectionId on any unassigned canvas nodes
   useEffect(() => {
@@ -387,7 +484,7 @@ export function KitchenCanvas({
       return node;
     });
     if (needsUpdate) {
-      updateWorkspaceState({ ...workspace, canvasNodes: nextNodes });
+      updateWorkspaceState({ ...workspace, canvasNodes: nextNodes }, false);
     }
   }, [workspace.canvasNodes, currentSections]);
 
@@ -1784,7 +1881,12 @@ export function KitchenCanvas({
       }
       return n;
     });
-    updateWorkspaceState({ ...workspace, canvasNodes: updatedNodes });
+    const isTyping = updated.instructionText !== undefined || updated.title !== undefined;
+    updateWorkspaceState(
+      { ...workspace, canvasNodes: updatedNodes },
+      true,
+      isTyping ? 'typing' : 'structural'
+    );
   };
 
   // Jump to step with glow and auto centering
@@ -1874,6 +1976,30 @@ export function KitchenCanvas({
             <span className={`canvas-save-status is-${saveStatus}`}>
               {saveStatus === 'saved' ? '● Saved' : saveStatus === 'error' ? '▲ Save Error' : '○ Saving...'}
             </span>
+          </div>
+
+          {/* History Undo / Redo Controls */}
+          <div className="canvas-history-btn-group" role="group" aria-label="Undo and Redo">
+            <button
+              type="button"
+              className="canvas-history-btn"
+              onClick={handleUndo}
+              disabled={past.length === 0}
+              title={past.length > 0 ? `Undo (Ctrl+Z) • ${past.length} available` : 'Undo (Ctrl+Z)'}
+              aria-label="Undo"
+            >
+              <Undo2 size={15} />
+            </button>
+            <button
+              type="button"
+              className="canvas-history-btn"
+              onClick={handleRedo}
+              disabled={future.length === 0}
+              title={future.length > 0 ? `Redo (Ctrl+Y) • ${future.length} available` : 'Redo (Ctrl+Y)'}
+              aria-label="Redo"
+            >
+              <Redo2 size={15} />
+            </button>
           </div>
         </div>
 
