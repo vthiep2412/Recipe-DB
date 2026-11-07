@@ -2948,7 +2948,7 @@
 .cook-step-image {
   width: 100%;
   aspect-ratio: 21 / 9;
-  max-height: 11rem;
+  max-height: 12rem;
   object-fit: cover;
   object-position: center;
   display: block;
@@ -3583,6 +3583,7 @@
   overflow: hidden;
   margin-top: 0.25rem;
   margin-bottom: 0.65rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
