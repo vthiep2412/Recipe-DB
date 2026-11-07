@@ -1606,13 +1606,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 </>
               ) : heroImages.length >= 3 ? (
                 <>
-                  <div className="cook-media-item" style={{ position: 'relative' }}>
+                  <div className="cook-media-item">
                     <img
                       src={heroImages[0]}
                       alt={`${recipe.title} 1`}
                       tabIndex={0}
                       role="button"
-                      aria-label={`View all ${heroImages.length} images`}
+                      aria-label="View full size image"
                       onClick={() => openLightbox(0)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1621,24 +1621,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         }
                       }}
                     />
-                    <div
-                      className="cook-media-overlay-badge"
-                      onClick={() => openLightbox(0)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`View all ${heroImages.length} images`}
-                    >
-                      <span>+{heroImages.length}</span>
-                    </div>
                   </div>
 
-                  <div className="cook-media-item">
+                  <div className="cook-media-item" style={{ position: 'relative' }}>
                     <img
                       src={heroImages[1]}
                       alt={`${recipe.title} 2`}
                       tabIndex={0}
                       role="button"
-                      aria-label="View full size image"
+                      aria-label={`View all ${heroImages.length} images`}
                       onClick={() => openLightbox(1)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1647,6 +1638,15 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         }
                       }}
                     />
+                    <div
+                      className="cook-media-overlay-badge"
+                      onClick={() => openLightbox(1)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View all ${heroImages.length} images`}
+                    >
+                      <span>+{heroImages.length}</span>
+                    </div>
                   </div>
                 </>
               ) : heroImages.length === 2 ? (
