@@ -112,7 +112,7 @@ export interface LocalMediaStoreAPI {
 
 export interface CloudinaryServiceAPI {
   uploadAsset(
-    blob: Blob,
+    source: Blob | string,
     type: CloudinaryAssetType,
     folder: 'recipes/images' | 'recipes/videos'
   ): Promise<CloudinaryResult>;

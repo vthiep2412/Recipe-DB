@@ -90,15 +90,53 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob | null> {
   }
 }
 
-async function uploadAllLocalRefsInWorkspace(workspace: StudioWorkspace): Promise<StudioWorkspace> {
+function isExternalCandidateImage(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return false;
+  if (trimmed.includes('cloudinary.com')) return false;
+  if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) return false;
+  return true;
+}
+
+async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<StudioWorkspace> {
   const jsonStr = JSON.stringify(workspace);
   const idbRegex = /"idb:([^"]+)"/g;
   const base64Regex = /"(data:image\/[^";]+;base64,[^"]+)"/g;
+  const externalImageRegex = /"(https?:\/\/[^"\\]+?\.(?:png|jpe?g|webp|gif|avif|jxl|svg)(?:\?[^"\\]*)?)"/gi;
 
   const idbMatches = [...jsonStr.matchAll(idbRegex)];
   const base64Matches = [...jsonStr.matchAll(base64Regex)];
+  const externalMatches = [...jsonStr.matchAll(externalImageRegex)];
 
-  if (idbMatches.length === 0 && base64Matches.length === 0) {
+  // Explicit media URLs from workspace graph & steps
+  const explicitUrls = new Set<string>();
+  if (workspace.graph?.media?.pictureUrl && isExternalCandidateImage(workspace.graph.media.pictureUrl)) {
+    explicitUrls.add(workspace.graph.media.pictureUrl);
+  }
+  if (Array.isArray(workspace.graph?.media?.galleryUrls)) {
+    for (const url of workspace.graph.media.galleryUrls) {
+      if (isExternalCandidateImage(url)) explicitUrls.add(url);
+    }
+  }
+  if (Array.isArray(workspace.canvasNodes)) {
+    for (const node of workspace.canvasNodes) {
+      if (Array.isArray(node.media?.galleryUrls)) {
+        for (const url of node.media.galleryUrls) {
+          if (isExternalCandidateImage(url)) explicitUrls.add(url);
+        }
+      }
+    }
+  }
+
+  for (const match of externalMatches) {
+    const rawUrl = match[1];
+    if (isExternalCandidateImage(rawUrl)) {
+      explicitUrls.add(rawUrl);
+    }
+  }
+
+  if (idbMatches.length === 0 && base64Matches.length === 0 && explicitUrls.size === 0) {
     return workspace;
   }
 
@@ -115,8 +153,8 @@ async function uploadAllLocalRefsInWorkspace(workspace: StudioWorkspace): Promis
           const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
           replacementMap.set(fullKey, uploaded.secure_url);
         }
-      } catch {
-        // Fallback for offline or unreachable asset
+      } catch (err) {
+        console.warn(`[recipeStorageService] Failed to upload IDB asset to Cloudinary: ${fullKey}`, err);
       }
     }
   }
@@ -131,8 +169,20 @@ async function uploadAllLocalRefsInWorkspace(workspace: StudioWorkspace): Promis
           const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
           replacementMap.set(dataUrl, uploaded.secure_url);
         }
-      } catch {
-        // Fallback for invalid or failed base64 upload
+      } catch (err) {
+        console.warn(`[recipeStorageService] Failed to upload base64 asset to Cloudinary`, err);
+      }
+    }
+  }
+
+  // 3. Resolve external HTTP/HTTPS images
+  for (const extUrl of explicitUrls) {
+    if (!replacementMap.has(extUrl)) {
+      try {
+        const uploaded = await uploadAsset(extUrl, 'image', 'recipes/images');
+        replacementMap.set(extUrl, uploaded.secure_url);
+      } catch (err) {
+        console.warn(`[recipeStorageService] Failed to upload external image to Cloudinary: ${extUrl}`, err);
       }
     }
   }
@@ -366,7 +416,7 @@ export class SupabaseRecipeStorageProvider
     }
 
     try {
-      const cleanWorkspace = await uploadAllLocalRefsInWorkspace(workspace);
+      const cleanWorkspace = await uploadAllMediaInWorkspace(workspace);
       const compiledGraph = exportStudioWorkspaceToRecipeGraph(cleanWorkspace);
       const adaptedRecipe = recipeGraphToRecipeJSON(compiledGraph);
       const rawFablang = generateFablang(compiledGraph, cleanWorkspace.canvasNodes, cleanWorkspace);

@@ -6,6 +6,7 @@ import type {
 
 const CLOUD_NAME = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string) || '';
 const UPLOAD_PRESET = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string) || '';
+const API_KEY = (import.meta.env.VITE_CLOUDINARY_API_KEY as string) || '';
 
 async function downscaleIfNeeded(blob: Blob): Promise<Blob> {
   if (blob.size <= 4 * 1024 * 1024) {
@@ -54,7 +55,7 @@ async function downscaleIfNeeded(blob: Blob): Promise<Blob> {
 }
 
 export async function uploadAsset(
-  blob: Blob,
+  source: Blob | string,
   type: CloudinaryAssetType,
   folder: 'recipes/images' | 'recipes/videos'
 ): Promise<CloudinaryResult> {
@@ -62,12 +63,21 @@ export async function uploadAsset(
     throw new Error('Cloudinary credentials not configured in environment');
   }
 
-  const finalBlob = type === 'image' ? await downscaleIfNeeded(blob) : blob;
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`;
-
+  const resourceType = type === 'video' ? 'video' : 'image';
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
   const form = new FormData();
-  form.append('file', finalBlob);
+
+  if (typeof source === 'string') {
+    form.append('file', source);
+  } else {
+    const finalBlob = type === 'image' ? await downscaleIfNeeded(source) : source;
+    form.append('file', finalBlob);
+  }
+
   form.append('upload_preset', UPLOAD_PRESET);
+  if (API_KEY) {
+    form.append('api_key', API_KEY);
+  }
   form.append('folder', folder);
 
   const res = await fetch(uploadUrl, {
