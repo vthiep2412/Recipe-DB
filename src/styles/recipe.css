@@ -1904,8 +1904,50 @@
   text-overflow: clip;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  line-height: 1.5;
+  line-height: 1.55;
+  transition: color 0.2s ease;
+}
+
+.cook-desc-container.collapsed .cook-desc-text {
   color: var(--text-muted);
+}
+
+.cook-desc-container.expanded .cook-desc-text {
+  color: var(--text-normal, #f3f4f6);
+}
+
+.cook-desc-markdown p {
+  margin: 0.35rem 0;
+}
+
+.cook-desc-markdown blockquote {
+  border-left: 3px solid var(--interactive-accent, #f97316);
+  margin: 0.6rem 0;
+  padding: 0.35rem 0 0.35rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0 4px 4px 0;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.cook-desc-container.collapsed .cook-desc-markdown blockquote {
+  color: var(--text-muted);
+  border-left-color: rgba(255, 255, 255, 0.25);
+}
+
+.cook-desc-container.expanded .cook-desc-markdown blockquote {
+  color: #fed7aa;
+  border-left-color: var(--interactive-accent, #f97316);
+}
+
+.cook-desc-markdown strong {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.cook-desc-markdown a {
+  color: var(--text-accent, #f97316);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .cook-desc-fade {
@@ -2722,13 +2764,32 @@
 }
 
 .important-notes-body {
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   line-height: 1.55;
-  color: var(--text-muted);
+  color: var(--text-normal, #f3f4f6);
 }
 
 .important-notes-body p {
-  margin: 0.25rem 0;
+  margin: 0.35rem 0;
+  color: var(--text-normal, #f3f4f6);
+}
+
+.important-notes-body strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.important-notes-body a {
+  color: #fbbf24;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.important-notes-body blockquote {
+  border-left: 3px solid #f59e0b;
+  margin: 0.4rem 0;
+  padding: 0.2rem 0 0.2rem 0.65rem;
+  color: var(--text-normal, #f3f4f6);
 }
 
 /* Clean hairline divider with no text label */

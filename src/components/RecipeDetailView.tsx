@@ -50,7 +50,6 @@ export function _legacyUrl(trimmed: string) {
 
 function sanitizeMarkdown(raw?: string): string {
   if (!raw) return '';
-  const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
     const safeHref = isSafeUrl(href) ? escapeHtmlAttr(href.trim()) : '#';
@@ -64,7 +63,7 @@ function sanitizeMarkdown(raw?: string): string {
     const altAttr = text ? ` alt="${escapeHtmlAttr(text)}"` : '';
     return `<img src="${safeSrc}"${altAttr}${titleAttr} loading="lazy" />`;
   };
-  const html = marked.parse(escaped, { renderer, async: false }) as string;
+  const html = marked.parse(raw, { renderer, async: false }) as string;
   return sanitizeHtml(html, 'recipe');
 }
 
