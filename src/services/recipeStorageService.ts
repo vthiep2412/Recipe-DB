@@ -277,6 +277,31 @@ export class SupabaseRecipeStorageProvider
     return !collision.isTaken;
   }
 
+  async getExistingRecipeInfo(
+    identifier?: string
+  ): Promise<{ id: string; slug: string; title: string; status: string; owner_id: string } | null> {
+    if (!identifier) return null;
+    const clean = identifier.trim();
+    if (!clean) return null;
+
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+      let query = supabase.from('recipes').select('id, slug, title, status, owner_id');
+      if (isUuid) {
+        query = query.eq('id', clean);
+      } else {
+        query = query.eq('slug', slugifyRecipeTitle(clean));
+      }
+      const { data, error } = await query.maybeSingle();
+      if (!error && data) {
+        return data;
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
+  }
+
   override async checkSlugCollision(
     slug: string,
     currentWorkspaceId?: string
@@ -359,14 +384,44 @@ export class SupabaseRecipeStorageProvider
         workspace.id
       );
 
+      let existingRecipe: { id: string; slug: string; owner_id: string } | null = null;
+      if (isExistingUuid) {
+        const { data } = await supabase
+          .from('recipes')
+          .select('id, slug, owner_id')
+          .eq('id', workspace.id)
+          .maybeSingle();
+        if (data) existingRecipe = data;
+      }
+
       let finalSlug = customSlug ? slugifyRecipeTitle(customSlug) : '';
+
+      // If not resolved by workspace UUID, also check if target slug or graph.id matches an existing recipe
+      if (!existingRecipe) {
+        const candidateSlug = finalSlug || slugifyRecipeTitle(cleanWorkspace.graph?.id || cleanWorkspace.title || '');
+        if (candidateSlug) {
+          const { data } = await supabase
+            .from('recipes')
+            .select('id, slug, owner_id')
+            .eq('slug', candidateSlug)
+            .maybeSingle();
+          if (data && (authState.profile?.role === 'admin' || data.owner_id === authState.user.id)) {
+            existingRecipe = data;
+            if (!finalSlug) finalSlug = data.slug;
+          }
+        }
+      }
+
       if (finalSlug) {
-        const isAvail = await this.checkRecipeSlugAvailable(
-          finalSlug,
-          isExistingUuid ? workspace.id : undefined
-        );
-        if (!isAvail) {
-          return { ok: false, error: `Recipe slug "${finalSlug}" is already taken.` };
+        // If updating an existing recipe and keeping the same slug, no collision check needed
+        if (!existingRecipe || finalSlug !== existingRecipe.slug) {
+          const isAvail = await this.checkRecipeSlugAvailable(
+            finalSlug,
+            existingRecipe ? existingRecipe.id : (isExistingUuid ? workspace.id : undefined)
+          );
+          if (!isAvail) {
+            return { ok: false, error: `Recipe slug "${finalSlug}" is already taken by another recipe.` };
+          }
         }
       } else {
         let baseSlug = slugifyRecipeTitle(
@@ -379,70 +434,62 @@ export class SupabaseRecipeStorageProvider
         finalSlug = baseSlug;
         let collision = await this.checkSlugCollision(
           finalSlug,
-          isExistingUuid ? workspace.id : undefined
+          existingRecipe ? existingRecipe.id : (isExistingUuid ? workspace.id : undefined)
         );
         let suffix = 1;
         while (collision.isTaken && suffix < 100) {
           finalSlug = `${baseSlug}-${suffix}`;
           collision = await this.checkSlugCollision(
             finalSlug,
-            isExistingUuid ? workspace.id : undefined
+            existingRecipe ? existingRecipe.id : (isExistingUuid ? workspace.id : undefined)
           );
           suffix++;
         }
       }
 
-      if (isExistingUuid) {
-        const { data: existingRecipe } = await supabase
-          .from('recipes')
-          .select('id, slug')
-          .eq('id', workspace.id)
-          .maybeSingle();
-
-        if (existingRecipe) {
-          const updatePayload: Record<string, any> = {
-            title: cleanWorkspace.title || cleanWorkspace.graph?.title || 'Untitled Recipe',
-            description: cleanWorkspace.graph?.description || '',
-            image_url: heroImage,
-            tags: Array.isArray(tags) ? tags : [],
-            status: targetStatus,
-            updated_at: new Date().toISOString()
-          };
-          if (finalSlug) {
-            updatePayload.slug = finalSlug;
-          }
-
-          const { error: updateError } = await supabase
-            .from('recipes')
-            .update(updatePayload)
-            .eq('id', existingRecipe.id);
-
-          if (updateError) {
-            return { ok: false, error: updateError.message };
-          }
-
-          const { error: detailsError } = await supabase
-            .from('recipe_details')
-            .upsert({
-              recipe_id: existingRecipe.id,
-              sections_ast: {
-                sections: cleanWorkspace.sections || [],
-                canvasNodes: cleanWorkspace.canvasNodes || [],
-                graph: compiledGraph
-              },
-              ingredients_index: ingredientsPayload,
-              cookware_index: cookwarePayload,
-              raw_fablang: rawFablang,
-              important_notes: cleanWorkspace.graph?.importantNotes || ''
-            });
-
-          if (detailsError) {
-            return { ok: false, error: detailsError.message };
-          }
-
-          await localMediaStore.clearWorkspace(workspace.id);
-          return { ok: true, id: existingRecipe.id, slug: finalSlug || existingRecipe.slug };
+      if (existingRecipe) {
+        const updatePayload: Record<string, any> = {
+          title: cleanWorkspace.title || cleanWorkspace.graph?.title || 'Untitled Recipe',
+          description: cleanWorkspace.graph?.description || '',
+          image_url: heroImage,
+          tags: Array.isArray(tags) ? tags : [],
+          status: targetStatus,
+          updated_at: new Date().toISOString()
+        };
+        if (finalSlug) {
+          updatePayload.slug = finalSlug;
         }
+
+        const { error: updateError } = await supabase
+          .from('recipes')
+          .update(updatePayload)
+          .eq('id', existingRecipe.id);
+
+        if (updateError) {
+          return { ok: false, error: updateError.message };
+        }
+
+        const { error: detailsError } = await supabase
+          .from('recipe_details')
+          .upsert({
+            recipe_id: existingRecipe.id,
+            sections_ast: {
+              sections: cleanWorkspace.sections || [],
+              canvasNodes: cleanWorkspace.canvasNodes || [],
+              graph: compiledGraph
+            },
+            ingredients_index: ingredientsPayload,
+            cookware_index: cookwarePayload,
+            raw_fablang: rawFablang,
+            important_notes: cleanWorkspace.graph?.importantNotes || ''
+          });
+
+        if (detailsError) {
+          return { ok: false, error: detailsError.message };
+        }
+
+        await localMediaStore.clearWorkspace(workspace.id);
+        return { ok: true, id: existingRecipe.id, slug: finalSlug || existingRecipe.slug };
       }
 
       const { data: recipeData, error: recipeError } = await supabase

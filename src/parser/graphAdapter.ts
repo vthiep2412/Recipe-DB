@@ -176,7 +176,7 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       bake: formatSecondsToDisplay(graph.times.bakeSec),
       rest: formatSecondsToDisplay(graph.times.restSec)
     },
-    tags: [],
+    tags: graph.tags || [],
     metadata: {},
     ingredients,
     sections,
@@ -251,7 +251,8 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
     inputs: Array.isArray(ws.graph?.inputs) ? ws.graph.inputs : [],
     vessels: Array.isArray(ws.graph?.vessels) ? ws.graph.vessels : [],
     components: Array.isArray(ws.graph?.components) ? ws.graph.components : [],
-    sections
+    sections,
+    tags: Array.isArray(ws.graph?.tags) ? ws.graph.tags : (Array.isArray(ws.tags) ? ws.tags : undefined)
   };
 
   return {

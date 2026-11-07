@@ -32,18 +32,29 @@ export function ConfirmModal({
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const prevFocusedRef = useRef<HTMLElement | null>(null);
+  const titleIdRef = useRef(`confirm-modal-title-${Math.random().toString(36).slice(2, 9)}`);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (prevFocusedRef.current) {
+        prevFocusedRef.current.focus?.();
+        prevFocusedRef.current = null;
+      }
+      return;
+    }
 
     if (typeof document !== 'undefined') {
       prevFocusedRef.current = document.activeElement as HTMLElement | null;
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) {
+      if (e.key === 'Escape' && !isLoadingRef.current) {
         e.preventDefault();
-        onCancel();
+        onCancelRef.current();
         return;
       }
 
@@ -84,9 +95,17 @@ export function ConfirmModal({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       clearTimeout(timer);
-      prevFocusedRef.current?.focus?.();
     };
-  }, [isOpen, isLoading, onCancel]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (prevFocusedRef.current) {
+        prevFocusedRef.current.focus?.();
+        prevFocusedRef.current = null;
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -106,10 +125,10 @@ export function ConfirmModal({
         className="confirm-modal-card"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="confirm-modal-title"
+        aria-labelledby={titleIdRef.current}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="confirm-modal-title" className="confirm-modal-title">
+        <h3 id={titleIdRef.current} className="confirm-modal-title">
           {title}
         </h3>
 

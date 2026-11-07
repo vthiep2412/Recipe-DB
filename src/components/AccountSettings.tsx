@@ -39,6 +39,7 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
   const [newEmail, setNewEmail] = useState('');
   const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [credentialsLoading, setCredentialsLoading] = useState(false);
@@ -217,6 +218,10 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
   const handleUpdatePassword = async (e: Event) => {
     e.preventDefault();
 
+    if (!currentPassword) {
+      toast.error('Please enter your current password.');
+      return;
+    }
     if (newPassword.length < 8) {
       toast.error('New password must be at least 8 characters.');
       return;
@@ -228,11 +233,12 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
 
     setCredentialsLoading(true);
     try {
-      const res = await authStore.updateCredentials({ password: newPassword });
+      const res = await authStore.changePassword({ currentPassword, newPassword });
       if (res?.error) {
         toast.error(res.error);
       } else {
-        toast.success('Password updated successfully.');
+        toast.success('Password updated successfully. Other active sessions have been signed out.');
+        setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
         setIsChangingPassword(false);
@@ -554,6 +560,19 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
             {isChangingPassword && (
               <form onSubmit={handleUpdatePassword} className="credentials-reveal-box">
                 <div className="auth-field" style={{ marginBottom: '0.75rem' }}>
+                  <label htmlFor="account-current-pass">Current Password</label>
+                  <input
+                    id="account-current-pass"
+                    type="password"
+                    placeholder="Enter current password"
+                    value={currentPassword}
+                    onInput={(e) => setCurrentPassword((e.target as HTMLInputElement).value)}
+                    disabled={credentialsLoading}
+                    required
+                  />
+                </div>
+
+                <div className="auth-field" style={{ marginBottom: '0.75rem' }}>
                   <label htmlFor="account-new-pass">New Password</label>
                   <input
                     id="account-new-pass"
@@ -585,6 +604,7 @@ export function AccountSettings({ onNavigate }: AccountSettingsProps) {
                     className="account-secondary-btn"
                     style={{ padding: '0.35rem 0.75rem' }}
                     onClick={() => {
+                      setCurrentPassword('');
                       setNewPassword('');
                       setConfirmPassword('');
                       setIsChangingPassword(false);

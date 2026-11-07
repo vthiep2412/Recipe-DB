@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play } from 'lucide-preact';
+import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag } from 'lucide-preact';
 import { toast } from 'sonner';
 import { marked } from 'marked';
 import type { RecipeGraph } from '../../types/orchestration';
@@ -9,6 +9,8 @@ import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
 import { ConfirmModal } from '../ConfirmModal';
 import { MediaModal } from './MediaModal';
 import { ObsidianSourceEditor, escapeHtmlAttr } from './ObsidianSourceEditor';
+import { TagManagerModal } from './TagManagerModal';
+import { getYouTubeEmbedUrl } from '../../utils/media';
 
 interface RecipeMetadataModalProps {
   isOpen: boolean;
@@ -51,11 +53,17 @@ export function RecipeMetadataModal({
   const [authorName, setAuthorName] = useState(graph.author?.name || 'anonymous');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>(graph.difficulty || 'medium');
   const [servings, setServings] = useState(graph.servings || 4);
+  const [tags, setTags] = useState<string[]>(() => Array.isArray(graph.tags) ? [...graph.tags] : []);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
 
   // Picture and video media
   const [pictureUrl, setPictureUrl] = useState(graph.media?.pictureUrl || '');
   const [videoUrl, setVideoUrl] = useState(graph.media?.videoUrl || '');
   const [galleryUrls, setGalleryUrls] = useState<string[]>(graph.media?.galleryUrls || []);
+
+  const allImages = useMemo(() => {
+    return [pictureUrl, ...galleryUrls].filter(Boolean);
+  }, [pictureUrl, galleryUrls]);
 
   // Active media modal state
   const [activeMediaModal, setActiveMediaModal] = useState<{
@@ -132,7 +140,7 @@ export function RecipeMetadataModal({
   const [isAddingCustomPhaseName, setIsAddingCustomPhaseName] = useState(false);
   const [customPhaseNameInput, setCustomPhaseNameInput] = useState('');
 
-  // Keep media synchronized if graph changes
+  // Keep media and tags synchronized if graph changes
   useEffect(() => {
     if (graph.media?.pictureUrl !== undefined) {
       setPictureUrl(graph.media.pictureUrl);
@@ -140,7 +148,10 @@ export function RecipeMetadataModal({
     if (graph.media?.videoUrl !== undefined) {
       setVideoUrl(graph.media.videoUrl);
     }
-  }, [graph.media?.pictureUrl, graph.media?.videoUrl]);
+    if (graph.tags !== undefined) {
+      setTags(Array.isArray(graph.tags) ? [...graph.tags] : []);
+    }
+  }, [graph.media?.pictureUrl, graph.media?.videoUrl, graph.tags]);
 
   // Calculate total seconds across all phases
   const totalSeconds = timePhases.reduce(
@@ -236,6 +247,7 @@ export function RecipeMetadataModal({
       servings !== (graph.servings || 4) ||
       pictureUrl !== (graph.media?.pictureUrl || '') ||
       videoUrl !== (graph.media?.videoUrl || '') ||
+      JSON.stringify(galleryUrls) !== JSON.stringify(graph.media?.galleryUrls || []) ||
       description !== (graph.description || '') ||
       importantNotes !== (graph.importantNotes || graph.tips || '') ||
       initialPhasesSignature !== currentPhasesSignature
@@ -248,6 +260,7 @@ export function RecipeMetadataModal({
     servings,
     pictureUrl,
     videoUrl,
+    galleryUrls,
     description,
     importantNotes,
     initialPhasesSignature,
@@ -295,6 +308,7 @@ export function RecipeMetadataModal({
       title: title.trim() || 'Untitled Recipe',
       difficulty,
       servings: Math.max(1, servings),
+      tags,
       description,
       tips: importantNotes.trim(),
       importantNotes: importantNotes.trim(),
@@ -383,10 +397,15 @@ export function RecipeMetadataModal({
                   tabIndex={0}
                   aria-label="Add or edit picture"
                 >
-                  {pictureUrl ? (
+                  {allImages.length > 0 ? (
                     <div className="root-media-filled">
-                      <img src={pictureUrl} alt="Recipe picture" />
-                      <div className="root-media-overlay">Change Picture</div>
+                      <img src={allImages[0]} alt="Recipe picture" />
+                      {allImages.length > 1 && (
+                        <div className="studio-media-counter-badge">
+                          ×{allImages.length}
+                        </div>
+                      )}
+                      <div className="root-media-overlay">Manage Images</div>
                     </div>
                   ) : (
                     <div className="root-media-empty">
@@ -408,7 +427,7 @@ export function RecipeMetadataModal({
                     <div className="root-media-filled">
                       <div className="root-video-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                         <Play size={12} fill="currentColor" />
-                        <span>Video Loaded</span>
+                        <span>{getYouTubeEmbedUrl(videoUrl) ? 'YouTube Video' : 'Video Loaded'}</span>
                       </div>
                       <div className="root-media-overlay">Change Video</div>
                     </div>
@@ -420,69 +439,6 @@ export function RecipeMetadataModal({
                   )}
                 </div>
               </div>
-
-              {/* Extra images gallery if any */}
-              {galleryUrls.length > 0 && (
-                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
-                  {galleryUrls.map((url, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        position: 'relative',
-                        width: '3.6rem',
-                        height: '2.5rem',
-                        borderRadius: '0.35rem',
-                        overflow: 'hidden',
-                        border: '1px solid rgba(255, 255, 255, 0.15)'
-                      }}
-                    >
-                      <img src={url} alt={`Extra ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <button
-                        type="button"
-                        style={{
-                          position: 'absolute',
-                          top: '0.1rem',
-                          right: '0.1rem',
-                          background: 'rgba(0, 0, 0, 0.75)',
-                          border: 'none',
-                          color: '#ffffff',
-                          borderRadius: '50%',
-                          width: '1rem',
-                          height: '1rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => setGalleryUrls(prev => prev.filter((_, i) => i !== idx))}
-                        title="Remove image"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    style={{
-                      width: '3.6rem',
-                      height: '2.5rem',
-                      borderRadius: '0.35rem',
-                      border: '1px dashed rgba(255, 255, 255, 0.2)',
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      color: '#9ca3af',
-                      fontSize: '0.75rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => setActiveMediaModal({ type: 'picture', galleryIndex: galleryUrls.length })}
-                    title="Add another image"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Box 2: Recipe Title */}
@@ -561,6 +517,35 @@ export function RecipeMetadataModal({
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* Tags Section */}
+            <div className="metadata-field-group">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label className="metadata-field-label" style={{ margin: 0 }}>Recipe Tags ({tags.length})</label>
+                <button
+                  type="button"
+                  className="metadata-tag-manage-btn"
+                  onClick={() => setIsTagModalOpen(true)}
+                >
+                  <Tag size={13} />
+                  <span>Manage Tags</span>
+                </button>
+              </div>
+
+              {tags.length > 0 ? (
+                <div className="metadata-tags-preview">
+                  {tags.map(t => (
+                    <span key={t} className="metadata-tag-chip">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="metadata-tags-empty-hint">
+                  No tags added yet. Click &quot;Manage Tags&quot; to assign categories.
+                </div>
+              )}
             </div>
 
             {/* Timing and Phases */}
@@ -751,35 +736,35 @@ export function RecipeMetadataModal({
         <MediaModal
           isOpen={true}
           mediaType={activeMediaModal.type}
-          currentUrl={
-            activeMediaModal.type === 'video'
-              ? videoUrl
-              : (activeMediaModal.galleryIndex !== undefined ? galleryUrls[activeMediaModal.galleryIndex] : pictureUrl)
-          }
+          mode={activeMediaModal.type === 'picture' ? 'gallery' : 'single'}
+          currentUrl={activeMediaModal.type === 'video' ? videoUrl : (allImages[0] || '')}
+          currentUrls={activeMediaModal.type === 'picture' ? allImages : undefined}
           onClose={() => setActiveMediaModal(null)}
           onSave={url => {
             if (activeMediaModal.type === 'video') {
               setVideoUrl(url);
             } else {
-              if (activeMediaModal.galleryIndex !== undefined) {
-                setGalleryUrls(prev => {
-                  const next = [...prev];
-                  if (activeMediaModal.galleryIndex! < next.length) {
-                    next[activeMediaModal.galleryIndex!] = url;
-                  } else {
-                    next.push(url);
-                  }
-                  return next;
-                });
-              } else {
-                setPictureUrl(url);
-              }
+              setPictureUrl(url);
+            }
+            setActiveMediaModal(null);
+          }}
+          onSaveGallery={urls => {
+            if (activeMediaModal.type === 'picture') {
+              setPictureUrl(urls[0] || '');
+              setGalleryUrls(urls.slice(1));
             }
             setActiveMediaModal(null);
           }}
         />
       )}
     </div>
+
+    <TagManagerModal
+      isOpen={isTagModalOpen}
+      tags={tags}
+      onClose={() => setIsTagModalOpen(false)}
+      onSave={updatedTags => setTags(updatedTags)}
+    />
 
     <ConfirmModal
       isOpen={isExitConfirmOpen}

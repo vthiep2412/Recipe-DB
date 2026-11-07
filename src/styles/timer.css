@@ -4,7 +4,7 @@
 .timer-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 100060;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -128,6 +128,19 @@ export function Dropdown({
         return
       }
 
+      const activeEl = document.activeElement
+      const isWithinDropdown = Boolean(
+        containerRef.current && (
+          containerRef.current.contains(activeEl) ||
+          e.target === containerRef.current ||
+          (e.target instanceof Node && containerRef.current.contains(e.target))
+        )
+      )
+
+      if (!isWithinDropdown) {
+        return
+      }
+
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         isKeyboardNavRef.current = true

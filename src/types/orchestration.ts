@@ -71,6 +71,7 @@ export interface RecipeGraph {
   vessels: RecipeVessel[];
   components: RecipeComponent[];
   sections?: CanvasSection[];
+  tags?: string[];
   meta?: Record<string, unknown>;
 }
 

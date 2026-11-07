@@ -420,9 +420,10 @@
 .confirm-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 2100;
-  background-color: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  z-index: 100050 !important;
+  background-color: var(--modal-backdrop-bg, rgba(0, 0, 0, 0.65)) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -556,13 +557,6 @@
 
 .auth-modal-overlay {
   z-index: 2000 !important;
-  background-color: var(--modal-backdrop-bg, rgba(0, 0, 0, 0.65)) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-}
-
-.confirm-modal-overlay {
-  z-index: 100050 !important;
   background-color: var(--modal-backdrop-bg, rgba(0, 0, 0, 0.65)) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;

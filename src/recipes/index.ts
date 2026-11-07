@@ -43,6 +43,7 @@ export function mapCloudToRecipeJSON(cloud: {
         vessels: Array.isArray(details.cookwareIndex) ? (details.cookwareIndex as any) : [],
         components: [],
         sections: rawSections,
+        tags: Array.isArray(recipe.tags) && recipe.tags.length > 0 ? recipe.tags : undefined
       },
       sections: rawSections,
       canvasNodes: rawCanvasNodes,

@@ -75,6 +75,10 @@ bun run tunnel
 - **Inline Step Tools**: Step cards can display compact chip bars of ingredients and cookware directly in the method view.
 - **Widescreen Media Clamping**: Step and section images adhere to fixed 16:9 and 21:9 letterbox aspect ratios with height clamping.
 - **Dynamic Servings Scaling**: Stepper scales quantities and fraction display automatically.
+- **Multi-Image Hero & YouTube Lightbox**:
+  - **Dynamic Hero Splits**: Automatically adapts layout for 1 photo (full-width), 2 photos (50/50 split), 3+ photos (left slot darkened with `+N` overlay, right slot clear), or video pinned to right (native MP4 or YouTube embed via `youtube-nocookie`).
+  - **Ghost-Button Lightbox**: Clean image viewer with borderless ghost navigation arrows, position counter (`1 / N`), thumbnail scrub strip, and keyboard navigation (`ArrowLeft`, `ArrowRight`, `Escape`).
+  - **Studio Media Ingest**: 2×2 image management grid in Kitchen Studio with per-image deletion, URL loading, file uploads, and an `×N` cover badge in recipe settings.
 - **Creator Application Workflow**: Dedicated application portal equipped with an Obsidian-style live Markdown editor, guidelines for aspiring creators, and status tracking connected to review workflows.
 - **Theme**: Obsidian dark grey aesthetic (`#1e1e1e` / `#242424`) with warm orange accents.
 

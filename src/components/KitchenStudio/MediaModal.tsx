@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { Image, Video, RefreshCw, Trash2, Plus, X } from 'lucide-preact';
+import { Image, Video, RefreshCw, Trash2, X } from 'lucide-preact';
 import { localMediaStore } from '../../services/localMediaStore';
+import { getYouTubeEmbedUrl } from '../../utils/media';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -249,6 +250,15 @@ export function MediaModal({
                   <div className="studio-media-preview-box">
                     {mediaType === 'picture' ? (
                       <img src={previewUrl} alt="Preview" className="studio-preview-img" />
+                    ) : getYouTubeEmbedUrl(previewUrl) ? (
+                      <iframe
+                        src={getYouTubeEmbedUrl(previewUrl)!}
+                        title="YouTube preview"
+                        className="studio-preview-video"
+                        style={{ border: 'none', width: '100%', height: '100%', minHeight: '220px' }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
                     ) : (
                       <video src={previewUrl} controls className="studio-preview-video" />
                     )}
@@ -339,41 +349,7 @@ export function MediaModal({
             </div>
           ) : (
             <div className="studio-gallery-media-section">
-              {galleryList.length > 0 && (
-                <div className="studio-gallery-grid">
-                  {galleryList.map((ref, idx) => (
-                    <div key={idx} className="studio-gallery-item-card">
-                      <img
-                        src={galleryPreviewMap[ref] || ref}
-                        alt={`Gallery item ${idx + 1}`}
-                        className="studio-gallery-thumb"
-                      />
-                      <button
-                        type="button"
-                        className="studio-gallery-item-delete-btn"
-                        onClick={() => handleRemoveGalleryItem(idx)}
-                        title="Remove image"
-                        aria-label="Remove image"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                  <div
-                    className="studio-gallery-add-card"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Add image"
-                  >
-                    <Plus size={24} />
-                    <span>Add Image</span>
-                  </div>
-                </div>
-              )}
-
-              <div
-                className="studio-unified-dropzone-wrapper"
-                style={{ marginTop: galleryList.length > 0 ? '1rem' : '0' }}
-              >
+              <div className="studio-unified-dropzone-wrapper">
                 <div
                   className={`studio-custom-dropzone ${isDragging ? 'is-dragging' : ''}`}
                   onDragOver={handleDragOver}
@@ -382,7 +358,7 @@ export function MediaModal({
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <div className="dropzone-icon">
-                    <Image size={40} className="dropzone-lucide-icon" />
+                    <Image size={36} className="dropzone-lucide-icon" />
                   </div>
                   <div className="dropzone-primary-text">
                     Drag and drop images to add
@@ -401,7 +377,10 @@ export function MediaModal({
                     className="studio-input"
                     placeholder="Or enter image URL to add..."
                     value={urlInput}
-                    onInput={(e) => setUrlInput((e.target as HTMLInputElement).value)}
+                    onInput={(e) => {
+                      setUrlInput((e.target as HTMLInputElement).value);
+                      if (urlError) setUrlError(null);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -418,7 +397,40 @@ export function MediaModal({
                     Add
                   </button>
                 </div>
+                {urlError && (
+                  <div style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.8rem', marginTop: '0.4rem', textAlign: 'left' }}>
+                    {urlError}
+                  </div>
+                )}
               </div>
+
+              {galleryList.length > 0 && (
+                <div style={{ marginTop: '1.25rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Recipe Images ({galleryList.length})
+                  </div>
+                  <div className="studio-gallery-grid-2x2">
+                    {galleryList.map((ref, idx) => (
+                      <div key={idx} className="studio-gallery-item-card">
+                        <img
+                          src={galleryPreviewMap[ref] || ref}
+                          alt={`Gallery item ${idx + 1}`}
+                          className="studio-gallery-thumb"
+                        />
+                        <button
+                          type="button"
+                          className="studio-gallery-item-delete-btn"
+                          onClick={() => handleRemoveGalleryItem(idx)}
+                          title="Remove image"
+                          aria-label="Remove image"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

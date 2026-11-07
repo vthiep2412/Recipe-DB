@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import {
   ChefHat,
@@ -7,12 +7,15 @@ import {
   Plus,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   X,
   Check,
   CookingPot,
   AlertTriangle,
   Play,
-  Bookmark
+  Bookmark,
+  NotepadText
 } from 'lucide-preact';
 import { marked } from 'marked';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
@@ -25,16 +28,12 @@ import { userDataSyncService } from '../services/userDataSyncService';
 import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
+import { escapeHtmlAttr } from '../utils/html';
+import { sanitizeHtml } from '../utils/sanitizer';
+import { getYouTubeEmbedUrl } from '../utils/media';
+import { localMediaStore } from '../services/localMediaStore';
 
-export function escapeHtmlAttr(str?: string): string {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+export { escapeHtmlAttr };
 
 export function isSafeUrl(url?: string): boolean {
   if (!url) return false;
@@ -65,7 +64,8 @@ function sanitizeMarkdown(raw?: string): string {
     const altAttr = text ? ` alt="${escapeHtmlAttr(text)}"` : '';
     return `<img src="${safeSrc}"${altAttr}${titleAttr} loading="lazy" />`;
   };
-  return marked.parse(escaped, { renderer, async: false }) as string;
+  const html = marked.parse(escaped, { renderer, async: false }) as string;
+  return sanitizeHtml(html, 'recipe');
 }
 
 export function parseDurationToSeconds(text: string): number {
@@ -201,14 +201,133 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const [highlightedStepIndex, setHighlightedStepIndex] = useState<number | null>(null);
   const [deletedNoticeYieldId, setDeletedNoticeYieldId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const [isSidebarOverflowing, setIsSidebarOverflowing] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string>(recipe?.image || '');
+  const [lightboxList, setLightboxList] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+  const [resolvedHeroImages, setResolvedHeroImages] = useState<string[]>([]);
+  const heroBlobUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const rawList = [recipe?.image, ...(recipe?.gallery || [])].filter(Boolean) as string[];
+    let isCurrent = true;
+
+    const resolveAll = async () => {
+      const resolved = await Promise.all(
+        rawList.map(async (url) => {
+          if (url.startsWith('idb:')) {
+            try {
+              const blob = await localMediaStore.loadBlob(url);
+              if (blob) {
+                const objectUrl = URL.createObjectURL(blob);
+                heroBlobUrlsRef.current.add(objectUrl);
+                return objectUrl;
+              }
+            } catch {
+              // fallback
+            }
+          }
+          return url;
+        })
+      );
+      if (isCurrent) {
+        setResolvedHeroImages(resolved);
+        if (resolved.length > 0) {
+          setLightboxImage(resolved[0]);
+        }
+      }
+    };
+
+    resolveAll();
+
+    return () => {
+      isCurrent = false;
+      heroBlobUrlsRef.current.forEach((u) => {
+        try {
+          URL.revokeObjectURL(u);
+        } catch {}
+      });
+      heroBlobUrlsRef.current.clear();
+    };
+  }, [recipe?.image, recipe?.gallery]);
+
+  const heroImages = resolvedHeroImages.length > 0
+    ? resolvedHeroImages
+    : ([recipe.image, ...(recipe.gallery || [])].filter(Boolean) as string[]);
+
+  const youtubeEmbedUrl = useMemo(() => {
+    return getYouTubeEmbedUrl(recipe.video);
+  }, [recipe.video]);
+
+  const hasVideo = Boolean(recipe.video);
+  const isMultiMedia = hasVideo || heroImages.length > 1;
+
+  const openLightbox = (index: number, customList?: string[]) => {
+    const list = customList && customList.length > 0 ? customList : heroImages;
+    if (!list.length) return;
+    const safeIdx = Math.max(0, Math.min(index, list.length - 1));
+    setLightboxList(list);
+    setLightboxIndex(safeIdx);
+    setLightboxImage(list[safeIdx]);
+    setIsLightboxOpen(true);
+  };
+
+  const handleLightboxPrev = () => {
+    if (lightboxList.length <= 1) return;
+    setLightboxIndex((prev) => {
+      const nextIdx = prev > 0 ? prev - 1 : lightboxList.length - 1;
+      setLightboxImage(lightboxList[nextIdx]);
+      return nextIdx;
+    });
+  };
+
+  const handleLightboxNext = () => {
+    if (lightboxList.length <= 1) return;
+    setLightboxIndex((prev) => {
+      const nextIdx = prev < lightboxList.length - 1 ? prev + 1 : 0;
+      setLightboxImage(lightboxList[nextIdx]);
+      return nextIdx;
+    });
+  };
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsLightboxOpen(false);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleLightboxPrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleLightboxNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLightboxOpen, lightboxList]);
+
   const isProgressHydratedRef = useRef(false);
 
   useEffect(() => {
-    if (recipe?.image) {
-      setLightboxImage(recipe.image);
+    const el = sidebarRef.current;
+    if (!el) return;
+
+    const checkOverflow = () => {
+      setIsSidebarOverflowing(el.scrollHeight > el.clientHeight + 1);
+    };
+
+    checkOverflow();
+
+    const ro = new ResizeObserver(checkOverflow);
+    ro.observe(el);
+    if (el.firstElementChild) {
+      ro.observe(el.firstElementChild);
     }
-  }, [recipe?.image]);
+
+    return () => ro.disconnect();
+  }, [sidebarMode, servings, recipe]);
 
   const [bookmarked, setBookmarked] = useState(() => userDataSyncService.isBookmarked(recipe.id));
 
@@ -261,6 +380,8 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
   const getScrollContainer = (target: HTMLElement | null): HTMLElement | null => {
     if (!target) return null;
+    const pane = target.closest('.cook-main-pane') as HTMLElement | null;
+    if (pane) return pane;
     const drawerContainer = target.closest('.preview-drawer-viewer-scroll') as HTMLElement | null;
     if (drawerContainer) return drawerContainer;
     return (target.closest('.app-main') as HTMLElement | null) || (document.querySelector('.app-main') as HTMLElement | null);
@@ -641,12 +762,12 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   };
 
   const handleStepClick = (secName: string, stepIndex: number) => {
-    const isCurrentlyActiveInSec = (sectionActiveSteps[secName] ?? -1) === stepIndex;
+    const isSectionCurrentlyActive = activeSectionId === secName;
+    const isStepCurrentlyActiveInSec = (sectionActiveSteps[secName] ?? -1) === stepIndex;
 
-    if (isCurrentlyActiveInSec) {
+    if (isSectionCurrentlyActive && isStepCurrentlyActiveInSec) {
       // Unfocusing this section: pause/remove active focus without scrolling
       setActiveSectionId('');
-      setSectionActiveSteps(prev => ({ ...prev, [secName]: -1 }));
       return;
     }
 
@@ -803,23 +924,72 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     });
   });
 
-  const stepNumberMap = new Map<number, number>();
+  const stepNumberMap = new Map<number, string>();
   (recipe?.sections || []).forEach(sec => {
     let secCount = 0;
+    let lastMainNum = '';
+    let subCount = 0;
     (sec?.steps || []).forEach(st => {
       if (st.isCountedStep !== false) {
-        secCount++;
-        stepNumberMap.set(st.index, secCount);
+        if (st.isLinkedToPrevious && lastMainNum) {
+          subCount++;
+          stepNumberMap.set(st.index, `${lastMainNum}.${subCount}`);
+        } else {
+          secCount++;
+          lastMainNum = String(secCount);
+          subCount = 0;
+          stepNumberMap.set(st.index, lastMainNum);
+        }
       }
     });
     sec?.subsections?.forEach(sub => {
-      let subCount = 0;
+      let subSecCount = 0;
+      let lastSubMainNum = '';
+      let subSubCount = 0;
       (sub?.steps || []).forEach(st => {
         if (st.isCountedStep !== false) {
-          subCount++;
-          stepNumberMap.set(st.index, subCount);
+          if (st.isLinkedToPrevious && lastSubMainNum) {
+            subSubCount++;
+            stepNumberMap.set(st.index, `${lastSubMainNum}.${subSubCount}`);
+          } else {
+            subSecCount++;
+            lastSubMainNum = String(subSecCount);
+            subSubCount = 0;
+            stepNumberMap.set(st.index, lastSubMainNum);
+          }
         }
       });
+    });
+  });
+
+  interface StepFamily {
+    parentIndex: number;
+    chain: number[];
+  }
+  const stepFamilyMap = new Map<number, StepFamily>();
+
+  const buildStepFamilies = (steps: RecipeStep[]) => {
+    let currentParentIndex: number | null = null;
+    let currentChain: number[] = [];
+
+    steps.forEach(st => {
+      if (!st.isLinkedToPrevious || currentParentIndex === null) {
+        currentParentIndex = st.index;
+        currentChain = [st.index];
+      } else {
+        currentChain.push(st.index);
+      }
+      stepFamilyMap.set(st.index, {
+        parentIndex: currentParentIndex,
+        chain: currentChain
+      });
+    });
+  };
+
+  (recipe?.sections || []).forEach(sec => {
+    buildStepFamilies(sec?.steps || []);
+    sec?.subsections?.forEach(sub => {
+      buildStepFamilies(sub?.steps || []);
     });
   });
 
@@ -855,24 +1025,55 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const hasIngredientsOrYields = stepIngs.length > 0 || stepYields.length > 0 || Boolean(step.producesYield);
     const isSecActive = activeSectionId === secName;
     const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
-    const isStepActive = isSecActive && rememberedStepInSec === step.index;
+
+    const activeFamily = rememberedStepInSec !== -1 ? stepFamilyMap.get(rememberedStepInSec) : undefined;
+    const thisFamily = stepFamilyMap.get(step.index);
+
+    let isChainActive = false;
+    if (activeFamily && thisFamily && activeFamily.parentIndex === thisFamily.parentIndex) {
+      if (rememberedStepInSec !== activeFamily.parentIndex) {
+        const clickedPos = activeFamily.chain.indexOf(rememberedStepInSec);
+        const thisPos = activeFamily.chain.indexOf(step.index);
+        if (thisPos !== -1 && thisPos <= clickedPos) {
+          isChainActive = true;
+        }
+      }
+    }
+
+    const isDirectlyFocusedStep = isSecActive && rememberedStepInSec === step.index;
+    const isStepActive = isSecActive && (rememberedStepInSec === step.index || isChainActive);
     const isStepDimmed = rememberedStepInSec !== -1 && step.index < rememberedStepInSec;
     const isCounted = step.isCountedStep !== false;
-    const countedNum = stepNumberMap.get(step.index) || step.index;
-    const stepLabel = !isCounted ? (step.title || 'Note') : `Step ${countedNum}${step.title ? `: ${step.title}` : ''}`;
+    const countedNum = stepNumberMap.get(step.index) || String(step.index);
+    const isNoteWithoutTitle = !isCounted && (!step.title || step.title.trim().toLowerCase() === 'note' || step.title.trim().toLowerCase() === 'step note');
+    const stepLabel = !isCounted
+      ? (isNoteWithoutTitle ? '(note)' : step.title)
+      : `Step ${countedNum}${step.title ? `: ${step.title}` : ''}`;
+
+    const isLinked = Boolean(step.isLinkedToPrevious);
+    const hasLinkedChild = Boolean(
+      thisFamily && thisFamily.chain.length > 1 &&
+      thisFamily.chain.indexOf(step.index) < thisFamily.chain.length - 1
+    );
+    const isChainTail = Boolean(
+      isLinked && thisFamily && thisFamily.chain[thisFamily.chain.length - 1] === step.index
+    );
+    const isChainEnd = Boolean(
+      isLinked && (isChainTail || rememberedStepInSec === step.index)
+    );
 
     return (
       <div
         key={`step-ing-subgroup-${step.index}`}
         id={`sidebar-step-${step.index}`}
-        className={`cook-step-ing-subgroup ${isStepActive ? 'is-active-step' : ''} ${isStepDimmed ? 'is-dimmed-step' : ''}`}
+        className={`cook-step-ing-subgroup ${isStepActive ? 'is-active-step' : ''} ${isStepDimmed ? 'is-dimmed-step' : ''} ${isLinked ? 'is-linked-sidebar-step' : ''} ${hasLinkedChild ? 'has-linked-child' : ''} ${isChainTail ? 'is-chain-tail' : ''} ${isChainEnd ? 'is-chain-end' : ''}`}
       >
-        <div className={`cook-step-subgroup-title ${isStepActive ? 'is-active' : ''}`}>
-          <span className="cook-step-title-base">
+        <div className={`cook-step-subgroup-title ${isDirectlyFocusedStep ? 'is-active' : ''} ${!isCounted ? 'is-note-subgroup-title' : ''}`}>
+          <span className={`cook-step-title-base ${isNoteWithoutTitle ? 'is-italic-note' : ''}`}>
             {stepLabel}
           </span>
           <span className="cook-step-title-pill" aria-hidden="true">
-            <span className="cook-step-title-text">
+            <span className={`cook-step-title-text ${isNoteWithoutTitle ? 'is-italic-note' : ''}`}>
               {stepLabel}
             </span>
           </span>
@@ -1040,20 +1241,50 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
     const isStepSelected = rememberedStepInSec === step.index;
 
-    let stepStatusClass = '';
-    if (rememberedStepInSec !== -1) {
-      if (isStepSelected) {
-        stepStatusClass = isSecActive ? 'is-section-active' : 'is-remembered-step';
-      } else if (step.index < rememberedStepInSec) {
-        stepStatusClass = 'is-section-dimmed';
+    const activeFamily = rememberedStepInSec !== -1 ? stepFamilyMap.get(rememberedStepInSec) : undefined;
+    const thisFamily = stepFamilyMap.get(step.index);
+
+    let isChainActive = false;
+    if (activeFamily && thisFamily && activeFamily.parentIndex === thisFamily.parentIndex) {
+      if (rememberedStepInSec !== activeFamily.parentIndex) {
+        const clickedPos = activeFamily.chain.indexOf(rememberedStepInSec);
+        const thisPos = activeFamily.chain.indexOf(step.index);
+        if (thisPos !== -1 && thisPos <= clickedPos) {
+          isChainActive = true;
+        }
       }
     }
 
-    const isCur = isSecActive && isStepSelected;
+    let stepStatusClass = '';
+    if (rememberedStepInSec !== -1) {
+      if (isStepSelected || isChainActive) {
+        stepStatusClass = isSecActive ? 'is-section-active is-chain-active' : 'is-remembered-step is-chain-active';
+      } else {
+        const activeParentIndex = activeFamily ? activeFamily.parentIndex : rememberedStepInSec;
+        if (step.index < activeParentIndex) {
+          stepStatusClass = 'is-section-dimmed';
+        }
+      }
+    }
+
+    const isDirectlySelected = isSecActive && isStepSelected;
+    const isChainAncestor = isChainActive && !isStepSelected;
+    const isCur = isSecActive && (isStepSelected || isChainActive);
     const isHighlighted = highlightedStepIndex === step.index;
     const isCounted = step.isCountedStep !== false;
-    const countedNum = stepNumberMap.get(step.index) || step.index;
+    const countedNum = stepNumberMap.get(step.index) || String(step.index);
+    const isNoteWithoutTitle = !isCounted && (!step.title || step.title.trim().toLowerCase() === 'note' || step.title.trim().toLowerCase() === 'step note');
     const isLinked = Boolean(step.isLinkedToPrevious);
+    const hasLinkedChild = Boolean(
+      thisFamily && thisFamily.chain.length > 1 &&
+      thisFamily.chain.indexOf(step.index) < thisFamily.chain.length - 1
+    );
+    const isChainTail = Boolean(
+      isLinked && thisFamily && thisFamily.chain[thisFamily.chain.length - 1] === step.index
+    );
+    const isChainEnd = Boolean(
+      isLinked && (isChainTail || rememberedStepInSec === step.index)
+    );
 
     const allStepImages = [
       ...(step.image ? [step.image] : []),
@@ -1072,7 +1303,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       <div
         key={step.index}
         id={`step-node-${step.index}`}
-        className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${!isCounted ? 'cook-step-note-callout' : ''} ${isLinked ? 'is-linked-step' : ''}`}
+        className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isDirectlySelected ? 'is-directly-selected' : ''} ${isChainAncestor ? 'is-chain-ancestor' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${!isCounted ? 'cook-step-note-callout' : ''} ${isLinked ? 'is-linked-step' : ''} ${isChainTail ? 'is-chain-tail' : ''} ${isChainEnd ? 'is-chain-end' : ''} ${hasLinkedChild ? 'has-linked-child' : ''}`}
         onClick={() => handleStepClick(secName, step.index)}
         role="button"
         tabIndex={0}
@@ -1084,25 +1315,21 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           }
         }}
       >
-        {isLinked && (
-          <div className="cook-step-link-rail" title="Linked to previous step">
-            <LinkIcon size={12} />
+        {!isCounted && (
+          <div className="cook-step-note-header">
+            <NotepadText size={15} className="cook-step-note-icon" />
+            <span className="cook-step-note-title">
+              {isNoteWithoutTitle ? 'Note' : (step.title || 'Note')}
+            </span>
           </div>
         )}
 
-        <span className={`cook-step-n ${!isCounted ? 'cook-step-note-tag' : ''}`}>
-          {!isCounted ? (
-            <span className="cook-step-note-badge">
-              <AlertTriangle size={12} />
-              <span>Note</span>
-            </span>
-          ) : (
-            `${countedNum}.`
-          )}
-        </span>
+        {isCounted && (
+          <span className="cook-step-n">{countedNum}.</span>
+        )}
 
         <div className="cook-step-bodywrap">
-          {step.title && (
+          {isCounted && step.title && (
             <div className="cook-step-title">{step.title}</div>
           )}
 
@@ -1112,8 +1339,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               className="cook-step-single-img-btn"
               onClick={(e) => {
                 e.stopPropagation();
-                setLightboxImage(primaryImage);
-                setIsLightboxOpen(true);
+                openLightbox(0, [primaryImage]);
               }}
             >
               <img
@@ -1127,26 +1353,28 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
           {extraGalleryUrls.length > 0 && (
             <div className="cook-step-gallery-grid">
-              {extraGalleryUrls.map((url, gIdx) => (
-                <button
-                  key={gIdx}
-                  type="button"
-                  className="cook-step-gallery-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLightboxImage(url);
-                    setIsLightboxOpen(true);
-                  }}
-                  aria-label={`View step image ${gIdx + 2}`}
-                >
-                  <img
-                    src={url}
-                    alt={`Step media ${gIdx + 2}`}
-                    className="cook-step-gallery-thumb"
-                    loading="lazy"
-                  />
-                </button>
-              ))}
+              {extraGalleryUrls.map((url, gIdx) => {
+                const stepImageList = [primaryImage, ...extraGalleryUrls].filter(Boolean) as string[];
+                return (
+                  <button
+                    key={gIdx}
+                    type="button"
+                    className="cook-step-gallery-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openLightbox(primaryImage ? gIdx + 1 : gIdx, stepImageList);
+                    }}
+                    aria-label={`View step image ${gIdx + 2}`}
+                  >
+                    <img
+                      src={url}
+                      alt={`Step media ${gIdx + 2}`}
+                      className="cook-step-gallery-thumb"
+                      loading="lazy"
+                    />
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -1318,59 +1546,180 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
   return (
     <div className={`cook-preview-view cook-rich ${timers.length > 0 ? 'timer-active' : ''}`}>
-      {/* 1. MEDIA HEADER (grid-area: media) */}
-      {(recipe.image || recipe.video) && (
-        <div className={`cook-media-header ${isMediaExpanded ? 'expanded' : 'collapsed'}`}>
-          <div className="cook-media-content single">
-            {recipe.video ? (
-              <div className="cook-media-item video-player-wrap">
-                <video
-                  ref={videoRef}
-                  src={recipe.video}
-                  poster={recipe.image}
-                  controls
-                  playsInline
-                  className="cook-media-video-player"
-                />
-              </div>
-            ) : (
-              <div className="cook-media-item">
-                <img
-                  src={recipe.image}
-                  alt={recipe.title}
-                  tabIndex={0}
-                  role="button"
-                  aria-label="View full size image"
-                  onClick={() => {
-                    setLightboxImage(recipe.image || '');
-                    setIsLightboxOpen(true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setLightboxImage(recipe.image || '');
-                      setIsLightboxOpen(true);
-                    }
-                  }}
-                />
-              </div>
+      <div className="cook-main-pane">
+        {/* 1. MEDIA HEADER (grid-area: media) */}
+        {(heroImages.length > 0 || hasVideo) && (
+          <div className={`cook-media-header ${isMultiMedia ? 'is-multi' : (isMediaExpanded ? 'expanded' : 'collapsed')} ${hasVideo ? 'has-video' : ''}`}>
+            <div className={`cook-media-content ${isMultiMedia ? 'split' : 'single'}`}>
+              {hasVideo ? (
+                <>
+                  {heroImages.length > 0 && (
+                    <div className="cook-media-item" style={{ position: 'relative' }}>
+                      <img
+                        src={heroImages[0]}
+                        alt={recipe.title}
+                        tabIndex={0}
+                        role="button"
+                        aria-label="View full size image"
+                        onClick={() => openLightbox(0)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openLightbox(0);
+                          }
+                        }}
+                      />
+                      {heroImages.length > 1 && (
+                        <div
+                          className="cook-media-overlay-badge"
+                          onClick={() => openLightbox(0)}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`View all ${heroImages.length} images`}
+                        >
+                          <span>+{heroImages.length}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="cook-media-item video-player-wrap">
+                    {youtubeEmbedUrl ? (
+                      <iframe
+                        src={youtubeEmbedUrl}
+                        title="Recipe Video"
+                        className="cook-media-video-player cook-media-youtube-iframe"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <video
+                        ref={videoRef}
+                        src={recipe.video}
+                        poster={heroImages[0]}
+                        controls
+                        playsInline
+                        className="cook-media-video-player"
+                      />
+                    )}
+                  </div>
+                </>
+              ) : heroImages.length >= 3 ? (
+                <>
+                  <div className="cook-media-item" style={{ position: 'relative' }}>
+                    <img
+                      src={heroImages[0]}
+                      alt={`${recipe.title} 1`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`View all ${heroImages.length} images`}
+                      onClick={() => openLightbox(0)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openLightbox(0);
+                        }
+                      }}
+                    />
+                    <div
+                      className="cook-media-overlay-badge"
+                      onClick={() => openLightbox(0)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View all ${heroImages.length} images`}
+                    >
+                      <span>+{heroImages.length}</span>
+                    </div>
+                  </div>
+
+                  <div className="cook-media-item">
+                    <img
+                      src={heroImages[1]}
+                      alt={`${recipe.title} 2`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label="View full size image"
+                      onClick={() => openLightbox(1)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openLightbox(1);
+                        }
+                      }}
+                    />
+                  </div>
+                </>
+              ) : heroImages.length === 2 ? (
+                <>
+                  <div className="cook-media-item">
+                    <img
+                      src={heroImages[0]}
+                      alt={`${recipe.title} 1`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label="View full size image"
+                      onClick={() => openLightbox(0)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openLightbox(0);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="cook-media-item">
+                    <img
+                      src={heroImages[1]}
+                      alt={`${recipe.title} 2`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label="View full size image"
+                      onClick={() => openLightbox(1)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openLightbox(1);
+                        }
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="cook-media-item">
+                  <img
+                    src={heroImages[0]}
+                    alt={recipe.title}
+                    tabIndex={0}
+                    role="button"
+                    aria-label="View full size image"
+                    onClick={() => openLightbox(0)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openLightbox(0);
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {!isMultiMedia && (
+              !isMediaExpanded ? (
+                <div className="cook-media-fade-overlay" onClick={() => setIsMediaExpanded(true)}>
+                  <div className="cook-media-expand-btn">
+                    <ChevronDown size={24} />
+                  </div>
+                </div>
+              ) : (
+                <div className="cook-media-close-bar" onClick={() => setIsMediaExpanded(false)}>
+                  <ChevronUp size={16} />
+                  <span>Collapse</span>
+                </div>
+              )
             )}
           </div>
-
-          {!isMediaExpanded ? (
-            <div className="cook-media-fade-overlay" onClick={() => setIsMediaExpanded(true)}>
-              <div className="cook-media-expand-btn">
-                <ChevronDown size={24} />
-              </div>
-            </div>
-          ) : (
-            <div className="cook-media-close-bar" onClick={() => setIsMediaExpanded(false)}>
-              <ChevronUp size={16} />
-              <span>Collapse</span>
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
       {/* 2. HERO ROW (grid-area: hero) */}
       <div className="cook-hero">
@@ -1487,8 +1836,81 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         </div>
       </div>
 
+      {/* 4. METHOD MAIN (grid-area: main) */}
+      <div className="cook-main">
+        {recipe?.importantNotes && (
+          <div className="recipe-important-notes-card">
+            <div className="important-notes-header">
+              <AlertTriangle size={18} />
+              <span>IMPORTANT NOTES</span>
+            </div>
+            <div
+              className="important-notes-body"
+              dangerouslySetInnerHTML={{
+                __html: sanitizeMarkdown(recipe.importantNotes)
+              }}
+            />
+          </div>
+        )}
+
+        <div className="cook-steps" id="cook-steps">
+          <h2 className="cook-section-title">Method</h2>
+
+          {(recipe?.sections || []).map(section => (
+            <div key={section.id || section.name} className="cook-section-block">
+              {section.name !== 'Instructions' && (
+                <div className="cook-section-band">{section.name}</div>
+              )}
+
+              {section.image && (
+                <img
+                  src={section.image}
+                  alt={section.name}
+                  className="section-media-banner"
+                  loading="lazy"
+                />
+              )}
+
+              {section.description && (
+                <div className="cook-section-desc">
+                  {section.description}
+                </div>
+              )}
+
+              <div className="cook-section-steps">
+                {(section.steps || []).map(step => renderStepCard(step, section.name))}
+              </div>
+
+              {section.subsections && section.subsections.length > 0 && (
+                <div className="cook-subsections-container">
+                  {section.subsections.map(sub => (
+                    <div key={sub.id || sub.name} className="cook-subsection-block">
+                      <div className="cook-subsection-header">
+                        <span className="cook-subsection-band">{sub.name}</span>
+                      </div>
+                      {sub.description && (
+                        <div className="cook-subsection-desc">
+                          {sub.description}
+                        </div>
+                      )}
+                      <div className="cook-subsection-steps">
+                        {(sub.steps || []).map(step => renderStepCard(step, sub.name))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      </div>
+
       {/* 3. ASIDE / INGREDIENTS SIDEBAR (grid-area: aside) */}
-      <aside className="cook-aside">
+      <aside
+        ref={sidebarRef}
+        className={`cook-aside ${isSidebarOverflowing ? 'is-overflowing' : ''}`}
+      >
         <div className="cook-ingredients" id="cook-ingredients">
           <div className="cook-ingredients-header-row">
             <h2 className="cook-section-title">
@@ -1673,101 +2095,9 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         </div>
       </aside>
 
-      {/* 4. METHOD MAIN (grid-area: main) */}
-      <div className="cook-main">
-        {recipe?.importantNotes && (
-          <div className="recipe-important-notes-card">
-            <div className="important-notes-header">
-              <AlertTriangle size={18} />
-              <span>IMPORTANT NOTES</span>
-            </div>
-            <div
-              className="important-notes-body"
-              dangerouslySetInnerHTML={{
-                __html: sanitizeMarkdown(recipe.importantNotes)
-              }}
-            />
-          </div>
-        )}
-
-        <div className="cook-steps" id="cook-steps">
-          <h2 className="cook-section-title">Method</h2>
-
-          {(recipe?.sections || []).map(section => (
-            <div key={section.id || section.name} className="cook-section-block">
-              {section.name !== 'Instructions' && (
-                <div className="cook-section-band">{section.name}</div>
-              )}
-
-              {section.image && (
-                <img
-                  src={section.image}
-                  alt={section.name}
-                  className="section-media-banner"
-                  loading="lazy"
-                />
-              )}
-
-              {section.description && (
-                <div className="cook-section-desc">
-                  {section.description}
-                </div>
-              )}
-
-              <div className="cook-section-steps">
-                {(section.steps || []).map(step => renderStepCard(step, section.name))}
-              </div>
-
-              {section.subsections && section.subsections.length > 0 && (
-                <div className="cook-subsections-container">
-                  {section.subsections.map(sub => (
-                    <div key={sub.id || sub.name} className="cook-subsection-block">
-                      <div className="cook-subsection-header">
-                        <span className="cook-subsection-band">{sub.name}</span>
-                      </div>
-                      {sub.description && (
-                        <div className="cook-subsection-desc">
-                          {sub.description}
-                        </div>
-                      )}
-                      <div className="cook-subsection-steps">
-                        {(sub.steps || []).map(step => renderStepCard(step, sub.name))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Lightbox Modal */}
-      {isLightboxOpen && lightboxImage && (
-        typeof document !== 'undefined' ? (
-          createPortal(
-            <div
-              className="cook-lightbox-overlay"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Full size recipe photo"
-              onClick={() => setIsLightboxOpen(false)}
-            >
-              <button
-                type="button"
-                className="cook-lightbox-close"
-                onClick={() => setIsLightboxOpen(false)}
-                aria-label="Close image"
-              >
-                <X size={20} />
-              </button>
-              <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-                <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
-              </div>
-            </div>,
-            document.body
-          )
-        ) : (
+      {isLightboxOpen && lightboxImage && (() => {
+        const lightboxModalElement = (
           <div
             className="cook-lightbox-overlay"
             role="dialog"
@@ -1783,12 +2113,71 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             >
               <X size={20} />
             </button>
-            <div className="cook-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-              <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+
+            {lightboxList.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="cook-lightbox-ghost-nav cook-lightbox-nav-prev"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLightboxPrev();
+                  }}
+                  aria-label="Previous image"
+                >
+                  <ChevronLeft size={38} />
+                </button>
+
+                <button
+                  type="button"
+                  className="cook-lightbox-ghost-nav cook-lightbox-nav-next"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleLightboxNext();
+                  }}
+                  aria-label="Next image"
+                >
+                  <ChevronRight size={38} />
+                </button>
+              </>
+            )}
+
+            <div className="cook-lightbox-center-container" onClick={(e) => e.stopPropagation()}>
+              <div className="cook-lightbox-img-wrap">
+                <img src={lightboxImage} alt={recipe.title} className="cook-lightbox-img" />
+              </div>
+
+              {lightboxList.length > 1 && (
+                <div className="cook-lightbox-controls">
+                  <div className="cook-lightbox-counter">
+                    {lightboxIndex + 1} / {lightboxList.length}
+                  </div>
+                  <div className="cook-lightbox-thumb-strip">
+                    {lightboxList.map((url, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className={`cook-lightbox-thumb-btn ${idx === lightboxIndex ? 'is-active' : ''}`}
+                        onClick={() => {
+                          setLightboxIndex(idx);
+                          setLightboxImage(url);
+                        }}
+                        aria-label={`Jump to image ${idx + 1}`}
+                      >
+                        <img src={url} alt={`Thumbnail ${idx + 1}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )
-      )}
+        );
+
+        return typeof document !== 'undefined'
+          ? createPortal(lightboxModalElement, document.body)
+          : lightboxModalElement;
+      })()}
 
       {/* Timer Alarm Modal when countdown reaches 0 */}
       <TimerAlarmModal

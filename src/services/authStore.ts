@@ -299,16 +299,29 @@ export const authStore: AuthStoreAPI = {
       // Check if identifier is an email address or username
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier);
       if (!isEmail) {
-        const usernameLookup = cleanIdentifier.replace(/^@/, '');
         try {
-          const { data, error: rpcError } = await supabase.rpc('get_email_for_username', {
-            p_username: usernameLookup
+          const { data, error: fnError } = await supabase.functions.invoke('username-login', {
+            body: { identifier: cleanIdentifier, password }
           });
-          if (data && !rpcError) {
-            email = data;
+
+          if (!fnError && data?.session) {
+            await supabase.auth.setSession({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token
+            });
+            await syncSession();
+            return {};
+          }
+
+          if (data?.error || fnError) {
+            const msg = (data?.error || fnError?.message || '').toLowerCase();
+            if (msg.includes('rate')) {
+              return { error: 'Too many login attempts. Please try again later.' };
+            }
+            return { error: data?.error || 'Invalid email/username or password.' };
           }
         } catch {
-          // If RPC is unavailable fallback to identifier
+          return { error: 'Invalid email/username or password.' };
         }
       }
 
@@ -512,6 +525,57 @@ export const authStore: AuthStoreAPI = {
       return {};
     } catch (err: any) {
       return { error: err?.message || 'Failed to update credentials' };
+    }
+  },
+
+  async changePassword(params: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<{ error?: string }> {
+    const user = currentAuthState.user;
+    if (!user || !user.email) {
+      return { error: 'Not authenticated or missing user email.' };
+    }
+
+    if (!params.currentPassword) {
+      return { error: 'Current password is required.' };
+    }
+
+    if (!params.newPassword || params.newPassword.length < 8) {
+      return { error: 'New password must be at least 8 characters long.' };
+    }
+
+    try {
+      // 1. Verify current password by checking credentials
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: params.currentPassword
+      });
+
+      if (verifyError) {
+        return { error: 'Current password is incorrect.' };
+      }
+
+      // 2. Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: params.newPassword
+      });
+
+      if (updateError) {
+        return { error: updateError.message };
+      }
+
+      // 3. Invalidate all other active sessions across other devices
+      try {
+        await supabase.auth.signOut({ scope: 'others' });
+      } catch {
+        // Fallback if scope 'others' is unsupported in current session context
+      }
+
+      await syncSession();
+      return {};
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to change password.' };
     }
   },
 

@@ -311,22 +311,32 @@ export function App() {
       {/* Floating Notifications (Top Right, positioned below navbar) */}
       <Toaster position="top-right" offset="4.25rem" duration={4000} richColors theme={settings.theme as any} />
 
-      {/* Global Dev Tool Box */}
-      <DevToolBox />
+      {/* Global Dev Tool Box in development mode only */}
+      {import.meta.env.DEV && <DevToolBox />}
     </>
   );
 }
 
 render(<App />, document.getElementById('app')!);
 
-// Expose DevTools console helper to open the tool box
-if (typeof window !== 'undefined') {
+// Expose DevTools console helpers in development environment only
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   (window as any).openDevTools = () => {
     try {
       localStorage.setItem('recipedevtool', 'true');
       window.dispatchEvent(new Event('recipedevtool-change'));
       window.dispatchEvent(new Event('recipedevtool-open'));
       return 'Dev tool box opened.';
+    } catch {
+      return 'Unable to access localStorage.';
+    }
+  };
+
+  (window as any).closeDevTools = () => {
+    try {
+      localStorage.removeItem('recipedevtool');
+      window.dispatchEvent(new Event('recipedevtool-change'));
+      return 'Dev tool box closed.';
     } catch {
       return 'Unable to access localStorage.';
     }

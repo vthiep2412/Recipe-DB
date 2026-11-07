@@ -1,5 +1,9 @@
 let audioCtx: AudioContext | null = null;
 let loopTimerId: ReturnType<typeof setInterval> | null = null;
+let autoSilenceTimerId: ReturnType<typeof setTimeout> | null = null;
+
+export const AUTO_SILENCE_SECONDS = 30;
+const AUTO_SILENCE_MS = AUTO_SILENCE_SECONDS * 1000;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -72,12 +76,23 @@ export function startAlarmLoop(): void {
   loopTimerId = setInterval(() => {
     playChime();
   }, 1500);
+
+  if (autoSilenceTimerId !== null) {
+    clearTimeout(autoSilenceTimerId);
+  }
+  autoSilenceTimerId = setTimeout(() => {
+    stopAlarmLoop();
+  }, AUTO_SILENCE_MS);
 }
 
 export function stopAlarmLoop(): void {
   if (loopTimerId !== null) {
     clearInterval(loopTimerId);
     loopTimerId = null;
+  }
+  if (autoSilenceTimerId !== null) {
+    clearTimeout(autoSilenceTimerId);
+    autoSilenceTimerId = null;
   }
 }
 

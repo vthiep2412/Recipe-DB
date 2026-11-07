@@ -117,6 +117,54 @@ function clusterSectionsHierarchically(sections: CanvasSection[]): CanvasSection
   return result.map((s, idx) => ({ ...s, order: idx }));
 }
 
+export function computeCanvasStepNumbers(
+  sections: CanvasSection[],
+  canvasNodes: CanvasStepNode[]
+): Map<string, string> {
+  const stepNumberMap = new Map<string, string>();
+  const safeNodes = Array.isArray(canvasNodes) ? canvasNodes : [];
+  const safeSections = Array.isArray(sections) ? sections : [];
+  const nodesById = new Map(safeNodes.map(n => [n.id, n]));
+  const knownSectionIds = new Set(safeSections.map(s => s.id));
+  const defaultSecId = safeSections[0]?.id || 'sec-main';
+
+  const nodesBySection: Record<string, CanvasStepNode[]> = {};
+  for (const s of safeSections) {
+    nodesBySection[s.id] = [];
+  }
+
+  for (const node of safeNodes) {
+    const sId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+    if (!nodesBySection[sId]) nodesBySection[sId] = [];
+    nodesBySection[sId].push(node);
+  }
+
+  for (const s of safeSections) {
+    const sNodes = nodesBySection[s.id] || [];
+    let secCount = 0;
+    let lastMainNum = '';
+    let subCount = 0;
+
+    for (const node of sNodes) {
+      if (!node.isCountedStep) {
+        stepNumberMap.set(node.id, 'Note');
+        continue;
+      }
+      if (node.isLinkedToPrevious && lastMainNum) {
+        subCount++;
+        stepNumberMap.set(node.id, `${lastMainNum}.${subCount}`);
+      } else {
+        secCount++;
+        lastMainNum = String(secCount);
+        subCount = 0;
+        stepNumberMap.set(node.id, lastMainNum);
+      }
+    }
+  }
+
+  return stepNumberMap;
+}
+
 function reorderSectionsAndNodes(
   newSections: CanvasSection[],
   currentNodes: CanvasStepNode[]
@@ -150,12 +198,12 @@ function reorderSectionsAndNodes(
     }
   }
 
-  let countedStepIdx = 1;
+  const stepNumberMap = computeCanvasStepNumbers(clusteredSections, nextNodes);
   const resequencedNodes = nextNodes.map(n => {
     if (!n.isCountedStep) return n;
-    const currentNum = countedStepIdx++;
-    if (!n.title || /^step\s*\d+$/i.test(n.title.trim())) {
-      return { ...n, title: `Step ${currentNum}` };
+    const currentNumStr = stepNumberMap.get(n.id) || '';
+    if (!n.title || /^step\s*[\d.]+$/i.test(n.title.trim())) {
+      return { ...n, title: `Step ${currentNumStr}` };
     }
     return n;
   });
@@ -180,7 +228,9 @@ export function KitchenCanvas({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !(e.target as HTMLElement).matches('input, textarea')) {
+      const target = e.target as HTMLElement;
+      const isEditable = target?.matches?.('input, textarea') || target?.isContentEditable || Boolean(target?.closest?.('[contenteditable="true"]'));
+      if (e.code === 'Space' && !isEditable) {
         setIsSpacePressed(true);
       }
     };
@@ -485,6 +535,11 @@ export function KitchenCanvas({
       clusters: clusterList
     };
   }, [currentSections]);
+
+  const canvasStepNumberMap = useMemo(
+    () => computeCanvasStepNumbers(orderedSections, workspace.canvasNodes),
+    [orderedSections, workspace.canvasNodes]
+  );
 
   // Compute dynamic positions for sections and child steps with real-time sliding
   const nodePositions = useMemo(() => {
@@ -1303,7 +1358,7 @@ export function KitchenCanvas({
       id: newId,
       parentId,
       sectionId: targetSectionId,
-      title: isCounted ? `Step ${stepCount}` : 'Note',
+      title: isCounted ? `Step ${stepCount}` : '',
       isCountedStep: isCounted,
       isLinkedToPrevious: false,
       instructionText: '',
@@ -1432,9 +1487,18 @@ export function KitchenCanvas({
 
   // Step Node modification
   const handleUpdateStep = (stepId: string, updated: Partial<CanvasStepNode>) => {
-    const updatedNodes = workspace.canvasNodes.map(n => {
+    const updatedNodes = workspace.canvasNodes.map((n, idx, arr) => {
       if (n.id === stepId) {
-        return { ...n, ...updated };
+        const next = { ...n, ...updated };
+        if (updated.isLinkedToPrevious !== undefined && updated.isLinkedToPrevious !== n.isLinkedToPrevious) {
+          if (updated.isLinkedToPrevious) {
+            const prevNode = arr[idx - 1];
+            if (prevNode) {
+              next.parentId = prevNode.id;
+            }
+          }
+        }
+        return next;
       }
       return n;
     });
@@ -1538,7 +1602,10 @@ export function KitchenCanvas({
             onClick={handleExport}
             style={role === 'admin' ? { background: 'var(--color-green)', borderColor: 'var(--color-green)' } : undefined}
           >
-            {role === 'admin' ? 'Publish Recipe' : 'Request Publish'}
+            {/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspace.id) ||
+            Boolean(workspace.graph?.id && !workspace.graph.id.startsWith('workspace-') && !workspace.graph.id.startsWith('untitled'))
+              ? (role === 'admin' ? 'Update Recipe' : 'Request Update')
+              : (role === 'admin' ? 'Publish Recipe' : 'Request Publish')}
           </button>
         </div>
       </header>
@@ -1699,7 +1766,7 @@ export function KitchenCanvas({
             >
               <StepNode
                 node={node}
-                stepNumber={index + 1}
+                stepNumber={canvasStepNumberMap.get(node.id) || String(index + 1)}
                 allNodes={workspace.canvasNodes}
                 isSelected={selectedNodeId === node.id}
                 isJumpHighlighted={highlightedStepId === node.id}
@@ -1939,10 +2006,18 @@ export function KitchenCanvas({
         finalGraph={exportStudioWorkspaceToRecipeGraph(workspace)}
         role={role}
         onClose={() => setIsExportModalOpen(false)}
-        onPublishSuccess={(slug, _recipeId) => {
-          toast.success(role === 'admin' ? `Published (${slug})!` : `Submitted for review (${slug})!`);
+        onPublishSuccess={(slug, recipeId) => {
+          const wasExisting =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspace.id) ||
+            Boolean(workspace.graph?.id && !workspace.graph.id.startsWith('workspace-') && !workspace.graph.id.startsWith('untitled'));
+          toast.success(
+            role === 'admin'
+              ? (wasExisting ? `Updated (${slug})!` : `Published (${slug})!`)
+              : `Submitted for review (${slug})!`
+          );
           updateWorkspaceState({
             ...workspace,
+            id: recipeId || workspace.id,
             graph: {
               ...workspace.graph,
               id: slug

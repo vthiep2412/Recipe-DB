@@ -154,13 +154,10 @@ export const adminService: AdminServiceAPI = {
 
   async updateUserRole(userId: string, role: UserRole): Promise<{ error?: string }> {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          role,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const { error } = await supabase.rpc('admin_set_user_role', {
+        p_user_id: userId,
+        p_new_role: role
+      });
 
       if (error) {
         return { error: error.message };

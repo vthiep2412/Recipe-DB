@@ -25,57 +25,7 @@ import type {
   UserRole,
   CreatorApplicationStatus,
 } from '../types/cloud';
-
-function sanitizeMarkdownHtml(rawHtml: string): string {
-  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
-    return '';
-  }
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(rawHtml, 'text/html');
-
-  const forbiddenTags = [
-    'script', 'style', 'iframe', 'frame', 'object', 'embed', 'applet',
-    'link', 'meta', 'base', 'form', 'input', 'button', 'select', 'textarea',
-    'svg', 'math'
-  ];
-
-  for (const tag of forbiddenTags) {
-    const elements = doc.querySelectorAll(tag);
-    elements.forEach(el => el.remove());
-  }
-
-  const allElements = doc.querySelectorAll('*');
-  for (const el of allElements) {
-    const attributeNames = el.getAttributeNames();
-    for (const attr of attributeNames) {
-      if (attr.toLowerCase().startsWith('on') || attr.toLowerCase() === 'style') {
-        el.removeAttribute(attr);
-      }
-    }
-
-    if (el.hasAttribute('href')) {
-      const href = el.getAttribute('href') || '';
-      const cleanHref = href.trim();
-      if (!/^https?:\/\/|^mailto:/i.test(cleanHref)) {
-        el.removeAttribute('href');
-      } else {
-        el.setAttribute('rel', 'noopener noreferrer');
-        el.setAttribute('target', '_blank');
-      }
-    }
-
-    if (el.hasAttribute('src')) {
-      const src = el.getAttribute('src') || '';
-      const cleanSrc = src.trim();
-      if (!/^https?:\/\//i.test(cleanSrc)) {
-        el.removeAttribute('src');
-      }
-    }
-  }
-
-  return doc.body.innerHTML;
-}
+import { sanitizeHtml } from '../utils/sanitizer';
 
 function renderPitchMarkdown(rawMarkdown: string): string {
   if (!rawMarkdown) return '';
@@ -85,7 +35,7 @@ function renderPitchMarkdown(rawMarkdown: string): string {
     return `<span class="obsidian-reading-link">${safeText}</span>`;
   });
   const parsed = marked.parse(processed, { async: false }) as string;
-  return sanitizeMarkdownHtml(parsed);
+  return sanitizeHtml(parsed, 'admin');
 }
 
 export interface AdminPanelProps {

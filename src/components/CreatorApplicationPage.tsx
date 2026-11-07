@@ -10,29 +10,10 @@ import type { CreatorApplication } from '../types/cloud';
 import '../styles/kitchen-studio.css';
 import '../styles/creator-application.css';
 
+import { sanitizeHtml } from '../utils/sanitizer';
+
 interface Props {
   onNavigate: (path: string) => void;
-}
-
-function sanitizeHtml(rawHtml: string): string {
-  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
-    return '';
-  }
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(rawHtml, 'text/html');
-  const forbiddenTags = [
-    'script', 'style', 'iframe', 'frame', 'object', 'embed', 'applet',
-    'link', 'meta', 'base', 'form', 'input', 'button', 'select', 'textarea',
-    'svg', 'math'
-  ];
-
-  for (const tag of forbiddenTags) {
-    const elements = doc.querySelectorAll(tag);
-    elements.forEach(el => el.remove());
-  }
-
-  return doc.body.innerHTML;
 }
 
 export function CreatorApplicationPage({ onNavigate }: Props) {

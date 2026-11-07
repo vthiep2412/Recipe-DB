@@ -33,6 +33,17 @@ export function isFablangJson(text: string): boolean {
   }
 }
 
+export function normalizeTag(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/-+/g, '-');
+}
+
 export interface FablangSyntaxError {
   line: number;
   message: string;
@@ -252,13 +263,14 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
   let pictureUrl = '';
   let videoUrl = '';
   const recipeGalleryUrls: string[] = [];
+  const parsedTags: string[] = [];
 
   const times: RecipeGraph['times'] = {};
 
   const lines = rawText.split('\n');
   let inFrontmatter = false;
   let bodyStartIndex = 0;
-  let currentFmSection: 'times' | 'media' | 'customTimes' | 'gallery' | null = null;
+  let currentFmSection: 'times' | 'media' | 'customTimes' | 'gallery' | 'tags' | null = null;
   let pendingCustomTime: { label?: string; duration?: number } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -275,6 +287,24 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         break;
       }
       if (!trimmed) continue;
+
+      if (currentFmSection === 'tags' && trimmed.startsWith('-')) {
+        const match = trimmed.match(/^-\s*(.*)/);
+        if (match) {
+          const norm = normalizeTag(parseRawYamlValue(match[1]));
+          if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+        }
+        continue;
+      }
+
+      if (currentFmSection === 'gallery' && trimmed.startsWith('-')) {
+        const match = trimmed.match(/^-\s*(.*)/);
+        if (match) {
+          const url = parseRawYamlValue(match[1]);
+          if (url) recipeGalleryUrls.push(url);
+        }
+        continue;
+      }
 
       const isIndented = /^\s+/.test(rawLine);
       if (!isIndented) {
@@ -297,8 +327,26 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           else if (key === 'video') videoUrl = val;
           else if (key === 'times') currentFmSection = 'times';
           else if (key === 'media') currentFmSection = 'media';
+          else if (key === 'tags' || key === 'tag') {
+            currentFmSection = 'tags';
+            if (rawVal) {
+              const cleaned = rawVal.replace(/^\[|\]$/g, '');
+              for (const piece of cleaned.split(',')) {
+                const norm = normalizeTag(piece);
+                if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+              }
+            }
+          }
         }
       } else {
+        if (currentFmSection === 'tags') {
+          const match = trimmed.match(/^-\s*(.*)/);
+          if (match) {
+            const norm = normalizeTag(parseRawYamlValue(match[1]));
+            if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+          }
+          continue;
+        }
         if (currentFmSection === 'times' || currentFmSection === 'customTimes') {
           if (/^custom:\s*$/i.test(trimmed)) {
             currentFmSection = 'customTimes';
@@ -402,8 +450,10 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     videoClip?: { startSec: number; endSec?: number };
   } = { galleryUrls: [] };
 
-  let countedStepCounter = 1;
   let previousStepId: string | null = null;
+  let secMainStepCounter = 0;
+  let lastMainStepNum = '';
+  let secSubstepCounter = 0;
 
   for (let i = bodyStartIndex; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -431,6 +481,9 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         currentRootSectionId = secId;
         currentSectionId = secId;
         previousStepId = null;
+        secMainStepCounter = 0;
+        lastMainStepNum = '';
+        secSubstepCounter = 0;
       } else {
         ensureDefaultSection();
         const secId = `sec-sub-${sections.length + 1}`;
@@ -444,6 +497,9 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         sections.push(newSubSec);
         currentSectionId = secId;
         previousStepId = null;
+        secMainStepCounter = 0;
+        lastMainStepNum = '';
+        secSubstepCounter = 0;
       }
       continue;
     }
@@ -739,14 +795,27 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         });
       }
 
-      const parentId = isLinked && previousStepId ? previousStepId : currentSectionId;
+      const parentId = previousStepId ? previousStepId : currentSectionId;
       const activeSection = sections.find(s => s.id === currentSectionId);
+
+      let defaultTitle = 'Note';
+      if (isCountedStep) {
+        if (isLinked && lastMainStepNum) {
+          secSubstepCounter++;
+          defaultTitle = `Step ${lastMainStepNum}.${secSubstepCounter}`;
+        } else {
+          secMainStepCounter++;
+          lastMainStepNum = String(secMainStepCounter);
+          secSubstepCounter = 0;
+          defaultTitle = `Step ${lastMainStepNum}`;
+        }
+      }
 
       const stepNode: CanvasStepNode = {
         id: stepId,
         sectionId: currentSectionId,
         parentId,
-        title: stepTitle || (isCountedStep ? `Step ${countedStepCounter++}` : 'Note'),
+        title: stepTitle || defaultTitle,
         isCountedStep,
         isLinkedToPrevious: isLinked,
         instructionText: prose,
@@ -896,7 +965,8 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     inputs: Array.from(inputsMap.values()),
     vessels: Array.from(vesselsMap.values()),
     components,
-    sections
+    sections,
+    tags: parsedTags.length > 0 ? parsedTags : undefined
   };
 
   const workspace: StudioWorkspace = {
@@ -944,11 +1014,149 @@ export function detectInputFormat(text: string): IngestFormat {
   return 'plain_text';
 }
 
+export const MAX_FABLANG_JSON_DEPTH = 10;
+export const MAX_FABLANG_COMPONENTS = 50;
+export const MAX_FABLANG_STEPS = 500;
+export const MAX_FABLANG_INPUTS = 1000;
+export const MAX_FABLANG_VESSELS = 200;
+export const MAX_FABLANG_TOKENS_PER_STEP = 200;
+
+export interface FablangJsonValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+export class FablangJsonValidationError extends Error {
+  public errors: string[];
+  constructor(message: string, errors: string[] = []) {
+    super(message);
+    this.name = 'FablangJsonValidationError';
+    this.errors = errors;
+  }
+}
+
+/**
+ * Recursively calculates structural object depth to enforce intentional depth limits
+ */
+export function calculateObjectDepth(obj: unknown, currentDepth = 0): number {
+  if (obj === null || typeof obj !== 'object') {
+    return currentDepth;
+  }
+  let maxChildDepth = currentDepth + 1;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const d = calculateObjectDepth(item, currentDepth + 1);
+      if (d > maxChildDepth) maxChildDepth = d;
+    }
+  } else {
+    for (const key of Object.keys(obj)) {
+      const d = calculateObjectDepth((obj as Record<string, unknown>)[key], currentDepth + 1);
+      if (d > maxChildDepth) maxChildDepth = d;
+    }
+  }
+  return maxChildDepth;
+}
+
+/**
+ * Validates Fablang JSON schema, bounds, and intentional depth rules
+ */
+export function validateFablangJson(raw: unknown): FablangJsonValidationResult {
+  const errors: string[] = [];
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { isValid: false, errors: ['Fablang JSON must be a non-null object at root.'] };
+  }
+
+  const depth = calculateObjectDepth(raw);
+  if (depth > MAX_FABLANG_JSON_DEPTH) {
+    errors.push(`Fablang JSON exceeds maximum allowed structure depth (${depth} > ${MAX_FABLANG_JSON_DEPTH}).`);
+  }
+
+  const data = raw as Record<string, any>;
+
+  if (data.schemaVersion !== undefined && typeof data.schemaVersion !== 'number') {
+    errors.push('Invalid schemaVersion: expected number.');
+  }
+
+  if (data.components !== undefined) {
+    if (!Array.isArray(data.components)) {
+      errors.push('Field "components" must be an array.');
+    } else {
+      if (data.components.length > MAX_FABLANG_COMPONENTS) {
+        errors.push(`Too many components (${data.components.length} > ${MAX_FABLANG_COMPONENTS}).`);
+      }
+      let totalSteps = 0;
+      for (let i = 0; i < data.components.length; i++) {
+        const c = data.components[i];
+        if (!c || typeof c !== 'object') {
+          errors.push(`Component at index ${i} must be an object.`);
+          continue;
+        }
+        if (c.steps !== undefined) {
+          if (!Array.isArray(c.steps)) {
+            errors.push(`Component "${c.name || i}" steps must be an array.`);
+          } else {
+            totalSteps += c.steps.length;
+            for (let j = 0; j < c.steps.length; j++) {
+              const step = c.steps[j];
+              if (!step || typeof step !== 'object') {
+                errors.push(`Step ${j} in component ${i} must be an object.`);
+                continue;
+              }
+              if (step.tokens && Array.isArray(step.tokens) && step.tokens.length > MAX_FABLANG_TOKENS_PER_STEP) {
+                errors.push(`Step ${j} exceeds token limit (${step.tokens.length} > ${MAX_FABLANG_TOKENS_PER_STEP}).`);
+              }
+            }
+          }
+        }
+      }
+      if (totalSteps > MAX_FABLANG_STEPS) {
+        errors.push(`Total steps in recipe exceeds limit (${totalSteps} > ${MAX_FABLANG_STEPS}).`);
+      }
+    }
+  }
+
+  if (data.inputs !== undefined) {
+    if (!Array.isArray(data.inputs)) {
+      errors.push('Field "inputs" must be an array.');
+    } else if (data.inputs.length > MAX_FABLANG_INPUTS) {
+      errors.push(`Total inputs exceeds limit (${data.inputs.length} > ${MAX_FABLANG_INPUTS}).`);
+    }
+  }
+
+  if (data.vessels !== undefined) {
+    if (!Array.isArray(data.vessels)) {
+      errors.push('Field "vessels" must be an array.');
+    } else if (data.vessels.length > MAX_FABLANG_VESSELS) {
+      errors.push(`Total vessels exceeds limit (${data.vessels.length} > ${MAX_FABLANG_VESSELS}).`);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
 /**
  * Parses a serialized Fablang RecipeGraph JSON into a full StudioWorkspace
  */
 export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
-  const data = JSON.parse(rawText.trim());
+  let data: any;
+  try {
+    data = JSON.parse(rawText.trim());
+  } catch (err: any) {
+    throw new FablangJsonValidationError('Invalid JSON syntax: ' + (err?.message || 'Parse error'));
+  }
+
+  const validation = validateFablangJson(data);
+  if (!validation.isValid) {
+    throw new FablangJsonValidationError(
+      `Fablang JSON validation failed: ${validation.errors.join('; ')}`,
+      validation.errors
+    );
+  }
+
   const now = new Date().toISOString();
 
   // 1. Sections: use data.sections if provided; otherwise derive from components
@@ -986,6 +1194,7 @@ export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: 
       : (sectionIdSet.has(comp.id) ? comp.id : defaultSectionId);
 
     const steps: any[] = Array.isArray(comp.steps) ? comp.steps : [];
+    let prevCompStepId: string | null = null;
     for (const step of steps) {
       const stepId = step.id || `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const instructionText = step.instructionText || '';
@@ -1067,10 +1276,15 @@ export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: 
         };
       }
 
+      const parentId = step.parentId && step.parentId !== 'root' && step.parentId !== targetSectionId
+        ? step.parentId
+        : (prevCompStepId ? prevCompStepId : targetSectionId);
+      prevCompStepId = stepId;
+
       canvasNodes.push({
         id: stepId,
         sectionId: targetSectionId,
-        parentId: targetSectionId,
+        parentId,
         title: step.title || '',
         isCountedStep: step.isCountedStep !== false,
         isLinkedToPrevious: Boolean(step.isLinkedToPrevious),
@@ -1128,7 +1342,10 @@ export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: 
     inputs: Array.isArray(data.inputs) ? data.inputs : [],
     vessels: Array.isArray(data.vessels) ? data.vessels : [],
     components: rawComponents,
-    sections
+    sections,
+    tags: Array.isArray(data.tags)
+      ? data.tags.map((t: any) => normalizeTag(String(t))).filter(Boolean)
+      : undefined
   };
 
   return {
@@ -1167,6 +1384,7 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
   let sourceUrl = '';
   let servings = 4;
   let difficulty: 'easy' | 'medium' | 'hard' = 'medium';
+  const parsedTags: string[] = [];
 
   const rawStepTexts: string[] = [];
 
@@ -1178,17 +1396,39 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
       if (endIdx !== -1) {
         const fm = trimmed.slice(3, endIdx);
         body = trimmed.slice(endIdx + 4).trim();
+        let inFmTags = false;
         for (const line of fm.split('\n')) {
+          const trimmedLine = line.trim();
+          if (inFmTags && trimmedLine.startsWith('-')) {
+            const match = trimmedLine.match(/^-\s*(.*)/);
+            if (match) {
+              const norm = normalizeTag(parseRawYamlValue(match[1]));
+              if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+            }
+            continue;
+          }
+          inFmTags = false;
           const colon = line.indexOf(':');
           if (colon !== -1) {
             const key = line.slice(0, colon).trim().toLowerCase();
-            const val = line.slice(colon + 1).trim().replace(/^["']|["']$/g, '');
+            const rawVal = line.slice(colon + 1).trim();
+            const val = rawVal.replace(/^["']|["']$/g, '');
             if (key === 'title') title = val;
             if (key === 'author') author = val;
             if (key === 'source' || key === 'url' || key === 'origin') sourceUrl = val;
             if (key === 'servings') servings = parseInt(val, 10) || 4;
             if (key === 'description') description = val;
             if (key === 'tips' || key === 'notes') tips = val;
+            if (key === 'tags' || key === 'tag') {
+              inFmTags = true;
+              if (rawVal) {
+                const cleaned = rawVal.replace(/^\[|\]$/g, '');
+                for (const piece of cleaned.split(',')) {
+                  const norm = normalizeTag(piece);
+                  if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+                }
+              }
+            }
             if (key === 'difficulty' && (val === 'easy' || val === 'medium' || val === 'hard')) {
               difficulty = val;
             }
@@ -1216,6 +1456,12 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
           if (key === 'servings') servings = parseInt(val, 10) || 4;
           if (key === 'description') description = val;
           if (key === 'tips' || key === 'notes') tips = val;
+          if (key === 'tags' || key === 'tag') {
+            for (const piece of val.split(',')) {
+              const norm = normalizeTag(piece);
+              if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+            }
+          }
         }
         continue;
       }
@@ -1297,7 +1543,8 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
     },
     inputs: [],
     vessels: [],
-    components: []
+    components: [],
+    tags: parsedTags.length > 0 ? parsedTags : undefined
   };
 
   return {

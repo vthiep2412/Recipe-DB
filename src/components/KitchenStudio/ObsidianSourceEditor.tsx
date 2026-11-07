@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
+import { escapeHtmlAttr } from '../../utils/html';
+
+export { escapeHtmlAttr };
 
 export interface ObsidianSourceEditorProps {
   value: string;
@@ -406,13 +409,4 @@ export function ObsidianSourceEditor({ value, onChange, placeholder, className }
       data-placeholder={placeholder}
     />
   );
-}
-
-export function escapeHtmlAttr(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }

@@ -22,7 +22,7 @@ import { MediaModal } from './MediaModal';
 
 interface StepNodeProps {
   node: CanvasStepNode;
-  stepNumber: number;
+  stepNumber: number | string;
   allNodes?: CanvasStepNode[];
   isSelected: boolean;
   isJumpHighlighted?: boolean;
@@ -594,6 +594,7 @@ export function StepNode({
               type="text"
               className="step-title-input"
               value={node.title}
+              placeholder={!node.isCountedStep ? '(note)' : `Step ${stepNumber}`}
               onInput={e => onChange({ title: (e.target as HTMLInputElement).value })}
               onBlur={() => setIsEditingTitle(false)}
               onKeyDown={e => {
@@ -614,10 +615,16 @@ export function StepNode({
               }}
               title={isSelected ? 'Click to rename step' : 'Click to select step'}
             >
-              <span className="step-number-badge">
+              <span className={`step-number-badge ${!node.isCountedStep ? 'is-note' : ''}`}>
                 {node.isCountedStep ? `${stepNumber}` : 'Note'}
               </span>
-              <span className="step-title-text">{node.title || `Step ${stepNumber}`}</span>
+              <span className={`step-title-text ${!node.isCountedStep && (!node.title || node.title.trim().toLowerCase() === 'note' || node.title.trim().toLowerCase() === 'step note') ? 'is-note-placeholder' : ''}`}>
+                {!node.isCountedStep && (!node.title || node.title.trim().toLowerCase() === 'note' || node.title.trim().toLowerCase() === 'step note') ? (
+                  <i>(note)</i>
+                ) : (
+                  node.title || `Step ${stepNumber}`
+                )}
+              </span>
               <button
                 type="button"
                 className="step-title-pencil-btn"
@@ -642,9 +649,16 @@ export function StepNode({
             <input
               type="checkbox"
               checked={node.isCountedStep}
-              onChange={e =>
-                onChange({ isCountedStep: (e.target as HTMLInputElement).checked })
-              }
+              onChange={e => {
+                const checked = (e.target as HTMLInputElement).checked;
+                const updates: Partial<CanvasStepNode> = { isCountedStep: checked };
+                if (!checked && (node.title === `Step ${stepNumber}` || node.title === 'Step Note' || node.title === 'Note')) {
+                  updates.title = '';
+                } else if (checked && (!node.title || node.title === 'Note' || node.title === 'Step Note')) {
+                  updates.title = `Step ${stepNumber}`;
+                }
+                onChange(updates);
+              }}
             />
             <span>Count?</span>
           </label>
