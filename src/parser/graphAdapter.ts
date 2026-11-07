@@ -4,8 +4,18 @@ import { parseFraction, formatFraction } from './cooklangParser';
 
 function formatSecondsToDisplay(sec?: number): string | undefined {
   if (!sec) return undefined;
-  const mins = Math.round(sec / 60);
-  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} minutes`;
+  const totalMins = Math.round(sec / 60);
+  if (totalMins < 60) {
+    return totalMins === 1 ? '1 minute' : `${totalMins} minutes`;
+  }
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const hourStr = h === 1 ? '1 hour' : `${h} hours`;
+  if (m === 0) {
+    return hourStr;
+  }
+  const minStr = m === 1 ? '1 minute' : `${m} minutes`;
+  return `${hourStr} ${minStr}`;
 }
 
 /**
@@ -186,7 +196,8 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       prep: formatSecondsToDisplay(graph.times.prepSec),
       cook: formatSecondsToDisplay(graph.times.cookSec),
       bake: formatSecondsToDisplay(graph.times.bakeSec),
-      rest: formatSecondsToDisplay(graph.times.restSec)
+      rest: formatSecondsToDisplay(graph.times.restSec),
+      ...(graph.times.custom ? Object.fromEntries(graph.times.custom.map(c => [c.label, formatSecondsToDisplay(c.seconds)])) : {})
     },
     tags: graph.tags || [],
     metadata: {},
