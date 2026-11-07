@@ -17,7 +17,7 @@ import {
   Bookmark,
   NotepadText
 } from 'lucide-preact';
-import { marked } from 'marked';
+import { renderAppMarkdown } from '../utils/markdown';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
 import type { ActiveTimer } from '../types/timer';
 import { formatFraction, parseFraction } from '../parser/cooklangParser';
@@ -29,7 +29,6 @@ import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
 import { escapeHtmlAttr } from '../utils/html';
-import { sanitizeHtml } from '../utils/sanitizer';
 import { getYouTubeEmbedUrl } from '../utils/media';
 import { localMediaStore } from '../services/localMediaStore';
 import { getOptimizedImageUrl } from '../services/cloudinaryUpload';
@@ -51,21 +50,11 @@ export function _legacyUrl(trimmed: string) {
 
 function sanitizeMarkdown(raw?: string): string {
   if (!raw) return '';
-  const renderer = new marked.Renderer();
-  renderer.link = ({ href, title, text }) => {
-    const safeHref = isSafeUrl(href) ? escapeHtmlAttr(href.trim()) : '#';
-    const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-    return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
-  };
-  renderer.image = ({ href, title, text }) => {
-    const safeSrc = href && /^https?:\/\//i.test(href.trim()) ? escapeHtmlAttr(getOptimizedImageUrl(href.trim())) : '';
-    if (!safeSrc) return '';
-    const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-    const altAttr = text ? ` alt="${escapeHtmlAttr(text)}"` : '';
-    return `<img src="${safeSrc}"${altAttr}${titleAttr} loading="lazy" />`;
-  };
-  const html = marked.parse(raw, { renderer, async: false }) as string;
-  return sanitizeHtml(html, 'recipe');
+  return renderAppMarkdown(raw, {
+    profile: 'recipe',
+    allowImages: true,
+    imageTransform: getOptimizedImageUrl
+  });
 }
 
 export function parseDurationToSeconds(text: string): number {

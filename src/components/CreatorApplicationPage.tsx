@@ -1,16 +1,15 @@
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import { ChefHat, ArrowLeft, Edit3, BookOpen, Send, Clock, Sparkles, CheckCircle2, AlertCircle, Info } from 'lucide-preact';
 import { toast } from 'sonner';
-import { marked } from 'marked';
 import { authStore } from '../services/authStore';
 import { creatorApplicationService } from '../services/creatorApplicationService';
 import { Tooltip } from './Tooltip';
-import { ObsidianSourceEditor, escapeHtmlAttr } from './KitchenStudio/ObsidianSourceEditor';
+import { ObsidianSourceEditor } from './KitchenStudio/ObsidianSourceEditor';
 import type { CreatorApplication } from '../types/cloud';
 import '../styles/kitchen-studio.css';
 import '../styles/creator-application.css';
 
-import { sanitizeHtml } from '../utils/sanitizer';
+import { renderAppMarkdown } from '../utils/markdown';
 
 interface Props {
   onNavigate: (path: string) => void;
@@ -48,22 +47,10 @@ export function CreatorApplicationPage({ onNavigate }: Props) {
   const renderedMarkdownHtml = useMemo(() => {
     if (!isReadingMode && !existingApp) return '';
     const textToRender = existingApp ? existingApp.applicationMd : content;
-    const raw = textToRender || '*No content written yet.*';
-    const escaped = raw.replace(/</g, '&lt;');
-    const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
-      return `<span class="obsidian-reading-link">${escapeHtmlAttr(linkText)}</span>`;
+    return renderAppMarkdown(textToRender, {
+      fallbackText: '*No content written yet.*',
+      profile: 'recipe'
     });
-
-    const renderer = new marked.Renderer();
-    renderer.link = ({ href, title, text }) => {
-      const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
-      const safeHref = isSafe ? escapeHtmlAttr(href.trim()) : '#';
-      const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
-    };
-
-    const parsed = marked.parse(processed, { renderer, async: false }) as string;
-    return sanitizeHtml(parsed);
   }, [content, isReadingMode, existingApp]);
 
   const handleSubmit = async () => {

@@ -11,7 +11,7 @@ export interface ObsidianSourceEditorProps {
 }
 
 function tokenizeInlineText(parentEl: HTMLElement, text: string) {
-  const tokenRegex = /(\[\[[^\n\]]+\]\]|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`)/g;
+  const tokenRegex = /(\[\[[^\n\]]+\]\]|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`|<br\s*\/?>|\\+$)/gi;
   let lastIdx = 0;
   let match: RegExpExecArray | null;
 
@@ -100,6 +100,11 @@ function tokenizeInlineText(parentEl: HTMLElement, text: string) {
       closeSpan.className = 'obsidian-syntax-dim';
       closeSpan.textContent = '`';
       parentEl.appendChild(closeSpan);
+    } else if (/^<br\s*\/?>$/i.test(tokenStr) || /^\\+$/.test(tokenStr)) {
+      const breakSpan = document.createElement('span');
+      breakSpan.className = 'obsidian-syntax-dim';
+      breakSpan.textContent = tokenStr;
+      parentEl.appendChild(breakSpan);
     }
     lastIdx = match.index + tokenStr.length;
   }

@@ -12,7 +12,7 @@ import {
   UserMinus,
   Archive,
 } from 'lucide-preact';
-import { marked } from 'marked';
+import { renderAppMarkdown } from '../utils/markdown';
 import { toast } from 'sonner';
 import { authStore } from '../services/authStore';
 import { adminService } from '../services/adminService';
@@ -25,17 +25,11 @@ import type {
   UserRole,
   CreatorApplicationStatus,
 } from '../types/cloud';
-import { sanitizeHtml } from '../utils/sanitizer';
 
 function renderPitchMarkdown(rawMarkdown: string): string {
-  if (!rawMarkdown) return '';
-  const escaped = rawMarkdown.replace(/</g, '&lt;');
-  const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
-    const safeText = linkText.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    return `<span class="obsidian-reading-link">${safeText}</span>`;
+  return renderAppMarkdown(rawMarkdown, {
+    profile: 'admin'
   });
-  const parsed = marked.parse(processed, { async: false }) as string;
-  return sanitizeHtml(parsed, 'admin');
 }
 
 export interface AdminPanelProps {

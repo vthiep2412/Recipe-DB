@@ -1132,7 +1132,7 @@
 }
 
 .step-inline-token.cook-ig.is-yield-mention {
-  border-color: rgba(234, 179, 8, 0.4);
+  border-color: var(--token-yield-border, rgba(234, 179, 8, 0.4));
 }
 
 .step-inline-token.cook-ig .cook-ig-name {
@@ -1143,18 +1143,19 @@
 }
 
 .step-inline-token.cook-ig.is-yield-mention .cook-ig-name {
-  background: rgba(234, 179, 8, 0.18);
-  color: #fde047;
+  background: var(--token-yield-bg, rgba(234, 179, 8, 0.18));
+  color: var(--token-yield-text, #854d0e);
 }
 
 .step-inline-token.cook-ig.is-yield-mention .cook-yield-from {
-  background: rgba(234, 179, 8, 0.1);
-  color: #eab308;
+  background: var(--token-yield-amt-bg, rgba(234, 179, 8, 0.1));
+  color: var(--token-yield-text, #854d0e);
   font-size: 0.78rem;
-  font-weight: 500;
+  font-weight: 600;
   padding: 0.15rem 0.4rem;
-  border-left: 1px solid rgba(234, 179, 8, 0.25);
+  border-left: 1px solid var(--token-yield-border, rgba(234, 179, 8, 0.25));
   font-style: italic;
+  opacity: 0.95;
 }
 
 .step-inline-token.cook-ig .cook-amt {

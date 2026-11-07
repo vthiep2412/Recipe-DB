@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag } from 'lucide-preact';
 import { toast } from 'sonner';
-import { marked } from 'marked';
 import type { RecipeGraph } from '../../types/orchestration';
 import { formatSecondsToDisplay } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
 import { ConfirmModal } from '../ConfirmModal';
 import { MediaModal } from './MediaModal';
-import { ObsidianSourceEditor, escapeHtmlAttr } from './ObsidianSourceEditor';
+import { ObsidianSourceEditor } from './ObsidianSourceEditor';
+import { renderAppMarkdown } from '../../utils/markdown';
 import { TagManagerModal } from './TagManagerModal';
 import { getYouTubeEmbedUrl } from '../../utils/media';
 import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
@@ -337,19 +337,10 @@ export function RecipeMetadataModal({
 
   const renderedMarkdownHtml = useMemo(() => {
     if (!isReadingMode) return '';
-    const raw = description || '*No description entered yet. Switch to Source Mode to write.*';
-    const escaped = raw.replace(/</g, '&lt;');
-    const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
-      return `<span class="obsidian-reading-link">${escapeHtmlAttr(linkText)}</span>`;
+    return renderAppMarkdown(description, {
+      fallbackText: '*No description entered yet. Switch to Source Mode to write.*',
+      profile: 'recipe'
     });
-    const renderer = new marked.Renderer();
-    renderer.link = ({ href, title, text }) => {
-      const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
-      const safeHref = isSafe ? escapeHtmlAttr(href.trim()) : '#';
-      const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
-    };
-    return marked.parse(processed, { renderer, async: false }) as string;
   }, [description, isReadingMode]);
 
   if (!isOpen) return null;

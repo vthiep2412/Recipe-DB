@@ -1283,90 +1283,98 @@ export function KitchenCanvas({
     });
   };
 
-  // Add step node with tree guardrails
+  // Add step node with contextual sequence insertion
   const handleAddStepNode = () => {
-    let parentId: string;
     let targetSectionId: string;
+    let parentId: string;
+    let insertIndex = -1;
+
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
 
     if (selectedStep) {
-      targetSectionId = selectedStep.sectionId || currentSections[0].id;
-      parentId = selectedStep.id;
+      targetSectionId = resolveNodeSectionId(selectedStep, nodesById, knownSectionIds, defaultSecId);
+      const selectedIdx = workspace.canvasNodes.findIndex(n => n.id === selectedStep.id);
 
-      let noteDepth = selectedStep.isCountedStep ? 0 : 1;
-      let curr: CanvasStepNode | undefined = selectedStep;
-      while (curr && curr.parentId && curr.parentId !== targetSectionId && !currentSections.some(s => s.id === curr?.parentId)) {
-        const nextParent = workspace.canvasNodes.find(n => n.id === curr?.parentId);
-        if (!nextParent) break;
-        if (!nextParent.isCountedStep) {
-          noteDepth++;
+      if (selectedIdx !== -1) {
+        // Walk forward to find the end of selectedStep's chain (any linked substeps or uncounted notes)
+        let lastBranchIdx = selectedIdx;
+        while (lastBranchIdx + 1 < workspace.canvasNodes.length) {
+          const candidate = workspace.canvasNodes[lastBranchIdx + 1];
+          const candSecId = resolveNodeSectionId(candidate, nodesById, knownSectionIds, defaultSecId);
+          if (candSecId !== targetSectionId) break;
+          if (candidate.isLinkedToPrevious || !candidate.isCountedStep) {
+            lastBranchIdx++;
+          } else {
+            break;
+          }
         }
-        curr = nextParent;
-      }
-      if (noteDepth >= 2) {
-        toast.error('Maximum nesting depth 2 reached');
-        return;
-      }
 
-      const existingChildren = workspace.canvasNodes.filter(n => n.parentId === selectedStep.id);
-      const countedChildren = existingChildren.filter(n => n.isCountedStep);
-      const uncountedChildren = existingChildren.filter(n => !n.isCountedStep);
-
-      const mustBeUncounted = !selectedStep.isCountedStep;
-      if (mustBeUncounted || countedChildren.length >= 1) {
-        if (uncountedChildren.length >= 3) {
-          toast.error('Maximum 3 note branches reached for this step');
-          return;
-        }
+        const anchorNode = workspace.canvasNodes[lastBranchIdx];
+        parentId = anchorNode.id;
+        insertIndex = lastBranchIdx + 1;
+      } else {
+        parentId = selectedStep.id;
+        insertIndex = workspace.canvasNodes.length;
       }
     } else if (selectedSection) {
       targetSectionId = selectedSection.id;
-      const sectionSteps = workspace.canvasNodes.filter(n => (n.sectionId || currentSections[0].id) === targetSectionId);
+      const sectionSteps = workspace.canvasNodes.filter(n =>
+        resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+      );
       if (sectionSteps.length === 0) {
         parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.length;
       } else {
-        const countedSteps = sectionSteps.filter(n => n.isCountedStep);
-        parentId = countedSteps.length > 0 ? countedSteps[countedSteps.length - 1].id : sectionSteps[sectionSteps.length - 1].id;
+        const lastStep = sectionSteps[sectionSteps.length - 1];
+        parentId = lastStep.id;
+        insertIndex = workspace.canvasNodes.findIndex(n => n.id === lastStep.id) + 1;
       }
     } else {
-      targetSectionId = currentSections[0].id;
-      const sectionSteps = workspace.canvasNodes.filter(n => (n.sectionId || currentSections[0].id) === targetSectionId);
+      targetSectionId = defaultSecId;
+      const sectionSteps = workspace.canvasNodes.filter(n =>
+        resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+      );
       if (sectionSteps.length === 0) {
         parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.length;
       } else {
-        const countedSteps = sectionSteps.filter(n => n.isCountedStep);
-        parentId = countedSteps.length > 0 ? countedSteps[countedSteps.length - 1].id : sectionSteps[sectionSteps.length - 1].id;
-      }
-    }
-
-    const parentNode = workspace.canvasNodes.find(n => n.id === parentId);
-    let isCounted = true;
-    if (parentNode) {
-      if (!parentNode.isCountedStep) {
-        isCounted = false;
-      } else {
-        const siblings = workspace.canvasNodes.filter(n => n.parentId === parentId);
-        if (siblings.some(s => s.isCountedStep)) {
-          isCounted = false;
-        }
+        const lastStep = sectionSteps[sectionSteps.length - 1];
+        parentId = lastStep.id;
+        insertIndex = workspace.canvasNodes.findIndex(n => n.id === lastStep.id) + 1;
       }
     }
 
     const newId = `step-${Date.now()}`;
-    const stepCount = workspace.canvasNodes.length + 1;
-
     const newNode: CanvasStepNode = {
       id: newId,
       parentId,
       sectionId: targetSectionId,
-      title: isCounted ? `Step ${stepCount}` : '',
-      isCountedStep: isCounted,
+      title: 'Step',
+      isCountedStep: true,
       isLinkedToPrevious: false,
       instructionText: '',
       mentions: []
     };
 
-    const currentNodesWithNew = [...workspace.canvasNodes, newNode];
-    const reordered = reorderSectionsAndNodes(currentSections, currentNodesWithNew);
+    // Re-wire any downstream node that was parented to anchor node so it attaches to newNode
+    const updatedExistingNodes = workspace.canvasNodes.map(node => {
+      if (node.parentId === parentId && node.id !== newId) {
+        return { ...node, parentId: newId };
+      }
+      return node;
+    });
+
+    // Splice newNode at the target index
+    const nextCanvasNodes = [...updatedExistingNodes];
+    if (insertIndex >= 0 && insertIndex <= nextCanvasNodes.length) {
+      nextCanvasNodes.splice(insertIndex, 0, newNode);
+    } else {
+      nextCanvasNodes.push(newNode);
+    }
+
+    const reordered = reorderSectionsAndNodes(currentSections, nextCanvasNodes);
     updateWorkspaceState({
       ...workspace,
       canvasNodes: reordered.canvasNodes
