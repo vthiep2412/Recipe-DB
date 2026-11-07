@@ -26,7 +26,7 @@ interface NodeInspectorProps {
   workspace: StudioWorkspace;
   onClose: () => void;
   onUpdateMention: (mentionId: string, updatedData: Partial<StepMentionToken>) => void;
-  onUpdateYield: (stepId: string, yieldData: { name: string; vesselId: string } | undefined) => void;
+  onUpdateYield: (stepId: string, yieldData: { name: string; vesselId?: string } | undefined) => void;
   onOpenCustomItemModal: (type: 'ingredient' | 'cookware') => void;
 }
 
@@ -42,7 +42,6 @@ export function NodeInspector({
 }: NodeInspectorProps) {
   // Yield state
   const [yieldName, setYieldName] = useState(activeStep.producesYield?.name || '');
-  const [yieldVessel, setYieldVessel] = useState(activeStep.producesYield?.vesselId || 'bowl-a');
 
   // Amount input local string state to allow free backspacing and clearing
   const [amountInput, setAmountInput] = useState<string>(() =>
@@ -58,12 +57,11 @@ export function NodeInspector({
   useEffect(() => {
     if (activeStep.producesYield) {
       setYieldName(activeStep.producesYield.name);
-      setYieldVessel(activeStep.producesYield.vesselId);
     }
   }, [activeStep.producesYield]);
 
   // Collect previous yields created in steps before this one
-  const previousYields: { stepId: string; stepTitle: string; name: string; vesselId: string }[] = [];
+  const previousYields: { stepId: string; stepTitle: string; name: string; vesselId?: string }[] = [];
   // Collect declared ingredients from steps strictly before this one for backward re-mention
   const previousIngredientsMap = new Map<string, { name: string; sourceStepTitle: string; originalId: string }>();
 
@@ -123,18 +121,12 @@ export function NodeInspector({
 
   // 1. Render Yield Mode
   if (isYieldMode) {
-    const vesselOptions: DropdownItem[] = STANDARD_COOKWARE.map(c => ({
-      id: c.id,
-      label: c.name,
-      group: 'Standard Vessels'
-    }));
-
     const handleSaveYield = () => {
       const trimmed = yieldName.trim();
       if (!trimmed) {
         onUpdateYield(activeStep.id, undefined);
       } else {
-        onUpdateYield(activeStep.id, { name: trimmed, vesselId: yieldVessel });
+        onUpdateYield(activeStep.id, { name: trimmed });
       }
       onClose();
     };
@@ -157,17 +149,6 @@ export function NodeInspector({
               placeholder="e.g. Mascarpone Cream or Coffee Dip"
               value={yieldName}
               onInput={e => setYieldName((e.target as HTMLInputElement).value)}
-            />
-          </div>
-
-          <div className="inspector-field">
-            <label className="inspector-label">Holding Vessel</label>
-            <UniversalDropdown
-              items={vesselOptions}
-              selectedId={yieldVessel}
-              onSelect={id => setYieldVessel(id)}
-              onAddNew={() => onOpenCustomItemModal('cookware')}
-              addNewLabel="+ Add New Vessel"
             />
           </div>
 

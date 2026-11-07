@@ -565,22 +565,22 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
       const stepIdx = canvasNodes.length + 1;
       const stepId = `step-${stepIdx}`;
 
-      // Extract Yield production directive: -> *yieldName*{#vesselName}
-      let producesYield: { name: string; vesselId: string } | undefined;
-      const yieldProdMatch = prose.match(/->\s*\*([^*]+)\*\{#([^}]+)\}\s*$/);
+      // Extract Yield production directive: -> *yieldName*{} or legacy -> *yieldName*{#vesselName}
+      let producesYield: { name: string; vesselId?: string } | undefined;
+      const yieldProdMatch = prose.match(/->\s*\*([^*]+)\*(?:\{([^}]*)\})?\s*$/);
       if (yieldProdMatch) {
         const yieldName = yieldProdMatch[1].trim();
-        const vesselName = yieldProdMatch[2].trim();
-        const vesselSlug = vesselName.toLowerCase().replace(/\s+/g, '-');
+        const vesselRaw = (yieldProdMatch[2] || '').trim().replace(/^#/, '');
+        const vesselSlug = vesselRaw ? vesselRaw.toLowerCase().replace(/\s+/g, '-') : undefined;
         producesYield = {
           name: yieldName,
-          vesselId: vesselSlug
+          ...(vesselSlug ? { vesselId: vesselSlug } : {})
         };
         yieldProducerMap.set(yieldName.toLowerCase(), stepId);
-        if (!vesselsMap.has(vesselSlug)) {
+        if (vesselSlug && !vesselsMap.has(vesselSlug)) {
           vesselsMap.set(vesselSlug, {
             id: vesselSlug,
-            name: vesselName,
+            name: vesselRaw,
             type: 'bowl'
           });
         }
@@ -941,7 +941,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         producesYield: n.producesYield ? {
           id: `yield-${n.id}`,
           name: n.producesYield.name,
-          vesselId: n.producesYield.vesselId
+          ...(n.producesYield.vesselId ? { vesselId: n.producesYield.vesselId } : {})
         } : undefined
       };
     });
@@ -1280,11 +1280,11 @@ export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: 
         });
       }
 
-      let producesYield: { name: string; vesselId: string } | undefined;
+      let producesYield: { name: string; vesselId?: string } | undefined;
       if (step.producesYield) {
         producesYield = {
           name: step.producesYield.name || '',
-          vesselId: step.producesYield.vesselId || ''
+          ...(step.producesYield.vesselId ? { vesselId: step.producesYield.vesselId } : {})
         };
       }
 
@@ -1523,7 +1523,7 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
   for (let i = 0; i < rawStepTexts.length; i++) {
     const stepId = `step-${i + 1}`;
     const rawStep = rawStepTexts[i];
-    const { cleanText, mentions, segments } = extractMentionsFromStep(rawStep, i + 1);
+    const { cleanText, mentions, segments, producesYield } = extractMentionsFromStep(rawStep, i + 1);
 
     canvasNodes.push({
       id: stepId,
@@ -1534,7 +1534,8 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
       isLinkedToPrevious: false,
       instructionText: cleanText,
       segments,
-      mentions
+      mentions,
+      producesYield
     });
 
     prevNodeId = stepId;
@@ -1610,11 +1611,26 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
 /**
  * Extracts mentions from Cooklang syntax like @ingredient{quantity%unit} or #cookware or ~{time}
  */
-function extractMentionsFromStep(stepText: string, stepIndex: number): {
+function extractMentionsFromStep(rawStepText: string, stepIndex: number): {
   cleanText: string;
   mentions: StepMentionToken[];
   segments: StepInstructionSegment[];
+  producesYield?: { name: string; vesselId?: string };
 } {
+  let stepText = rawStepText;
+  let producesYield: { name: string; vesselId?: string } | undefined;
+  const yieldMatch = stepText.match(/->\s*\*([^*]+)\*(?:\{([^}]*)\})?\s*$/);
+  if (yieldMatch) {
+    const yieldName = yieldMatch[1].trim();
+    const vesselRaw = (yieldMatch[2] || '').trim().replace(/^#/, '');
+    const vesselSlug = vesselRaw ? vesselRaw.toLowerCase().replace(/\s+/g, '-') : undefined;
+    producesYield = {
+      name: yieldName,
+      ...(vesselSlug ? { vesselId: vesselSlug } : {})
+    };
+    stepText = stepText.slice(0, yieldMatch.index).trim();
+  }
+
   const segments: StepInstructionSegment[] = [];
   const mentions: StepMentionToken[] = [];
   let tokenCounter = 1;
@@ -1759,7 +1775,7 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
     .map(s => (s.type === 'text' ? s.text : s.mention.displayText))
     .join('');
 
-  return { cleanText, mentions, segments };
+  return { cleanText, mentions, segments, producesYield };
 }
 
 function resolveNodeSectionId(
@@ -1916,7 +1932,7 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
       stepNode.producesYield = {
         id: `yield-${node.id}`,
         name: node.producesYield.name,
-        vesselId: node.producesYield.vesselId
+        ...(node.producesYield.vesselId ? { vesselId: node.producesYield.vesselId } : {})
       };
     }
 

@@ -288,10 +288,10 @@ export function generateFablang(
         textContent = step.instructionText;
       }
 
-      // Append yield production syntax if step produces yield
+      // Append yield production syntax if step produces yield (ends cleanly with blank {})
       let yieldProductionSuffix = '';
       if (step.producesYield) {
-        yieldProductionSuffix = ` -> *${step.producesYield.name}*{#${step.producesYield.vesselId}}`;
+        yieldProductionSuffix = ` -> *${step.producesYield.name}*{}`;
       }
 
       lines.push(`${prefix}${directives}${textContent.trim()}${yieldProductionSuffix}`);

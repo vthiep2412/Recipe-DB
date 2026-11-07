@@ -119,7 +119,7 @@ export interface RecipeStepNode {
   producesYield?: {
     id: string;
     name: string;
-    vesselId: string;
+    vesselId?: string;
     description?: string;
   };
   timer?: StepTimer;
@@ -203,7 +203,7 @@ export interface CanvasStepNode {
   showInlineTools?: boolean;
   producesYield?: {
     name: string;
-    vesselId: string;
+    vesselId?: string;
   };
 }
 
