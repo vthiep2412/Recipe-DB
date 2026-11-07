@@ -148,10 +148,10 @@ export function validateFablang(rawText: string): FablangSyntaxError[] {
 
     // 5. Yield production directive validation
     if (line.includes('->')) {
-      if (!/->\s*\*([^*]+)\*\{#([^}]+)\}/.test(line)) {
+      if (!/->\s*\*([^*]+)\*(?:\{[^}]*\})?/.test(line)) {
         errors.push({
           line: lineNum,
-          message: 'Invalid yield production directive: syntax must be -> *name*{#vessel}',
+          message: 'Invalid yield production directive: syntax must be -> *name*{}',
           rawLine: line
         });
       }
@@ -202,7 +202,7 @@ ${errorLines}
    - Re-mention: @@name{quantity%unit}(notes)
    - Cookware: #cookware{size}(notes)
    - Yield Reference: *yield name*{quantity%#vessel}(notes)
-   - Yield Production: placed at the end of the step: -> *yield name*{#vessel}
+   - Yield Production: placed at the end of the step: -> *yield name*{}
    - Sensory Timer: ~{duration%unit%temp}(sensory cue)
 4. Multimedia Directives:
    - > image1: <url>
