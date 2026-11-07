@@ -12,9 +12,7 @@ import {
   ALL_MEASUREMENT_UNITS,
   VESSEL_SIZES,
   parseTimeStringToSeconds,
-  formatSecondsToDisplay,
-  resolveStandardIngredient,
-  resolveStandardCookware
+  formatSecondsToDisplay
 } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
 import { Dropdown } from '../ui/Dropdown';
@@ -214,9 +212,6 @@ export function NodeInspector({
 
     // 2. Workspace custom ingredients
     for (const custom of workspace.customIngredients) {
-      if (resolveStandardIngredient(custom.id) || resolveStandardIngredient(custom.name)) {
-        continue;
-      }
       dropdownItems.push({
         id: custom.id,
         label: custom.name,
@@ -236,7 +231,7 @@ export function NodeInspector({
     const currentIngId = activeMention.data?.isRemention
       ? `remention-${activeMention.data?.ingredientId || activeMention.displayText.toLowerCase()}`
       : (activeMention.data?.ingredientId || activeMention.displayText.toLowerCase());
-    const standardMatch = resolveStandardIngredient(currentIngId) || resolveStandardIngredient(activeMention.displayText) || STANDARD_INGREDIENTS.find(i => i.id === currentIngId || i.name.toLowerCase() === currentIngId.toLowerCase());
+    const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId || i.name.toLowerCase() === currentIngId.toLowerCase())
     const availableUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
 
     return (
@@ -493,9 +488,6 @@ export function NodeInspector({
       });
     }
     for (const custom of workspace.customCookware) {
-      if (resolveStandardCookware(custom.id) || resolveStandardCookware(custom.name)) {
-        continue;
-      }
       dropdownItems.push({
         id: custom.id,
         label: custom.name,
