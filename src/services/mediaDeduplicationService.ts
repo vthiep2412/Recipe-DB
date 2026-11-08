@@ -5,19 +5,21 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 export interface DeduplicationLookupResult {
   url: string;
   phash: string;
+  aspectRatio?: number;
   matchedFrom: 'local_exact' | 'local_near' | 'supabase';
 }
 
 /**
  * Checks both the local IndexedDB cache and the shared Supabase media registry
- * for an existing Cloudinary image matching or visually near-matching (Hamming distance <= 3)
- * the given image source.
+ * for an existing Cloudinary image matching or visually near-matching (256-bit Hamming distance <= 8)
+ * and respecting the Aspect Ratio Guard (relative difference <= 2%).
  */
 export async function findExistingCloudinaryAsset(
   source: File | Blob
 ): Promise<DeduplicationLookupResult | null> {
-  const phash = await computeImageDHash(source);
-  if (!phash) return null;
+  const fingerprint = await computeImageDHash(source);
+  if (!fingerprint) return null;
+  const { phash, aspectRatio } = fingerprint;
 
   // 1. Fast local exact match
   try {
@@ -26,20 +28,30 @@ export async function findExistingCloudinaryAsset(
       return {
         url: localExact,
         phash,
+        aspectRatio,
         matchedFrom: 'local_exact'
       };
     }
 
-    // 2. Local near match across stored mappings
+    // 2. Local near match across stored mappings with Aspect Ratio Guard
     const localMappings = await localMediaStore.getAllPhashMappings();
     for (const mapping of localMappings) {
+      if (
+        mapping.aspectRatio !== undefined &&
+        aspectRatio !== undefined &&
+        Math.abs(mapping.aspectRatio - aspectRatio) / aspectRatio > 0.02
+      ) {
+        continue;
+      }
+
       const dist = computeHammingDistance(phash, mapping.phash);
-      if (dist <= 3) {
+      if (dist <= 8) {
         // Also map this specific variant to IndexedDB for instant future hits
-        await localMediaStore.savePhashMapping(phash, mapping.cloudinaryUrl);
+        await localMediaStore.savePhashMapping(phash, mapping.cloudinaryUrl, aspectRatio);
         return {
           url: mapping.cloudinaryUrl,
           phash,
+          aspectRatio,
           matchedFrom: 'local_near'
         };
       }
@@ -54,14 +66,16 @@ export async function findExistingCloudinaryAsset(
       // Try similarity RPC first
       const { data: rpcUrl, error: rpcError } = await supabase.rpc('find_similar_media_asset', {
         input_phash: phash,
-        max_distance: 3
+        input_aspect_ratio: aspectRatio,
+        max_distance: 8
       });
 
       if (!rpcError && rpcUrl && typeof rpcUrl === 'string') {
-        await localMediaStore.savePhashMapping(phash, rpcUrl);
+        await localMediaStore.savePhashMapping(phash, rpcUrl, aspectRatio);
         return {
           url: rpcUrl,
           phash,
+          aspectRatio,
           matchedFrom: 'supabase'
         };
       }
@@ -70,17 +84,25 @@ export async function findExistingCloudinaryAsset(
       if (rpcError) {
         const { data: row } = await supabase
           .from('media_assets')
-          .select('cloudinary_url')
+          .select('cloudinary_url, aspect_ratio')
           .eq('phash', phash)
           .maybeSingle();
 
         if (row && row.cloudinary_url) {
-          await localMediaStore.savePhashMapping(phash, row.cloudinary_url);
-          return {
-            url: row.cloudinary_url,
-            phash,
-            matchedFrom: 'supabase'
-          };
+          const rowRatio = typeof row.aspect_ratio === 'number' ? row.aspect_ratio : undefined;
+          if (
+            !rowRatio ||
+            !aspectRatio ||
+            Math.abs(rowRatio - aspectRatio) / aspectRatio <= 0.02
+          ) {
+            await localMediaStore.savePhashMapping(phash, row.cloudinary_url, aspectRatio);
+            return {
+              url: row.cloudinary_url,
+              phash,
+              aspectRatio,
+              matchedFrom: 'supabase'
+            };
+          }
         }
       }
     } catch (err) {
@@ -97,13 +119,14 @@ export async function findExistingCloudinaryAsset(
  */
 export async function registerUploadedAsset(
   phash: string,
-  cloudinaryUrl: string
+  cloudinaryUrl: string,
+  aspectRatio?: number
 ): Promise<void> {
   if (!phash || !cloudinaryUrl) return;
 
   // 1. Cache locally
   try {
-    await localMediaStore.savePhashMapping(phash, cloudinaryUrl);
+    await localMediaStore.savePhashMapping(phash, cloudinaryUrl, aspectRatio);
   } catch (err) {
     console.warn('[mediaDeduplicationService] Failed saving to local IndexedDB', err);
   }
@@ -114,7 +137,8 @@ export async function registerUploadedAsset(
       const { error } = await supabase.from('media_assets').upsert(
         {
           phash,
-          cloudinary_url: cloudinaryUrl
+          cloudinary_url: cloudinaryUrl,
+          aspect_ratio: aspectRatio
         },
         { onConflict: 'phash' }
       );

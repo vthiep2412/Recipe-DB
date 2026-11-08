@@ -108,9 +108,9 @@ export interface LocalMediaStoreAPI {
   loadBlob(key: string): Promise<Blob | null>;
   deleteBlob(key: string): Promise<void>;
   clearWorkspace(workspaceId: string): Promise<void>;
-  savePhashMapping(phash: string, cloudinaryUrl: string): Promise<void>;
+  savePhashMapping(phash: string, cloudinaryUrl: string, aspectRatio?: number): Promise<void>;
   getPhashMapping(phash: string): Promise<string | null>;
-  getAllPhashMappings(): Promise<Array<{ phash: string; cloudinaryUrl: string }>>;
+  getAllPhashMappings(): Promise<Array<{ phash: string; cloudinaryUrl: string; aspectRatio?: number }>>;
 }
 
 export interface CloudinaryServiceAPI {

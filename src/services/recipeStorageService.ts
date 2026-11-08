@@ -160,9 +160,9 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
           } else {
             const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
             replacementMap.set(fullKey, getStreamMasterUrl(uploaded.secure_url));
-            const phash = await computeImageDHash(optimizedBlob);
-            if (phash) {
-              await registerUploadedAsset(phash, uploaded.secure_url);
+            const fingerprint = await computeImageDHash(optimizedBlob);
+            if (fingerprint) {
+              await registerUploadedAsset(fingerprint.phash, uploaded.secure_url, fingerprint.aspectRatio);
             }
           }
         }
@@ -187,9 +187,9 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
           } else {
             const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
             replacementMap.set(dataUrl, getStreamMasterUrl(uploaded.secure_url));
-            const phash = await computeImageDHash(optimizedBlob);
-            if (phash) {
-              await registerUploadedAsset(phash, uploaded.secure_url);
+            const fingerprint = await computeImageDHash(optimizedBlob);
+            if (fingerprint) {
+              await registerUploadedAsset(fingerprint.phash, uploaded.secure_url, fingerprint.aspectRatio);
             }
           }
         }

@@ -61,7 +61,7 @@ export function toCloudinaryBmpThumbnailUrl(url: string): string {
     rest = rest + '.bmp';
   }
 
-  return `${baseUrl}w_9,h_8,c_scale/${rest}`;
+  return `${baseUrl}w_17,h_16,c_scale/${rest}`;
 }
 
 export function parseBmpToLumaGrid(buffer: Uint8Array): number[] {
@@ -101,9 +101,9 @@ export function computeDHashFromLumaGrid(lums: number[]): string {
   let nibble = 0;
   let bitCount = 0;
 
-  for (let row = 0; row < 8; row++) {
-    for (let col = 0; col < 8; col++) {
-      const leftIdx = row * 9 + col;
+  for (let row = 0; row < 16; row++) {
+    for (let col = 0; col < 16; col++) {
+      const leftIdx = row * 17 + col;
       const rightIdx = leftIdx + 1;
       const bit = lums[leftIdx] > lums[rightIdx] ? 1 : 0;
 
@@ -118,23 +118,37 @@ export function computeDHashFromLumaGrid(lums: number[]): string {
     }
   }
 
-  return hexResult.padStart(16, '0');
+  return hexResult.padStart(64, '0');
 }
 
-async function fetchImageDHash(cloudinaryUrl: string): Promise<string | null> {
+async function fetchImageFingerprint(cloudinaryUrl: string): Promise<{ phash: string; aspectRatio: number } | null> {
   try {
     const bmpUrl = toCloudinaryBmpThumbnailUrl(cloudinaryUrl);
     const res = await fetch(bmpUrl);
     if (!res.ok) {
-      console.warn(`[Warn] Failed to fetch 9x8 BMP from ${bmpUrl} (HTTP ${res.status})`);
+      console.warn(`[Warn] Failed to fetch 17x16 BMP from ${bmpUrl} (HTTP ${res.status})`);
       return null;
     }
+
+    let aspectRatio = 1.0;
+    const serverTiming = res.headers.get('server-timing') || '';
+    const matchOw = serverTiming.match(/owidth=(\d+)/);
+    const matchOh = serverTiming.match(/oheight=(\d+)/);
+    if (matchOw && matchOh) {
+      const ow = parseInt(matchOw[1], 10);
+      const oh = parseInt(matchOh[1], 10);
+      if (ow > 0 && oh > 0) {
+        aspectRatio = Number((ow / oh).toFixed(3));
+      }
+    }
+
     const arrayBuffer = await res.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     const lumaGrid = parseBmpToLumaGrid(bytes);
-    return computeDHashFromLumaGrid(lumaGrid);
+    const phash = computeDHashFromLumaGrid(lumaGrid);
+    return { phash, aspectRatio };
   } catch (err: any) {
-    console.warn(`[Warn] Error processing dHash for ${cloudinaryUrl}:`, err.message);
+    console.warn(`[Warn] Error processing 256-bit dHash for ${cloudinaryUrl}:`, err.message);
     return null;
   }
 }
@@ -218,32 +232,36 @@ async function main() {
 
   console.log(`Discovered ${uniqueUrls.size} unique Cloudinary media assets across database.`);
 
-  const results: Array<{ phash: string; cloudinary_url: string }> = [];
+  const results: Array<{ phash: string; cloudinary_url: string; aspectRatio: number }> = [];
   let processed = 0;
 
   for (const url of uniqueUrls) {
     processed++;
     process.stdout.write(`[${processed}/${uniqueUrls.size}] Processing: ${url.slice(0, 70)}... `);
 
-    const phash = await fetchImageDHash(url);
-    if (!phash) {
+    const fp = await fetchImageFingerprint(url);
+    if (!fp) {
       console.log('FAILED');
       continue;
     }
 
-    console.log(`-> dHash: ${phash}`);
-    results.push({ phash, cloudinary_url: url });
+    console.log(`-> 256-bit dHash: ${fp.phash.slice(0, 16)}... (AR: ${fp.aspectRatio})`);
+    results.push({ phash: fp.phash, cloudinary_url: url, aspectRatio: fp.aspectRatio });
   }
 
-  console.log(`\nSuccessfully computed hashes for ${results.length} images.`);
+  console.log(`\nSuccessfully computed 256-bit hashes for ${results.length} images.`);
 
   if (isDryRun) {
     console.log('[Dry-Run] Skipped writing to public.media_assets.');
     return;
   }
 
+  // Clear any legacy 64-bit entries (16 hex chars)
+  console.log('Clearing old 64-bit entries from public.media_assets...');
+  await supabase.from('media_assets').delete().neq('phash', '');
+
   // 2. Insert into public.media_assets
-  console.log('Inserting records into public.media_assets...');
+  console.log('Inserting 256-bit records into public.media_assets...');
   let inserted = 0;
   for (const item of results) {
     const { error: insertErr } = await supabase
@@ -252,9 +270,10 @@ async function main() {
         {
           phash: item.phash,
           cloudinary_url: item.cloudinary_url,
+          aspect_ratio: item.aspectRatio,
           created_at: new Date().toISOString()
         },
-        { onConflict: 'phash', ignoreDuplicates: true }
+        { onConflict: 'phash' }
       );
 
     if (insertErr) {
@@ -264,7 +283,7 @@ async function main() {
     }
   }
 
-  console.log(`\nMigration Complete: ${inserted} assets recorded into public.media_assets.`);
+  console.log(`\nMigration Complete: ${inserted} 256-bit assets recorded into public.media_assets.`);
 }
 
 main().catch(err => {

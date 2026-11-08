@@ -15,6 +15,7 @@ export interface PhashRecord {
   phash: string;
   cloudinaryUrl: string;
   createdAt: number;
+  aspectRatio?: number;
 }
 
 let cachedDbPromise: Promise<IDBDatabase> | null = null;
@@ -144,7 +145,7 @@ export const localMediaStore: LocalMediaStoreAPI = {
     });
   },
 
-  async savePhashMapping(phash: string, cloudinaryUrl: string): Promise<void> {
+  async savePhashMapping(phash: string, cloudinaryUrl: string, aspectRatio?: number): Promise<void> {
     if (!phash || !cloudinaryUrl) return;
     const db = await getDatabase();
     return new Promise((resolve, reject) => {
@@ -153,6 +154,7 @@ export const localMediaStore: LocalMediaStoreAPI = {
       const record: PhashRecord = {
         phash,
         cloudinaryUrl,
+        aspectRatio,
         createdAt: Date.now()
       };
       const request = store.put(record);
@@ -176,7 +178,7 @@ export const localMediaStore: LocalMediaStoreAPI = {
     });
   },
 
-  async getAllPhashMappings(): Promise<Array<{ phash: string; cloudinaryUrl: string }>> {
+  async getAllPhashMappings(): Promise<Array<{ phash: string; cloudinaryUrl: string; aspectRatio?: number }>> {
     const db = await getDatabase();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(PHASH_STORE_NAME, 'readonly');
@@ -184,7 +186,7 @@ export const localMediaStore: LocalMediaStoreAPI = {
       const request = store.getAll();
       request.onsuccess = () => {
         const results = (request.result as PhashRecord[]) || [];
-        resolve(results.map(r => ({ phash: r.phash, cloudinaryUrl: r.cloudinaryUrl })));
+        resolve(results.map(r => ({ phash: r.phash, cloudinaryUrl: r.cloudinaryUrl, aspectRatio: r.aspectRatio })));
       };
       request.onerror = () => reject(request.error);
     });

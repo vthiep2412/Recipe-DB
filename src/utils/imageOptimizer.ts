@@ -160,22 +160,31 @@ export async function transcodeToAvifBlob(
   }
 }
 
+export interface ImageFingerprint {
+  phash: string; // 64-character hex string representing 256-bit dHash
+  aspectRatio: number; // e.g. 1.778 for 16:9, 1.000 for square
+}
+
 /**
- * Computes a 64-bit difference hash (dHash) from an image source.
+ * Computes a 256-bit difference hash (dHash) and aspect ratio from an image source.
  * Difference Hash is format-agnostic (yields near-identical hashes across JPG, PNG, WebP, AVIF)
  * and resistant to minor scaling or compression artifacts.
- * Returns a 16-character hexadecimal string.
+ * Returns a 64-character hexadecimal string and aspect ratio.
  */
-export async function computeImageDHash(source: File | Blob): Promise<string | null> {
+export async function computeImageDHash(source: File | Blob): Promise<ImageFingerprint | null> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
   }
 
   let imgBitmap: ImageBitmap | HTMLImageElement | null = null;
+  let sourceWidth = 0;
+  let sourceHeight = 0;
 
   try {
     if (typeof createImageBitmap === 'function') {
       imgBitmap = await createImageBitmap(source);
+      sourceWidth = imgBitmap.width;
+      sourceHeight = imgBitmap.height;
     } else {
       const url = URL.createObjectURL(source);
       imgBitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -185,38 +194,46 @@ export async function computeImageDHash(source: File | Blob): Promise<string | n
         img.src = url;
       });
       URL.revokeObjectURL(imgBitmap.src);
+      sourceWidth = imgBitmap.naturalWidth;
+      sourceHeight = imgBitmap.naturalHeight;
     }
 
-    // 9 columns x 8 rows to compute 8 x 8 = 64 horizontal gradient bits
+    if (!sourceWidth || !sourceHeight) {
+      return null;
+    }
+
+    const aspectRatio = Number((sourceWidth / sourceHeight).toFixed(3));
+
+    // 17 columns x 16 rows to compute 16 x 16 = 256 horizontal gradient bits
     const canvas = document.createElement('canvas');
-    canvas.width = 9;
-    canvas.height = 8;
+    canvas.width = 17;
+    canvas.height = 16;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    ctx.drawImage(imgBitmap, 0, 0, 9, 8);
-    const imgData = ctx.getImageData(0, 0, 9, 8).data;
+    ctx.drawImage(imgBitmap, 0, 0, 17, 16);
+    const imgData = ctx.getImageData(0, 0, 17, 16).data;
 
     if ('close' in imgBitmap && typeof imgBitmap.close === 'function') {
       imgBitmap.close();
     }
 
-    // Compute luminance for each of the 72 pixels
-    const lums: number[] = new Array(72);
-    for (let i = 0; i < 72; i++) {
+    // Compute luminance for each of the 272 pixels (17 x 16)
+    const lums: number[] = new Array(272);
+    for (let i = 0; i < 272; i++) {
       const offset = i * 4;
       // Standard Rec. 601 luma formula
       lums[i] = 0.299 * imgData[offset] + 0.587 * imgData[offset + 1] + 0.114 * imgData[offset + 2];
     }
 
-    // 64 bit comparisons (8 rows, 8 columns each: left > right)
+    // 256 bit comparisons (16 rows, 16 columns each: left > right)
     let hexResult = '';
     let nibble = 0;
     let bitCount = 0;
 
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
-        const leftIdx = row * 9 + col;
+    for (let row = 0; row < 16; row++) {
+      for (let col = 0; col < 16; col++) {
+        const leftIdx = row * 17 + col;
         const rightIdx = leftIdx + 1;
         const bit = lums[leftIdx] > lums[rightIdx] ? 1 : 0;
 
@@ -231,32 +248,33 @@ export async function computeImageDHash(source: File | Blob): Promise<string | n
       }
     }
 
-    return hexResult.padStart(16, '0');
+    return {
+      phash: hexResult.padStart(64, '0'),
+      aspectRatio
+    };
   } catch (err) {
-    console.warn('[imageOptimizer] Failed to compute dHash', err);
+    console.warn('[imageOptimizer] Failed to compute 256-bit dHash', err);
     return null;
   }
 }
 
 /**
- * Computes the Hamming distance (number of differing bits) between two 16-char hex dHashes.
- * A distance <= 3 out of 64 bits corresponds to ~95%+ visual similarity.
+ * Computes the Hamming distance (number of differing bits) between two 64-char hex dHashes (256 bits).
+ * A distance <= 8 out of 256 bits corresponds to ~97%+ visual similarity.
  */
 export function computeHammingDistance(hexA: string, hexB: string): number {
-  if (!hexA || !hexB || hexA.length !== hexB.length) return 64;
+  if (!hexA || !hexB || hexA.length !== hexB.length) return 256;
 
   let distance = 0;
   for (let i = 0; i < hexA.length; i++) {
     const valA = parseInt(hexA[i], 16);
     const valB = parseInt(hexB[i], 16);
-    if (isNaN(valA) || isNaN(valB)) return 64;
-
+    if (isNaN(valA) || isNaN(valB)) return 256;
     let xor = valA ^ valB;
     while (xor > 0) {
       distance += xor & 1;
       xor >>= 1;
     }
   }
-
   return distance;
 }
