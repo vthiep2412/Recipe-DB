@@ -9,7 +9,7 @@ import type {
 import { exportStudioWorkspaceToRecipeGraph } from '../parser/orchestrationParser';
 import { generateFablang } from '../parser/fablangGenerator';
 import { recipeGraphToRecipeJSON } from '../parser/graphAdapter';
-import { getAllRecipes } from '../recipes';
+import { getAllRecipes, invalidateRecipeCache } from '../recipes';
 import { supabase } from './supabaseClient';
 import { authStore } from './authStore';
 import { localMediaStore } from './localMediaStore';
@@ -298,9 +298,14 @@ export class LocalRecipeStorageProvider implements RecipeStorageProvider {
     const jsonString = JSON.stringify(finalData, null, 2);
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (typeof __DEV_SAVE_TOKEN__ !== 'undefined' && __DEV_SAVE_TOKEN__) {
+        headers['x-dev-token'] = __DEV_SAVE_TOKEN__;
+      }
+
       const res = await fetch('/api/save-recipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: jsonString
       });
 
@@ -563,6 +568,7 @@ export class SupabaseRecipeStorageProvider
         }
 
         await localMediaStore.clearWorkspace(workspace.id);
+        invalidateRecipeCache();
         return { ok: true, id: existingRecipe.id, slug: finalSlug || existingRecipe.slug };
       }
 
@@ -606,6 +612,7 @@ export class SupabaseRecipeStorageProvider
       }
 
       await localMediaStore.clearWorkspace(workspace.id);
+      invalidateRecipeCache();
 
       return { ok: true, id: recipeData.id, slug: finalSlug };
     } catch (err: any) {

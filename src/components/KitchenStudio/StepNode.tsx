@@ -418,6 +418,15 @@ export function StepNode({
     syncDomToState();
   };
 
+  const handleEditorPaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (text) {
+      document.execCommand('insertText', false, text);
+      syncDomToState();
+    }
+  };
+
   const handleEditorKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -976,6 +985,7 @@ export function StepNode({
           className="step-inline-editor"
           data-placeholder="Write step instruction prose here..."
           onInput={handleEditorInput}
+          onPaste={handleEditorPaste}
           onKeyDown={handleEditorKeyDown}
           onMouseDown={handleEditorMouseDown}
           onClick={handleEditorClick}

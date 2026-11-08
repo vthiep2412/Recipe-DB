@@ -8,6 +8,7 @@ import { ConfirmModal } from '../ConfirmModal';
 import { authStore } from '../../services/authStore';
 import { recipeStorageService } from '../../services/recipeStorageService';
 import { WorkspaceStorageService } from '../../services/workspaceStorageService';
+import { localMediaStore } from '../../services/localMediaStore';
 
 interface StudioHubProps {
   onOpenWorkspace: (workspaceId: string) => void;
@@ -93,8 +94,10 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
 
   const handleConfirmDeleteWorkspace = () => {
     if (!workspaceToDelete) return;
-    const updated = workspaces.filter((w) => w.id !== workspaceToDelete.id);
+    const wsId = workspaceToDelete.id;
+    const updated = workspaces.filter((w) => w.id !== wsId);
     saveWorkspaces(updated);
+    void localMediaStore.clearWorkspace(wsId);
     setWorkspaceToDelete(null);
   };
 

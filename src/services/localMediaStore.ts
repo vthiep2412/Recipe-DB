@@ -122,6 +122,7 @@ export const localMediaStore: LocalMediaStoreAPI = {
   },
 
   async clearWorkspace(workspaceId: string): Promise<void> {
+    if (!workspaceId) return;
     const db = await getDatabase();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -132,7 +133,16 @@ export const localMediaStore: LocalMediaStoreAPI = {
         const cursor = request.result;
         if (cursor) {
           const keyStr = String(cursor.key);
-          if (keyStr.includes(workspaceId)) {
+          const rawKey = keyStr.replace(/^idb:/, '');
+          const isMatch =
+            rawKey === workspaceId ||
+            rawKey.startsWith(`${workspaceId}:`) ||
+            rawKey.startsWith(`${workspaceId}_`) ||
+            rawKey.startsWith(`${workspaceId}/`) ||
+            keyStr.startsWith(`ws_${workspaceId}_`) ||
+            keyStr.startsWith(`ws:${workspaceId}:`);
+
+          if (isMatch) {
             cursor.delete();
           }
           cursor.continue();

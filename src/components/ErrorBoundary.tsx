@@ -10,18 +10,6 @@ export interface ErrorReport {
   url?: string;
 }
 
-type ErrorSink = (report: ErrorReport) => void;
-
-const registeredSinks: ErrorSink[] = [];
-
-export function registerErrorSink(sink: ErrorSink): () => void {
-  registeredSinks.push(sink);
-  return () => {
-    const idx = registeredSinks.indexOf(sink);
-    if (idx !== -1) registeredSinks.splice(idx, 1);
-  };
-}
-
 function generateCorrelationId(): string {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -72,14 +60,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     console.error(`[ErrorBoundary] Incident ${correlationId}:`, error, errorInfo);
 
     this.props.onCatch?.(report);
-
-    for (const sink of registeredSinks) {
-      try {
-        sink(report);
-      } catch (sinkErr) {
-        console.error('Error in registered error sink:', sinkErr);
-      }
-    }
   }
 
   handleReload = () => {

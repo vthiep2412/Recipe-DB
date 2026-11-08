@@ -46,6 +46,15 @@ function ensurePurify(): any {
   return purifyInstance;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Universal HTML Sanitizer using DOMPurify
  * Defends against XSS, mXSS, and namespace injection.
@@ -55,14 +64,8 @@ export function sanitizeHtml(dirty?: string | null, profile: SanitizeProfile = '
 
   const purify = ensurePurify();
   if (!purify) {
-    // Non-browser / SSR environment fallback
-    return dirty
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-      .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-      .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-      .replace(/\s*on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-      .replace(/<a\b(?![^>]*\brel=)([^>]*)>/gi, '<a rel="noopener noreferrer" target="_blank"$1>');
+    // Non-browser / SSR environment fallback: fail closed by HTML-escaping all content
+    return escapeHtml(dirty);
   }
 
   let allowedTags = RECIPE_ALLOWED_TAGS;

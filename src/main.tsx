@@ -93,10 +93,17 @@ export function App() {
   const mainRef = useRef<HTMLElement>(null);
 
   const [recipes, setRecipes] = useState<RecipeJSON[]>([]);
-  const [isRecipesLoading, setIsRecipesLoading] = useState(true);
+  const [isRecipesLoading, setIsRecipesLoading] = useState(false);
 
+  const isSearchRoute = currentPath === '/' || currentPath === '';
+
+  // Route-scoped catalog fetch: only query catalog when search page is active
   useEffect(() => {
+    if (!isSearchRoute) return;
+    if (recipes.length > 0) return;
+
     let isMounted = true;
+    setIsRecipesLoading(true);
     getAllRecipes()
       .then((data) => {
         if (!isMounted) return;
@@ -110,7 +117,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isSearchRoute, recipes.length]);
 
   useEffect(() => {
     const handlePopState = () => {

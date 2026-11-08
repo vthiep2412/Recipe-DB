@@ -556,15 +556,36 @@ export function KitchenCanvas({
     }
   };
 
+  const panRafRef = useRef<number | null>(null);
+  const pendingPanRef = useRef<{ x: number; y: number } | null>(null);
+
   const handleMouseMove = (e: MouseEvent) => {
     if (!isPanning) return;
-    setPan({
+    pendingPanRef.current = {
       x: e.clientX - startPan.x,
       y: e.clientY - startPan.y
-    });
+    };
+    if (panRafRef.current === null) {
+      panRafRef.current = requestAnimationFrame(() => {
+        panRafRef.current = null;
+        if (pendingPanRef.current) {
+          setPan(pendingPanRef.current);
+          panRef.current = pendingPanRef.current;
+        }
+      });
+    }
   };
 
   const handleMouseUp = () => {
+    if (panRafRef.current !== null) {
+      cancelAnimationFrame(panRafRef.current);
+      panRafRef.current = null;
+    }
+    if (pendingPanRef.current) {
+      setPan(pendingPanRef.current);
+      panRef.current = pendingPanRef.current;
+      pendingPanRef.current = null;
+    }
     setIsPanning(false);
   };
 
@@ -624,59 +645,106 @@ export function KitchenCanvas({
   }
 
   const [nodeSizes, setNodeSizes] = useState<Record<string, NodeSize>>({});
-  const observerMapRef = useRef<Map<string, ResizeObserver>>(new Map());
+  const sharedObserverRef = useRef<ResizeObserver | null>(null);
+  const observedNodesRef = useRef<Map<string, HTMLElement>>(new Map());
+  const pendingNodeSizesRef = useRef<Record<string, NodeSize>>({});
+  const sizeRafRef = useRef<number | null>(null);
   const restingLayoutRef = useRef<{ baseColumnX: Record<string, number>; slotWidths: Record<string, number> }>({ baseColumnX: {}, slotWidths: {} });
 
   const registerNodeRef = (id: string, el: HTMLElement | null) => {
+    if (!sharedObserverRef.current) {
+      sharedObserverRef.current = new ResizeObserver(entries => {
+        let hasChanges = false;
+        for (const entry of entries) {
+          const target = entry.target as HTMLElement;
+          const nodeId = target.dataset.studioNodeId;
+          if (!nodeId) continue;
+
+          const borderBox = entry.borderBoxSize?.[0];
+          const w = Math.round(borderBox?.inlineSize || target.offsetWidth || 0);
+          const h = Math.round(borderBox?.blockSize || target.offsetHeight || 0);
+
+          if (w > 0 && h > 0) {
+            const currentPending = pendingNodeSizesRef.current[nodeId];
+            if (!currentPending || Math.abs(currentPending.width - w) >= 1 || Math.abs(currentPending.height - h) >= 1) {
+              pendingNodeSizesRef.current[nodeId] = { width: w, height: h };
+              hasChanges = true;
+            }
+          }
+        }
+
+        if (hasChanges && sizeRafRef.current === null) {
+          sizeRafRef.current = requestAnimationFrame(() => {
+            sizeRafRef.current = null;
+            const updates = { ...pendingNodeSizesRef.current };
+            pendingNodeSizesRef.current = {};
+            setNodeSizes(prev => {
+              let changed = false;
+              const next = { ...prev };
+              for (const [key, val] of Object.entries(updates)) {
+                const curr = next[key];
+                if (!curr || Math.abs(curr.width - val.width) >= 1 || Math.abs(curr.height - val.height) >= 1) {
+                  next[key] = val;
+                  changed = true;
+                }
+              }
+              return changed ? next : prev;
+            });
+          });
+        }
+      });
+    }
+
+    const prevCard = observedNodesRef.current.get(id);
+
     if (!el) {
-      const existing = observerMapRef.current.get(id);
-      if (existing) {
-        existing.disconnect();
-        observerMapRef.current.delete(id);
+      if (prevCard && sharedObserverRef.current) {
+        sharedObserverRef.current.unobserve(prevCard);
+        observedNodesRef.current.delete(id);
       }
       return;
     }
 
     const nodeCard = (el.querySelector('.studio-canvas-node, .section-node-card') as HTMLElement) || el;
-    const initialW = Math.round(nodeCard.offsetWidth);
-    const initialH = Math.round(nodeCard.offsetHeight);
-    if (initialW > 0 && initialH > 0) {
-      setNodeSizes(prev => {
-        const curr = prev[id];
-        if (curr && Math.abs(curr.width - initialW) < 1 && Math.abs(curr.height - initialH) < 1) {
-          return prev;
-        }
-        return { ...prev, [id]: { width: initialW, height: initialH } };
-      });
+    nodeCard.dataset.studioNodeId = id;
+
+    if (prevCard && prevCard !== nodeCard && sharedObserverRef.current) {
+      sharedObserverRef.current.unobserve(prevCard);
     }
 
-    if (!observerMapRef.current.has(id)) {
-      const observer = new ResizeObserver(entries => {
-        for (const entry of entries) {
-          const target = entry.target as HTMLElement;
-          const borderBox = entry.borderBoxSize?.[0];
-          const w = Math.round(borderBox?.inlineSize || target.offsetWidth || 0);
-          const h = Math.round(borderBox?.blockSize || target.offsetHeight || 0);
-          if (w > 0 && h > 0) {
-            setNodeSizes(prev => {
-              const curr = prev[id];
-              if (curr && Math.abs(curr.width - w) < 1 && Math.abs(curr.height - h) < 1) {
-                return prev;
-              }
-              return { ...prev, [id]: { width: w, height: h } };
-            });
+    if (prevCard !== nodeCard) {
+      observedNodesRef.current.set(id, nodeCard);
+      sharedObserverRef.current.observe(nodeCard);
+
+      const initialW = Math.round(nodeCard.offsetWidth);
+      const initialH = Math.round(nodeCard.offsetHeight);
+      if (initialW > 0 && initialH > 0) {
+        setNodeSizes(prev => {
+          const curr = prev[id];
+          if (curr && Math.abs(curr.width - initialW) < 1 && Math.abs(curr.height - initialH) < 1) {
+            return prev;
           }
-        }
-      });
-      observer.observe(nodeCard);
-      observerMapRef.current.set(id, observer);
+          return { ...prev, [id]: { width: initialW, height: initialH } };
+        });
+      }
     }
   };
 
   useEffect(() => {
     return () => {
-      observerMapRef.current.forEach(obs => obs.disconnect());
-      observerMapRef.current.clear();
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      if (sizeRafRef.current !== null) {
+        cancelAnimationFrame(sizeRafRef.current);
+        sizeRafRef.current = null;
+      }
+      if (sharedObserverRef.current) {
+        sharedObserverRef.current.disconnect();
+        sharedObserverRef.current = null;
+      }
+      observedNodesRef.current.clear();
     };
   }, []);
 

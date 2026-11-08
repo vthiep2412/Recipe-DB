@@ -133,20 +133,27 @@ export async function flushPendingSync(): Promise<void> {
   // Ensure local store is flushed as well
   commitLocalStorage();
 
-  // Snapshot dirty collections
+  // Snapshot dirty collections without premature clearing
   const pendingProgress = Array.from(dirtyProgress);
-  dirtyProgress.clear();
-
   const syncSettings = dirtySettings;
-  dirtySettings = false;
-
   const pendingBookmarks = new Map(dirtyBookmarks);
-  dirtyBookmarks.clear();
+
+  const handleAuthFailure = () => {
+    // Only sign out and clear caches if the current session still matches the initiator
+    if (getUserId() === userId) {
+      clearCaches();
+      void authStore.signOut();
+    }
+  };
 
   // 1. Sync Recipe Progress
   for (const recipeId of pendingProgress) {
+    if (getUserId() !== userId) return;
     const item = progressCache.get(recipeId);
-    if (!item) continue;
+    if (!item) {
+      dirtyProgress.delete(recipeId);
+      continue;
+    }
     try {
       const { error } = await supabase.from('user_recipe_progress').upsert({
         user_id: userId,
@@ -162,24 +169,23 @@ export async function flushPendingSync(): Promise<void> {
 
       if (error) {
         if (isAuthError(error)) {
-          clearCaches();
-          void authStore.signOut();
+          handleAuthFailure();
           return;
         }
-        dirtyProgress.add(recipeId);
+      } else {
+        dirtyProgress.delete(recipeId);
       }
     } catch (err) {
       if (isAuthError(err)) {
-        clearCaches();
-        void authStore.signOut();
+        handleAuthFailure();
         return;
       }
-      dirtyProgress.add(recipeId);
     }
   }
 
   // 2. Sync Settings
   if (syncSettings && settingsCache) {
+    if (getUserId() !== userId) return;
     try {
       const { error } = await supabase.from('user_settings').upsert({
         user_id: userId,
@@ -190,24 +196,23 @@ export async function flushPendingSync(): Promise<void> {
 
       if (error) {
         if (isAuthError(error)) {
-          clearCaches();
-          void authStore.signOut();
+          handleAuthFailure();
           return;
         }
-        dirtySettings = true;
+      } else {
+        dirtySettings = false;
       }
     } catch (err) {
       if (isAuthError(err)) {
-        clearCaches();
-        void authStore.signOut();
+        handleAuthFailure();
         return;
       }
-      dirtySettings = true;
     }
   }
 
   // 3. Sync Bookmarks
   for (const [recipeId, action] of pendingBookmarks) {
+    if (getUserId() !== userId) return;
     try {
       const query =
         action === 'add'
@@ -228,19 +233,19 @@ export async function flushPendingSync(): Promise<void> {
       const { error } = await query;
       if (error) {
         if (isAuthError(error)) {
-          clearCaches();
-          void authStore.signOut();
+          handleAuthFailure();
           return;
         }
-        dirtyBookmarks.set(recipeId, action);
+      } else {
+        if (dirtyBookmarks.get(recipeId) === action) {
+          dirtyBookmarks.delete(recipeId);
+        }
       }
     } catch (err) {
       if (isAuthError(err)) {
-        clearCaches();
-        void authStore.signOut();
+        handleAuthFailure();
         return;
       }
-      dirtyBookmarks.set(recipeId, action);
     }
   }
 }
@@ -297,6 +302,18 @@ export async function hydrateRecipeProgress(recipeId: string): Promise<UserRecip
 
     if (error || !data) {
       return (getRecipeProgress(recipeId) as UserRecipeProgress) || null;
+    }
+
+    // Defensive conflict check: if local progress has newer timestamp, retain local and keep dirty
+    const local = getRecipeProgress(recipeId);
+    if (local?.clientUpdatedAt && data.client_updated_at) {
+      const localTime = new Date(local.clientUpdatedAt).getTime();
+      const cloudTime = new Date(data.client_updated_at).getTime();
+      if (!isNaN(localTime) && !isNaN(cloudTime) && localTime > cloudTime) {
+        dirtyProgress.add(recipeId);
+        scheduleCloudSync();
+        return local as UserRecipeProgress;
+      }
     }
 
     const progress: UserRecipeProgress = {

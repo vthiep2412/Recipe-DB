@@ -14,18 +14,12 @@ interface KitchenStudioProps {
 }
 
 export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
-  const authState = authStore.getState();
-  if (authState.isAuthLoading) {
-    return (
-      <div className="page-container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
-        <p style={{ color: 'var(--text-muted)' }}>Checking authorization...</p>
-      </div>
-    );
-  }
-  if (!authState.user) {
-    return null;
-  }
+  const [authState, setAuthState] = useState(authStore.getState());
   const [activeWorkspace, setActiveWorkspace] = useState<StudioWorkspace | null>(null);
+
+  useEffect(() => {
+    return authStore.subscribe(setAuthState);
+  }, []);
 
   const isMakingRecipe = currentPath.startsWith('/kitchen-studio/making-recipe/');
   const activeWorkspaceId = isMakingRecipe
@@ -33,10 +27,14 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
     : null;
 
   useEffect(() => {
-    if (activeWorkspaceId) {
-      let isCancelled = false;
-      WorkspaceStorageService.loadWorkspaces()
-        .then((list) => {
+    if (!authState.user || !activeWorkspaceId) {
+      setActiveWorkspace(null);
+      return;
+    }
+
+    let isCancelled = false;
+    WorkspaceStorageService.loadWorkspaces()
+      .then((list) => {
           if (isCancelled) return;
           const found = list.find((w) => w.id === activeWorkspaceId);
           if (found) {
@@ -110,10 +108,7 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
       return () => {
         isCancelled = true;
       };
-    } else {
-      setActiveWorkspace(null);
-    }
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, authState.user]);
 
   const handleUpdateWorkspace = (updated: StudioWorkspace): boolean => {
     const timestamped: StudioWorkspace = {
@@ -148,6 +143,18 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
     }
     return true;
   };
+
+  if (authState.isAuthLoading) {
+    return (
+      <div className="page-container" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+        <p style={{ color: 'var(--text-muted)' }}>Checking authorization...</p>
+      </div>
+    );
+  }
+
+  if (!authState.user) {
+    return null;
+  }
 
   if (isMakingRecipe && activeWorkspace) {
     return (

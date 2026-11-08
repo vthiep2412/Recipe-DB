@@ -70,17 +70,42 @@ export function getOptimizedImageUrl(
   return `${url.slice(0, uploadIndex)}/upload/${targetTransform}/${afterUpload}`;
 }
 
+interface UploadSignature {
+  signature: string;
+  timestamp: number;
+  apiKey: string;
+  cloudName: string;
+  folder: string;
+}
+
+async function requestUploadSignature(
+  folder: 'recipes/images' | 'recipes/videos'
+): Promise<UploadSignature | null> {
+  try {
+    const res = await fetch('/api/sign-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder })
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json();
+    if (data?.signature && data?.timestamp && data?.apiKey && data?.cloudName) {
+      return data as UploadSignature;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function uploadAsset(
   source: Blob | string,
   type: CloudinaryAssetType,
   folder: 'recipes/images' | 'recipes/videos'
 ): Promise<CloudinaryResult> {
-  if (!CLOUD_NAME || !UPLOAD_PRESET) {
-    throw new Error('Cloudinary credentials not configured in environment');
-  }
-
   const resourceType = type === 'video' ? 'video' : 'image';
-  const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
   const form = new FormData();
 
   if (typeof source === 'string') {
@@ -93,11 +118,29 @@ export async function uploadAsset(
     form.append('file', source, `upload.${ext}`);
   }
 
-  form.append('upload_preset', UPLOAD_PRESET);
-  if (API_KEY) {
-    form.append('api_key', API_KEY);
+  // Attempt serverless signed upload first
+  const signInfo = await requestUploadSignature(folder);
+
+  let targetCloudName = CLOUD_NAME;
+  if (signInfo) {
+    targetCloudName = signInfo.cloudName;
+    form.append('api_key', signInfo.apiKey);
+    form.append('timestamp', String(signInfo.timestamp));
+    form.append('signature', signInfo.signature);
+    form.append('folder', signInfo.folder);
+  } else {
+    // Fallback to configured client upload preset
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      throw new Error('Cloudinary credentials not configured in environment');
+    }
+    form.append('upload_preset', UPLOAD_PRESET);
+    if (API_KEY) {
+      form.append('api_key', API_KEY);
+    }
+    form.append('folder', folder);
   }
-  form.append('folder', folder);
+
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${targetCloudName}/${resourceType}/upload`;
 
   const res = await fetch(uploadUrl, {
     method: 'POST',

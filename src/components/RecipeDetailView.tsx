@@ -38,13 +38,6 @@ export function isSafeUrl(url?: string): boolean {
   return /^https?:\/\/|^mailto:/i.test(url.trim());
 }
 
-export function _legacyUrl(trimmed: string) {
-  return (
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('mailto:')
-  );
-}
 
 function sanitizeMarkdown(raw?: string): string {
   if (!raw) return '';
@@ -445,18 +438,23 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     return `${pad(m)}:${pad(s)}`;
   };
 
+  const hasRunningTimers = timers.some(t => !t.isPaused && !t.isFinished && t.remainingSeconds > 0);
+
   useEffect(() => {
-    const hasRunning = timers.some(t => !t.isPaused && !t.isFinished && t.remainingSeconds > 0);
-    if (!hasRunning) return;
+    if (!hasRunningTimers) return;
 
     const tick = () => {
       const now = Date.now();
       setTimers(prev => {
         let triggerAlarm = false;
+        let changed = false;
         const next = prev.map(t => {
           if (t.isPaused || t.isFinished) return t;
           const endsAt = t.endsAt || (now + t.remainingSeconds * 1000);
           const nextSec = Math.max(0, Math.ceil((endsAt - now) / 1000));
+          if (nextSec !== t.remainingSeconds || t.endsAt !== endsAt) {
+            changed = true;
+          }
           if (nextSec <= 0) {
             triggerAlarm = true;
             return { ...t, remainingSeconds: 0, isFinished: true, endsAt: undefined };
@@ -467,7 +465,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         if (triggerAlarm) {
           startAlarmLoop();
         }
-        return next;
+        return changed ? next : prev;
       });
     };
 
@@ -489,7 +487,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         document.removeEventListener('visibilitychange', handleVisibility);
       }
     };
-  }, [timers]);
+  }, [hasRunningTimers]);
 
   const finishedTimers = timers.filter(t => t.isFinished);
 
@@ -626,29 +624,56 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   // Screen Wake Lock automatically requested on mount
   useEffect(() => {
     let wakeLockSentinel: any = null;
-    const requestLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
+    let isMounted = true;
+
+    const releaseLock = async () => {
+      if (wakeLockSentinel && !wakeLockSentinel.released) {
+        try {
+          await wakeLockSentinel.release();
+        } catch {
+          // ignore
         }
-      } catch {
-        // Fallback if unsupported or denied
+        wakeLockSentinel = null;
       }
     };
+
+    const requestLock = async () => {
+      if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+      try {
+        if (wakeLockSentinel && !wakeLockSentinel.released) {
+          return; // Already active
+        }
+        const sentinel = await (navigator as any).wakeLock.request('screen');
+        if (!isMounted) {
+          sentinel.release().catch(() => {});
+          return;
+        }
+        wakeLockSentinel = sentinel;
+        sentinel.addEventListener('release', () => {
+          if (wakeLockSentinel === sentinel) {
+            wakeLockSentinel = null;
+          }
+        }, { once: true });
+      } catch {
+        // Fallback if unsupported, denied, or inactive document
+      }
+    };
+
     requestLock();
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         requestLock();
+      } else {
+        releaseLock();
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      isMounted = false;
       document.removeEventListener('visibilitychange', handleVisibility);
-      if (wakeLockSentinel) {
-        wakeLockSentinel.release().catch(() => {});
-      }
+      releaseLock();
     };
   }, []);
 

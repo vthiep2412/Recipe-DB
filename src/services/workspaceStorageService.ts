@@ -198,21 +198,15 @@ export class WorkspaceStorageService {
     try {
       if (user) {
         const key = await this.getUserEncryptionKey(user.id);
-        if (key) {
-          try {
-            const encrypted = await WorkspaceCryptoService.encryptData(json, key);
-            localStorage.setItem(targetKey, encrypted);
-            return;
-          } catch (cryptoErr: any) {
-            if (cryptoErr?.name === 'QuotaExceededError' || cryptoErr?.code === 22) {
-              throw cryptoErr;
-            }
-            // If encryption failed unexpectedly, fallback to plaintext save
-          }
+        if (!key) {
+          throw new Error('Encryption key unavailable for authenticated user; refusing plaintext fallback.');
         }
+        const encrypted = await WorkspaceCryptoService.encryptData(json, key);
+        localStorage.setItem(targetKey, encrypted);
+        return;
       }
 
-      // Guest or fallback save
+      // Guest mode only (unauthenticated drafts)
       localStorage.setItem(targetKey, json);
     } catch (err: any) {
       const isQuota = err?.name === 'QuotaExceededError' || err?.code === 22;
@@ -221,6 +215,7 @@ export class WorkspaceStorageService {
       } else {
         console.error('[WorkspaceStorageService] Failed to persist workspaces to localStorage:', err);
       }
+      throw err;
     }
   }
 }

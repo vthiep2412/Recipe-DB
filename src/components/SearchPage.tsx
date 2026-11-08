@@ -26,7 +26,16 @@ function fuzzyMatch(text: string, query: string): boolean {
 
 export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // 150ms debounce for search input to prevent per-keystroke filter churn
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
   const [tagQuery, setTagQuery] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMenuClosing, setIsMenuClosing] = useState(false);
@@ -145,8 +154,8 @@ export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
 
   // Filter recipes: match title query and ensure all active tags are present
   const filteredRecipes = useMemo(() => recipes.filter(r => {
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
+    if (debouncedSearchTerm.trim()) {
+      const term = debouncedSearchTerm.toLowerCase();
       if (!r.title.toLowerCase().includes(term)) {
         return false;
       }
@@ -161,7 +170,7 @@ export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
     }
 
     return true;
-  }), [recipes, searchTerm, selectedTags]);
+  }), [recipes, debouncedSearchTerm, selectedTags]);
 
   const availableFilteredTags = useMemo(() => allTags.filter(t => fuzzyMatch(t, tagQuery)), [allTags, tagQuery]);
 
@@ -368,12 +377,24 @@ export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
                 }}
               >
                 {recipe.image && (
-                  <img
-                    src={getOptimizedImageUrl(recipe.image, 'card')}
-                    alt={recipe.title}
-                    className="recipe-card-img"
-                    loading="lazy"
-                  />
+                  <div
+                    className="recipe-card-media"
+                    style={{
+                      aspectRatio: '4 / 3',
+                      width: '100%',
+                      overflow: 'hidden',
+                      borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
+                    }}
+                  >
+                    <img
+                      src={getOptimizedImageUrl(recipe.image, 'card')}
+                      alt={recipe.title}
+                      className="recipe-card-img"
+                      loading="lazy"
+                      decoding="async"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
                 )}
                 <div className="recipe-card-content">
                   <span className={`badge ${diffClass}`} style={{ alignSelf: 'flex-start' }}>

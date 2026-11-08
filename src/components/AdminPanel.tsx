@@ -16,6 +16,7 @@ import { renderAppMarkdown } from '../utils/markdown';
 import { toast } from 'sonner';
 import { authStore } from '../services/authStore';
 import { adminService } from '../services/adminService';
+import { invalidateRecipeCache } from '../recipes';
 import { ConfirmModal } from './ConfirmModal';
 import type {
   CloudRecipe,
@@ -45,18 +46,21 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
   const [recipesSearch, setRecipesSearch] = useState('');
   const [recipesFilter, setRecipesFilter] = useState<'all' | CloudRecipeStatus>('all');
   const [recipesLoading, setRecipesLoading] = useState(false);
+  const [recipesError, setRecipesError] = useState<string | null>(null);
 
   // Users Tab State
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [usersSearch, setUsersSearch] = useState('');
   const [usersFilter, setUsersFilter] = useState<'all' | UserRole>('all');
   const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
 
   // Applications Tab State
   const [applications, setApplications] = useState<CreatorApplication[]>([]);
   const [appsSearch, setAppsSearch] = useState('');
   const [appsFilter, setAppsFilter] = useState<'all' | CreatorApplicationStatus>('all');
   const [appsLoading, setAppsLoading] = useState(false);
+  const [appsError, setAppsError] = useState<string | null>(null);
   const [pitchViewModes, setPitchViewModes] = useState<Record<string, 'rendered' | 'raw'>>({});
 
   // Modal confirmation state
@@ -103,31 +107,34 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
     }
     if (activeTab === 'recipes') {
       setRecipesLoading(true);
+      setRecipesError(null);
       try {
         const list = await adminService.listModerationRecipes();
         setRecipes(list || []);
-      } catch {
-        // Data fetch error fallback
+      } catch (err: unknown) {
+        setRecipesError(err instanceof Error ? err.message : 'Failed to load recipes');
       } finally {
         setRecipesLoading(false);
       }
     } else if (activeTab === 'users') {
       setUsersLoading(true);
+      setUsersError(null);
       try {
         const list = await adminService.listProfiles();
         setUsers(list || []);
-      } catch {
-        // Data fetch error fallback
+      } catch (err: unknown) {
+        setUsersError(err instanceof Error ? err.message : 'Failed to load user accounts');
       } finally {
         setUsersLoading(false);
       }
     } else if (activeTab === 'applications') {
       setAppsLoading(true);
+      setAppsError(null);
       try {
         const list = await adminService.listApplications();
         setApplications(list || []);
-      } catch {
-        // Data fetch error fallback
+      } catch (err: unknown) {
+        setAppsError(err instanceof Error ? err.message : 'Failed to load creator applications');
       } finally {
         setAppsLoading(false);
       }
@@ -149,6 +156,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
       if (res?.error) {
         toast.error(res.error, { duration: 4000 });
       } else {
+        invalidateRecipeCache();
         toast.success(`Recipe status updated to ${status}.`, { duration: 4000 });
         setRecipes((prev) =>
           prev.map((r) => (r.id === recipeId ? { ...r, status } : r))
@@ -200,6 +208,7 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
           if (res?.error) {
             toast.error(res.error, { duration: 4000 });
           } else {
+            invalidateRecipeCache();
             toast.success('Recipe deleted.', { duration: 4000 });
             setRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
           }
@@ -514,7 +523,14 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
             </div>
 
             <div className="admin-body">
-              {recipesLoading ? (
+              {recipesError ? (
+                <div className="admin-error-banner" role="alert" style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-red, #ef4444)', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                  <span style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.9rem' }}>{recipesError}</span>
+                  <button type="button" className="studio-btn studio-btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={loadData}>
+                    Retry
+                  </button>
+                </div>
+              ) : recipesLoading ? (
                 <div className="admin-empty-state">Loading recipes...</div>
               ) : filteredRecipes.length === 0 ? (
                 <div className="admin-empty-state">No recipes found matching current filters.</div>
@@ -667,7 +683,14 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
             </div>
 
             <div className="admin-body">
-              {usersLoading ? (
+              {usersError ? (
+                <div className="admin-error-banner" role="alert" style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-red, #ef4444)', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                  <span style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.9rem' }}>{usersError}</span>
+                  <button type="button" className="studio-btn studio-btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={loadData}>
+                    Retry
+                  </button>
+                </div>
+              ) : usersLoading ? (
                 <div className="admin-empty-state">Loading users...</div>
               ) : filteredUsers.length === 0 ? (
                 <div className="admin-empty-state">No users found.</div>
@@ -849,7 +872,14 @@ export function AdminPanel({ onNavigate }: AdminPanelProps) {
             </div>
 
             <div className="admin-body">
-              {appsLoading ? (
+              {appsError ? (
+                <div className="admin-error-banner" role="alert" style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-red, #ef4444)', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                  <span style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.9rem' }}>{appsError}</span>
+                  <button type="button" className="studio-btn studio-btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={loadData}>
+                    Retry
+                  </button>
+                </div>
+              ) : appsLoading ? (
                 <div className="admin-empty-state">Loading applications...</div>
               ) : filteredApplications.length === 0 ? (
                 <div className="admin-empty-state">No creator applications found.</div>

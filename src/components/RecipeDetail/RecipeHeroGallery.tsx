@@ -37,10 +37,11 @@ export function RecipeHeroGallery({
         {hasVideo ? (
           <>
             {heroImages.length > 0 && (
-              <div className="cook-media-item" style={{ position: 'relative' }}>
+              <div className="cook-media-item" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
                 <img
                   src={heroImages[0]}
                   alt={recipe.title}
+                  fetchPriority="high"
                   tabIndex={0}
                   role="button"
                   aria-label="View full size image"
@@ -66,7 +67,7 @@ export function RecipeHeroGallery({
               </div>
             )}
 
-            <div className="cook-media-item video-player-wrap">
+            <div className="cook-media-item video-player-wrap" style={{ aspectRatio: '16 / 9' }}>
               {youtubeEmbedUrl ? (
                 <iframe
                   src={youtubeEmbedUrl}
@@ -89,10 +90,11 @@ export function RecipeHeroGallery({
           </>
         ) : heroImages.length >= 3 ? (
           <>
-            <div className="cook-media-item">
+            <div className="cook-media-item" style={{ aspectRatio: '16 / 9' }}>
               <img
                 src={heroImages[0]}
                 alt={`${recipe.title} 1`}
+                fetchPriority="high"
                 tabIndex={0}
                 role="button"
                 aria-label="View full size image"
@@ -106,10 +108,12 @@ export function RecipeHeroGallery({
               />
             </div>
 
-            <div className="cook-media-item" style={{ position: 'relative' }}>
+            <div className="cook-media-item" style={{ aspectRatio: '16 / 9', position: 'relative' }}>
               <img
                 src={heroImages[1]}
                 alt={`${recipe.title} 2`}
+                loading="lazy"
+                decoding="async"
                 tabIndex={0}
                 role="button"
                 aria-label={`View all ${heroImages.length} images`}
@@ -134,10 +138,11 @@ export function RecipeHeroGallery({
           </>
         ) : heroImages.length === 2 ? (
           <>
-            <div className="cook-media-item">
+            <div className="cook-media-item" style={{ aspectRatio: '16 / 9' }}>
               <img
                 src={heroImages[0]}
                 alt={`${recipe.title} 1`}
+                fetchPriority="high"
                 tabIndex={0}
                 role="button"
                 aria-label="View full size image"
@@ -150,10 +155,12 @@ export function RecipeHeroGallery({
                 }}
               />
             </div>
-            <div className="cook-media-item">
+            <div className="cook-media-item" style={{ aspectRatio: '16 / 9' }}>
               <img
                 src={heroImages[1]}
                 alt={`${recipe.title} 2`}
+                loading="lazy"
+                decoding="async"
                 tabIndex={0}
                 role="button"
                 aria-label="View full size image"
@@ -168,10 +175,11 @@ export function RecipeHeroGallery({
             </div>
           </>
         ) : (
-          <div className="cook-media-item">
+          <div className="cook-media-item" style={{ aspectRatio: '16 / 9' }}>
             <img
               src={heroImages[0]}
               alt={recipe.title}
+              fetchPriority="high"
               tabIndex={0}
               role="button"
               aria-label="View full size image"

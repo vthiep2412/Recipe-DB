@@ -97,7 +97,7 @@ export interface AuthStoreAPI {
   updateDisplayName(name: string): Promise<{ error?: string }>;
   updateUsername(handle: string): Promise<{ error?: string }>;
   updateCredentials(params: { email?: string; password?: string }): Promise<{ error?: string }>;
-  changePassword(params: { currentPassword: string; newPassword: string }): Promise<{ error?: string }>;
+  changePassword(params: { currentPassword: string; newPassword: string; mfaCode?: string }): Promise<{ error?: string }>;
   scheduleAccountDeletion(): Promise<{ error?: string }>;
   cancelAccountDeletion(): Promise<{ error?: string }>;
   subscribe(listener: (state: AuthState) => void): () => void;

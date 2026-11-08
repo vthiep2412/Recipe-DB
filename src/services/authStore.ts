@@ -531,6 +531,7 @@ export const authStore: AuthStoreAPI = {
   async changePassword(params: {
     currentPassword: string;
     newPassword: string;
+    mfaCode?: string;
   }): Promise<{ error?: string }> {
     const user = currentAuthState.user;
     if (!user || !user.email) {
@@ -546,6 +547,10 @@ export const authStore: AuthStoreAPI = {
     }
 
     try {
+      // Check current MFA assurance level before signing in to prevent silent downgrade
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const isMfaActive = aalData?.currentLevel === 'aal2' || aalData?.nextLevel === 'aal2';
+
       // 1. Verify current password by checking credentials
       const { error: verifyError } = await supabase.auth.signInWithPassword({
         email: user.email,
@@ -554,6 +559,24 @@ export const authStore: AuthStoreAPI = {
 
       if (verifyError) {
         return { error: 'Current password is incorrect.' };
+      }
+
+      // If user had MFA enrolled or satisfied, enforce challenge verification so session is not downgraded to AAL1
+      if (isMfaActive) {
+        const { data: factorsData } = await supabase.auth.mfa.listFactors();
+        const totpFactor = factorsData?.totp?.find(f => f.status === 'verified');
+        if (totpFactor) {
+          if (!params.mfaCode) {
+            return { error: 'MFA verification code is required to confirm password change.' };
+          }
+          const challengeRes = await supabase.auth.mfa.challengeAndVerify({
+            factorId: totpFactor.id,
+            code: params.mfaCode
+          });
+          if (challengeRes.error) {
+            return { error: `MFA verification failed: ${challengeRes.error.message}` };
+          }
+        }
       }
 
       // 2. Update password

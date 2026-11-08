@@ -435,6 +435,3 @@ export function RequestPublishModal({
     ? createPortal(modalElement, document.body)
     : modalElement;
 }
-
-// Backward-compatibility alias
-export { RequestPublishModal as ExportRecipeModal };

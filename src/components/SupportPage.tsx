@@ -49,13 +49,19 @@ export function SupportPage({ onNavigate }: Props) {
     }
 
     setIsSubmitting(true);
-
-    // Simulate ticket submission
-    setTimeout(() => {
+    try {
+      const subject = encodeURIComponent(`[RecipeDB Support] ${category} - @${username.trim()}`);
+      const body = encodeURIComponent(
+        `Category: ${category}\nUsername: ${username.trim()}\nEmail: ${email.trim()}\n\nMessage:\n${message.trim()}`
+      );
+      const mailtoUrl = `mailto:support@recipedb.app?subject=${subject}&body=${body}`;
+      window.location.href = mailtoUrl;
+      toast.success('Support request prepared. Your email client will send it directly to support@recipedb.app.', { duration: 6000 });
+    } catch {
+      toast.error('Unable to open mail client. Please send your inquiry directly to support@recipedb.app.');
+    } finally {
       setIsSubmitting(false);
-      toast.success('Support ticket submitted successfully! Our team will respond shortly.');
-      setMessage('');
-    }, 400);
+    }
   };
 
   return (
