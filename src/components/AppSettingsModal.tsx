@@ -160,7 +160,7 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
                 <div className="settings-row">
                   <div className="settings-info">
                     <span className="settings-label">Theme</span>
-                    <span className="settings-desc">Choose between light, dark, or system color scheme</span>
+                    <span className="settings-desc">Choose app appearance</span>
                   </div>
                   <div style={{ width: '20.5rem', maxWidth: '100%', flexShrink: 0 }}>
                     <SegmentedControl
