@@ -3682,7 +3682,15 @@
 
 .section-node-card.is-subsection .section-description-textarea {
   font-size: 0.82rem;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.65rem;
+  min-height: 4.5rem;
+  height: 4.5rem;
+}
+
+.section-node-card.is-subsection .section-description-textarea:focus,
+.section-node-card.is-subsection .section-description-textarea.is-focused {
+  min-height: 7.5rem;
+  height: 7.5rem;
 }
 
 .canvas-node-wrapper.is-sliding {
@@ -3967,15 +3975,22 @@ input[type=number] {
   border: 1px solid var(--background-modifier-border);
   border-radius: 0.5rem;
   color: var(--text-normal);
-  padding: 0.55rem 0.75rem;
+  padding: 0.65rem 0.75rem;
   font-size: 0.88rem;
-  resize: none;
+  line-height: 1.5;
+  resize: vertical;
   outline: none;
   margin-bottom: 0.65rem;
+  min-height: 5rem;
+  height: 5rem;
+  transition: border-color 0.15s ease;
 }
 
-.section-description-textarea:focus {
+.section-description-textarea:focus,
+.section-description-textarea.is-focused {
   border-color: var(--interactive-accent);
+  min-height: 8.5rem;
+  height: 8.5rem;
 }
 
 .section-tools-toggle-row {

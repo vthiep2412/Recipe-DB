@@ -160,6 +160,30 @@ export function generateFablang(
     const matchingComponent = graph.components.find(c =>
       c.id === `component-${section.id}` || c.id === section.id
     ) || graph.components.find(c => c.name === section.name);
+
+    // Section/Subsection Media directives
+    const sectionMedia = section.media || matchingComponent?.media;
+    if (sectionMedia?.galleryUrls && sectionMedia.galleryUrls.length > 0) {
+      sectionMedia.galleryUrls.forEach((imgUrl, idx) => {
+        lines.push(` > image${idx + 1}: ${imgUrl}`);
+      });
+    }
+
+    if (sectionMedia?.videoClip && (sectionMedia.videoClip.startSec > 0 || (sectionMedia.videoClip.endSec && sectionMedia.videoClip.endSec > 0))) {
+      const clip = sectionMedia.videoClip;
+      const startM = Math.floor(clip.startSec / 60);
+      const startS = clip.startSec % 60;
+      const startStr = `${startM}:${startS < 10 ? '0' : ''}${startS}`;
+      if (clip.endSec && clip.endSec > clip.startSec) {
+        const endM = Math.floor(clip.endSec / 60);
+        const endS = clip.endSec % 60;
+        const endStr = `${endM}:${endS < 10 ? '0' : ''}${endS}`;
+        lines.push(` > clip: ${startStr} to ${endStr}`);
+      } else {
+        lines.push(` > clip: ${startStr}`);
+      }
+    }
+
     let steps = matchingComponent ? matchingComponent.steps : [];
     if (steps.length === 0 && canvasNodes && canvasNodes.length > 0) {
       const matchingCanvasNodes = canvasNodes.filter(n => n.sectionId === section.id);

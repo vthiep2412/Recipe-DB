@@ -35,6 +35,13 @@ export interface CanvasSection {
   colorIndex?: number;
   parentSectionId?: string;
   showInlineTools?: boolean;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
 }
 
 export interface RecipeGraph {
@@ -99,6 +106,14 @@ export interface RecipeVessel {
 export interface RecipeComponent {
   id: string;
   name: string;
+  description?: string;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
   steps: RecipeStepNode[];
 }
 

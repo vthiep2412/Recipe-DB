@@ -526,19 +526,29 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         const dirName = trimmed.slice(1, colonIdx).trim().toLowerCase();
         const dirVal = trimmed.slice(colonIdx + 1).trim();
 
-        if (dirName === 'image' && sections.length > 0) {
-          sections[sections.length - 1].description = sections[sections.length - 1].description
-            ? `${sections[sections.length - 1].description}\n[Banner: ${dirVal}]`
-            : `[Banner: ${dirVal}]`;
-        } else if (dirName === 'desc' && sections.length > 0) {
-          sections[sections.length - 1].description = dirVal;
+        const currentSec = sections.length > 0 ? sections[sections.length - 1] : undefined;
+        const isSectionScope = previousStepId === null && Boolean(currentSec);
+
+        if (dirName === 'desc' && currentSec) {
+          currentSec.description = dirVal;
         } else if (/^image\d*$/.test(dirName)) {
-          pendingStepDirectives.galleryUrls.push(dirVal);
+          if (isSectionScope && currentSec) {
+            currentSec.media = currentSec.media || {};
+            currentSec.media.galleryUrls = currentSec.media.galleryUrls || [];
+            currentSec.media.galleryUrls.push(dirVal);
+          } else {
+            pendingStepDirectives.galleryUrls.push(dirVal);
+          }
         } else if (dirName === 'clip') {
           const parts = dirVal.split(/\s+to\s+/i);
           const startSec = parseTimestampToSeconds(parts[0] || '0');
           const endSec = parts[1] ? parseTimestampToSeconds(parts[1]) : undefined;
-          pendingStepDirectives.videoClip = { startSec, endSec };
+          if (isSectionScope && currentSec) {
+            currentSec.media = currentSec.media || {};
+            currentSec.media.videoClip = { startSec, endSec };
+          } else {
+            pendingStepDirectives.videoClip = { startSec, endSec };
+          }
         }
       }
       continue;
@@ -968,6 +978,8 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     return {
       id: `component-${sec.id}`,
       name: sec.name,
+      description: sec.description,
+      media: sec.media,
       steps: secSteps
     };
   });

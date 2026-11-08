@@ -152,18 +152,24 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
     const subsections: RecipeSubsection[] = childMetas.map(childMeta => {
       const childShowInline = childMeta.sectionMeta?.showInlineTools ?? false;
       const childSteps = childMeta.comp.steps.map(stepNode => convertStepNode(stepNode, childShowInline));
+      const subMedia = childMeta.comp.media || childMeta.sectionMeta?.media;
       return {
         id: childMeta.comp.id,
         name: childMeta.comp.name || 'Subsection',
         description: childMeta.sectionMeta?.description,
+        media: subMedia,
+        image: subMedia?.galleryUrls?.[0],
         steps: childSteps
       };
     });
 
+    const rootMedia = rootMeta.comp.media || rootMeta.sectionMeta?.media;
     return {
       id: rootMeta.comp.id,
       name: rootMeta.comp.name || 'Instructions',
       description: rootMeta.sectionMeta?.description,
+      media: rootMedia,
+      image: rootMedia?.galleryUrls?.[0],
       steps: rootSteps,
       subsections: subsections.length > 0 ? subsections : undefined
     };
@@ -217,7 +223,10 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
   }
 
   const sections: import('../types/orchestration').CanvasSection[] = Array.isArray(ws.sections) && ws.sections.length > 0
-    ? ws.sections
+    ? ws.sections.map((sec: any) => ({
+        ...sec,
+        media: sec.media || {}
+      }))
     : [
         {
           id: 'section-1',

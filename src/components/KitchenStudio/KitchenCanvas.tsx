@@ -2174,6 +2174,7 @@ export function KitchenCanvas({
                 canReorder={canReorder}
                 accentColor={sectionAccentMap[sec.id]}
                 parentName={sectionParentMap[sec.id]?.name}
+                hasMasterVideo={hasMasterVideo}
                 onSelect={() => {
                   setSelectedNodeId(sec.id);
                   setActiveMentionId(null);
