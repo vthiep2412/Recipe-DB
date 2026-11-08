@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag } from 'lucide-preact';
 import { toast } from 'sonner';
@@ -81,25 +81,27 @@ export function RecipeMetadataModal({
   const [timePhases, setTimePhases] = useState<TimePhase[]>(() => {
     const phases: TimePhase[] = [];
 
-    const prepSec = graph.times?.prepSec || 0;
-    phases.push({
-      id: 'prep',
-      label: 'Prep Time',
-      hours: Math.floor(prepSec / 3600),
-      minutes: Math.floor((prepSec % 3600) / 60),
-      isStandard: true
-    });
+    if (graph.times?.prepSec && graph.times.prepSec > 0) {
+      phases.push({
+        id: 'prep',
+        label: 'Prep Time',
+        hours: Math.floor(graph.times.prepSec / 3600),
+        minutes: Math.floor((graph.times.prepSec % 3600) / 60),
+        isStandard: true
+      });
+    }
 
-    const cookSec = graph.times?.cookSec || 0;
-    phases.push({
-      id: 'cook',
-      label: 'Cook Time',
-      hours: Math.floor(cookSec / 3600),
-      minutes: Math.floor((cookSec % 3600) / 60),
-      isStandard: true
-    });
+    if (graph.times?.cookSec && graph.times.cookSec > 0) {
+      phases.push({
+        id: 'cook',
+        label: 'Cook Time',
+        hours: Math.floor(graph.times.cookSec / 3600),
+        minutes: Math.floor((graph.times.cookSec % 3600) / 60),
+        isStandard: true
+      });
+    }
 
-    if (graph.times?.bakeSec !== undefined && graph.times?.bakeSec !== null) {
+    if (graph.times?.bakeSec && graph.times.bakeSec > 0) {
       phases.push({
         id: 'bake',
         label: 'Bake Time',
@@ -109,7 +111,7 @@ export function RecipeMetadataModal({
       });
     }
 
-    if (graph.times?.restSec !== undefined && graph.times?.restSec !== null) {
+    if (graph.times?.restSec && graph.times.restSec > 0) {
       phases.push({
         id: 'rest',
         label: 'Rest Time',
@@ -136,6 +138,9 @@ export function RecipeMetadataModal({
     return phases;
   });
 
+  const phaseTouchBackupRef = useRef<{ id: string; hours: number; minutes: number } | null>(null);
+  const [zeroConfirmPhase, setZeroConfirmPhase] = useState<{ id: string; label: string; prevHours: number; prevMinutes: number } | null>(null);
+
   const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
   const [customPhaseLabels, setCustomPhaseLabels] = useState<string[]>([]);
   const [isAddingCustomPhaseName, setIsAddingCustomPhaseName] = useState(false);
@@ -160,12 +165,52 @@ export function RecipeMetadataModal({
     0
   );
 
+  const handleUpdatePhaseLabel = (id: string, label: string) => {
+    setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, label } : p)));
+  };
+
   const handleUpdatePhaseHours = (id: string, hours: number) => {
     setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, hours: Math.max(0, hours) } : p)));
   };
 
   const handleUpdatePhaseMinutes = (id: string, minutes: number) => {
     setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, minutes: Math.max(0, Math.min(59, minutes)) } : p)));
+  };
+
+  const handlePhaseFocus = (phase: TimePhase) => {
+    phaseTouchBackupRef.current = { id: phase.id, hours: phase.hours, minutes: phase.minutes };
+  };
+
+  const handlePhaseBlur = (phase: TimePhase) => {
+    const backup = phaseTouchBackupRef.current;
+    if (phase.hours === 0 && phase.minutes === 0) {
+      if (backup && backup.id === phase.id && (backup.hours > 0 || backup.minutes > 0)) {
+        setZeroConfirmPhase({
+          id: phase.id,
+          label: phase.label,
+          prevHours: backup.hours,
+          prevMinutes: backup.minutes
+        });
+      }
+    }
+  };
+
+  const handleConfirmZeroRemove = () => {
+    if (zeroConfirmPhase) {
+      setTimePhases(prev => prev.filter(p => p.id !== zeroConfirmPhase.id));
+      setZeroConfirmPhase(null);
+    }
+  };
+
+  const handleCancelZeroRemove = () => {
+    if (zeroConfirmPhase) {
+      setTimePhases(prev => prev.map(p => 
+        p.id === zeroConfirmPhase.id 
+          ? { ...p, hours: zeroConfirmPhase.prevHours, minutes: zeroConfirmPhase.prevMinutes } 
+          : p
+      ));
+      setZeroConfirmPhase(null);
+    }
   };
 
   const handleRemovePhase = (id: string) => {
@@ -298,6 +343,7 @@ export function RecipeMetadataModal({
 
     for (const phase of timePhases) {
       const durationSec = Math.max(0, phase.hours) * 3600 + Math.max(0, phase.minutes) * 60;
+      if (durationSec === 0) continue;
       if (phase.label === 'Prep Time') prepSec = durationSec;
       else if (phase.label === 'Cook Time') cookSec = durationSec;
       else if (phase.label === 'Bake Time') bakeSec = durationSec;
@@ -323,8 +369,8 @@ export function RecipeMetadataModal({
         videoUrl: videoUrl.trim() || undefined
       },
       times: {
-        prepSec: prepSec ?? 0,
-        cookSec: cookSec ?? 0,
+        prepSec,
+        cookSec,
         bakeSec,
         restSec,
         totalSec: totalSeconds,
@@ -552,7 +598,14 @@ export function RecipeMetadataModal({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
                 {timePhases.map(phase => (
                   <div key={phase.id} className="metadata-time-card">
-                    <span className="metadata-time-label">{phase.label}</span>
+                    <input
+                      type="text"
+                      className="metadata-time-label-input"
+                      value={phase.label}
+                      onInput={e => handleUpdatePhaseLabel(phase.id, (e.target as HTMLInputElement).value)}
+                      placeholder="Phase name..."
+                      title="Click to edit phase label"
+                    />
                     <div className="metadata-time-durations">
                       <div className="metadata-time-unit-box">
                         <input
@@ -560,6 +613,8 @@ export function RecipeMetadataModal({
                           min="0"
                           className="metadata-time-num-input"
                           value={phase.hours}
+                          onFocus={() => handlePhaseFocus(phase)}
+                          onBlur={() => handlePhaseBlur(phase)}
                           onInput={e => handleUpdatePhaseHours(phase.id, parseInt((e.target as HTMLInputElement).value || '0', 10))}
                         />
                         <span>hr</span>
@@ -571,20 +626,20 @@ export function RecipeMetadataModal({
                           max="59"
                           className="metadata-time-num-input"
                           value={phase.minutes}
+                          onFocus={() => handlePhaseFocus(phase)}
+                          onBlur={() => handlePhaseBlur(phase)}
                           onInput={e => handleUpdatePhaseMinutes(phase.id, parseInt((e.target as HTMLInputElement).value || '0', 10))}
                         />
                         <span>min</span>
                       </div>
-                      {!phase.isStandard && (
-                        <button
-                          type="button"
-                          className="metadata-time-remove-btn"
-                          onClick={() => handleRemovePhase(phase.id)}
-                          title="Remove phase"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="metadata-time-remove-btn"
+                        onClick={() => handleRemovePhase(phase.id)}
+                        title={`Remove ${phase.label}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -776,6 +831,17 @@ export function RecipeMetadataModal({
       onCancel={() => {
         setIsExitConfirmOpen(false);
       }}
+    />
+
+    <ConfirmModal
+      isOpen={Boolean(zeroConfirmPhase)}
+      title="Remove Time Phase?"
+      message={`Setting "${zeroConfirmPhase?.label || 'this phase'}" to 0 will remove it from the recipe. Do you want to remove it?`}
+      confirmLabel="Remove"
+      confirmVariant="danger"
+      cancelLabel="Cancel"
+      onConfirm={handleConfirmZeroRemove}
+      onCancel={handleCancelZeroRemove}
     />
   </>
   );

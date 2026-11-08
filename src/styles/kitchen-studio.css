@@ -1036,6 +1036,12 @@
   color: var(--text-normal);
 }
 
+.step-checkbox-label.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .step-checkbox-label input {
   accent-color: #ff7a00;
   cursor: pointer;
@@ -3496,6 +3502,31 @@
   font-weight: 600;
   color: var(--text-normal, #d1d5db);
   flex: 1;
+}
+
+.metadata-time-label-input {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-normal, #d1d5db);
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.35rem;
+  outline: none;
+  min-width: 0;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.metadata-time-label-input:hover {
+  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
+  background-color: var(--background-primary, #18181c);
+}
+
+.metadata-time-label-input:focus {
+  border-color: #ff7a00;
+  background-color: var(--background-primary, #18181c);
+  color: #ffffff;
 }
 
 .metadata-time-durations {

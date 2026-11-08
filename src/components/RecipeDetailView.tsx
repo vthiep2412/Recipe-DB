@@ -984,15 +984,22 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     let currentChain: number[] = [];
 
     steps.forEach(st => {
+      const isCounted = st.isCountedStep !== false;
+      if (!isCounted) {
+        // Uncounted steps (notes) DO NOT break the family, nor do they start a family!
+        return;
+      }
       if (!st.isLinkedToPrevious || currentParentIndex === null) {
         currentParentIndex = st.index;
         currentChain = [st.index];
       } else {
         currentChain.push(st.index);
       }
-      stepFamilyMap.set(st.index, {
-        parentIndex: currentParentIndex,
-        chain: currentChain
+      currentChain.forEach(idx => {
+        stepFamilyMap.set(idx, {
+          parentIndex: currentParentIndex!,
+          chain: currentChain
+        });
       });
     });
   };
@@ -1004,11 +1011,17 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     });
   });
 
+  const standardTimeKeys = new Set(['total', 'prep', 'cook', 'bake', 'rest']);
+  const customBreakdowns = Object.entries(recipe?.times || {})
+    .filter(([k, v]) => !standardTimeKeys.has(k) && Boolean(v))
+    .map(([label, value]) => ({ label, value }));
+
   const breakdownTimes = [
     { label: 'Prep Time', value: recipe?.times?.prep },
     { label: 'Bake Time', value: recipe?.times?.bake },
     { label: 'Cook Time', value: recipe?.times?.cook },
     { label: 'Rest Time', value: recipe?.times?.rest },
+    ...customBreakdowns
   ].filter(t => Boolean(t.value));
 
   const totalTime = recipe?.times?.total || recipe?.times?.cook || '—';
@@ -1020,7 +1033,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     ? 'diff-hard'
     : 'diff-medium';
 
-  const renderSidebarStepItem = (step: RecipeStep, secName: string) => {
+  const renderSidebarStepItem = (step: RecipeStep, secName: string, secSteps: RecipeStep[] = []) => {
     const stepCookware = step.tokens.filter(
       (t): t is Extract<StepToken, { type: 'cookware' }> => t.type === 'cookware'
     );
@@ -1053,16 +1066,21 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
     const isDirectlyFocusedStep = isSecActive && rememberedStepInSec === step.index;
     const isStepActive = isSecActive && (rememberedStepInSec === step.index || isChainActive);
-    const isStepDimmed = rememberedStepInSec !== -1 && step.index < rememberedStepInSec;
     const isCounted = step.isCountedStep !== false;
+    const stepUnderNote = !isCounted ? secSteps.find(st => st.index > step.index && st.isCountedStep !== false) : undefined;
+    const underFamily = stepUnderNote ? stepFamilyMap.get(stepUnderNote.index) : undefined;
+    const underThreshold = underFamily && underFamily.chain.length > 0 ? Math.max(...underFamily.chain) : (stepUnderNote?.index ?? -1);
+    const isStepDimmed = !isCounted
+      ? (rememberedStepInSec !== -1 && (underThreshold !== -1 ? rememberedStepInSec > underThreshold : true))
+      : (rememberedStepInSec !== -1 && step.index < rememberedStepInSec);
     const countedNum = stepNumberMap.get(step.index) || String(step.index);
     const isNoteWithoutTitle = !isCounted && (!step.title || step.title.trim().toLowerCase() === 'note' || step.title.trim().toLowerCase() === 'step note');
     const stepLabel = !isCounted
       ? (isNoteWithoutTitle ? '(note)' : step.title)
       : `Step ${countedNum}${step.title ? `: ${step.title}` : ''}`;
 
-    const isLinked = Boolean(step.isLinkedToPrevious);
-    const hasLinkedChild = Boolean(
+    const isLinked = isCounted && Boolean(step.isLinkedToPrevious);
+    const hasLinkedChild = isCounted && Boolean(
       thisFamily && thisFamily.chain.length > 1 &&
       thisFamily.chain.indexOf(step.index) < thisFamily.chain.length - 1
     );
@@ -1247,7 +1265,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     );
   };
 
-  const renderStepCard = (step: RecipeStep, secName: string) => {
+  const renderStepCard = (step: RecipeStep, secName: string, secSteps: RecipeStep[] = []) => {
     const isSecActive = activeSectionId === secName;
     const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
     const isStepSelected = rememberedStepInSec === step.index;
@@ -1266,18 +1284,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       }
     }
 
-    let stepStatusClass = '';
-    if (rememberedStepInSec !== -1) {
-      if (isStepSelected || isChainActive) {
-        stepStatusClass = isSecActive ? 'is-section-active is-chain-active' : 'is-remembered-step is-chain-active';
-      } else {
-        const activeParentIndex = activeFamily ? activeFamily.parentIndex : rememberedStepInSec;
-        if (step.index < activeParentIndex) {
-          stepStatusClass = 'is-section-dimmed';
-        }
-      }
-    }
-
     const isDirectlySelected = isSecActive && isStepSelected;
     const isChainAncestor = isChainActive && !isStepSelected;
     const isCur = isSecActive && (isStepSelected || isChainActive);
@@ -1285,8 +1291,8 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const isCounted = step.isCountedStep !== false;
     const countedNum = stepNumberMap.get(step.index) || String(step.index);
     const isNoteWithoutTitle = !isCounted && (!step.title || step.title.trim().toLowerCase() === 'note' || step.title.trim().toLowerCase() === 'step note');
-    const isLinked = Boolean(step.isLinkedToPrevious);
-    const hasLinkedChild = Boolean(
+    const isLinked = isCounted && Boolean(step.isLinkedToPrevious);
+    const hasLinkedChild = isCounted && Boolean(
       thisFamily && thisFamily.chain.length > 1 &&
       thisFamily.chain.indexOf(step.index) < thisFamily.chain.length - 1
     );
@@ -1296,6 +1302,56 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     const isChainEnd = Boolean(
       isLinked && (isChainTail || rememberedStepInSec === step.index)
     );
+
+    let stepStatusClass = '';
+    let isNoteDimmed = false;
+    let isNoteInActiveChain = false;
+    let isNoteInRememberedChain = false;
+
+    if (!isCounted) {
+      // Find the step under the note in this section
+      const stepUnderNote = secSteps.find(st => st.index > step.index && st.isCountedStep !== false);
+      if (rememberedStepInSec !== -1) {
+        if (stepUnderNote) {
+          const underFamily = stepFamilyMap.get(stepUnderNote.index);
+          const underThreshold = underFamily && underFamily.chain.length > 0
+            ? Math.max(...underFamily.chain)
+            : stepUnderNote.index;
+          if (rememberedStepInSec > underThreshold) {
+            isNoteDimmed = true;
+          }
+        } else {
+          const lastCounted = [...secSteps].reverse().find(st => st.index < step.index && st.isCountedStep !== false);
+          if (lastCounted && rememberedStepInSec >= lastCounted.index) {
+            isNoteDimmed = true;
+          }
+        }
+      }
+
+      // Check if note sits between steps of an active or remembered chain
+      if (activeFamily && activeFamily.chain.length > 1) {
+        const minChain = Math.min(...activeFamily.chain);
+        const maxChain = Math.max(...activeFamily.chain);
+        if (step.index > minChain && step.index < maxChain && rememberedStepInSec >= step.index) {
+          if (isSecActive) {
+            isNoteInActiveChain = true;
+          } else {
+            isNoteInRememberedChain = true;
+          }
+        }
+      }
+    } else {
+      if (rememberedStepInSec !== -1) {
+        if (isStepSelected || isChainActive) {
+          stepStatusClass = isSecActive ? 'is-section-active is-chain-active' : 'is-remembered-step is-chain-active';
+        } else {
+          const activeParentIndex = activeFamily ? activeFamily.parentIndex : rememberedStepInSec;
+          if (step.index < activeParentIndex) {
+            stepStatusClass = 'is-section-dimmed';
+          }
+        }
+      }
+    }
 
     const allStepImages = [
       ...(step.image ? [step.image] : []),
@@ -1307,21 +1363,25 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
         (t.type === 'ingredient' && !t.isHidden) || t.type === 'cookware'
     );
 
+    const cardClassNames = !isCounted
+      ? `cook-step cook-step-note-callout ${isNoteDimmed ? 'is-section-dimmed' : ''} ${isNoteInActiveChain ? 'is-chain-through-note' : ''} ${isNoteInRememberedChain ? 'is-chain-through-note is-remembered-rail' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''}`
+      : `cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isDirectlySelected ? 'is-directly-selected' : ''} ${isChainAncestor ? 'is-chain-ancestor' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${isLinked ? 'is-linked-step' : ''} ${isChainTail ? 'is-chain-tail' : ''} ${isChainEnd ? 'is-chain-end' : ''} ${hasLinkedChild ? 'has-linked-child' : ''}`;
+
     return (
       <div
         key={step.index}
         id={`step-node-${step.index}`}
-        className={`cook-step ${stepStatusClass} ${isCur ? 'cur' : ''} ${isDirectlySelected ? 'is-directly-selected' : ''} ${isChainAncestor ? 'is-chain-ancestor' : ''} ${isHighlighted ? 'yield-pulse-highlight' : ''} ${!isCounted ? 'cook-step-note-callout' : ''} ${isLinked ? 'is-linked-step' : ''} ${isChainTail ? 'is-chain-tail' : ''} ${isChainEnd ? 'is-chain-end' : ''} ${hasLinkedChild ? 'has-linked-child' : ''}`}
-        onClick={() => handleStepClick(secName, step.index)}
-        role="button"
-        tabIndex={0}
-        aria-pressed={isCur}
-        onKeyDown={(e) => {
+        className={cardClassNames}
+        onClick={isCounted ? () => handleStepClick(secName, step.index) : undefined}
+        role={isCounted ? 'button' : undefined}
+        tabIndex={isCounted ? 0 : undefined}
+        aria-pressed={isCounted ? isCur : undefined}
+        onKeyDown={isCounted ? (e) => {
           if (e.key === ' ' || e.key === 'Enter') {
             e.preventDefault();
             handleStepClick(secName, step.index);
           }
-        }}
+        } : undefined}
       >
         {!isCounted && (
           <div className="cook-step-note-header">
@@ -1878,29 +1938,32 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
           {/* Description Card with Markdown */}
           {recipe.description && (
-            <div className={`cook-desc-container ${isDescExpanded ? 'expanded' : 'collapsed'}`}>
-              <div
-                className="cook-desc-text cook-desc-markdown"
-                style={!isDescExpanded ? { WebkitLineClamp: 3 } : {}}
-                dangerouslySetInnerHTML={{
-                  __html: sanitizeMarkdown(recipe.description)
-                }}
-              />
+            <>
+              <div className="cook-desc-divider" />
+              <div className={`cook-desc-container ${isDescExpanded ? 'expanded' : 'collapsed'}`}>
+                <div
+                  className="cook-desc-text cook-desc-markdown"
+                  style={!isDescExpanded ? { WebkitLineClamp: 3 } : {}}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeMarkdown(recipe.description)
+                  }}
+                />
 
-              {!isDescExpanded ? (
-                <div className="cook-desc-fade" onClick={() => setIsDescExpanded(true)}>
-                  <div className="cook-desc-fade-arrow">
-                    <ChevronDown size={16} />
+                {!isDescExpanded ? (
+                  <div className="cook-desc-fade" onClick={() => setIsDescExpanded(true)}>
+                    <div className="cook-desc-fade-arrow">
+                      <ChevronDown size={16} />
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="cook-desc-close-bar" onClick={() => setIsDescExpanded(false)}>
-                  <div className="cook-desc-close-arrow">
-                    <ChevronUp size={16} />
+                ) : (
+                  <div className="cook-desc-close-bar" onClick={() => setIsDescExpanded(false)}>
+                    <div className="cook-desc-close-arrow">
+                      <ChevronUp size={16} />
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </>
           )}
 
           {/* Stats Card */}
@@ -1975,7 +2038,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               )}
 
               <div className="cook-section-steps">
-                {(section.steps || []).map(step => renderStepCard(step, section.name))}
+                {(section.steps || []).map(step => renderStepCard(step, section.name, section.steps || []))}
               </div>
 
               {section.subsections && section.subsections.length > 0 && (
@@ -1991,7 +2054,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         </div>
                       )}
                       <div className="cook-subsection-steps">
-                        {(sub.steps || []).map(step => renderStepCard(step, sub.name))}
+                        {(sub.steps || []).map(step => renderStepCard(step, sub.name, sub.steps || []))}
                       </div>
                     </div>
                   ))}
@@ -2172,7 +2235,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                       <div className="cook-ing-group-title">{section.name}</div>
                     )}
 
-                    {sectionStepsWithItems.map(step => renderSidebarStepItem(step, section.name))}
+                    {sectionStepsWithItems.map(step => renderSidebarStepItem(step, section.name, section.steps || []))}
 
                     {section.subsections?.map(sub => {
                       const subStepsWithItems = filterSteps(sub.steps);
@@ -2180,7 +2243,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                       return (
                         <div key={`sidebar-sub-${sub.id || sub.name}`} className="cook-sidebar-subsection">
                           <div className="cook-sidebar-subsection-tag">{sub.name}</div>
-                          {subStepsWithItems.map(step => renderSidebarStepItem(step, sub.name))}
+                          {subStepsWithItems.map(step => renderSidebarStepItem(step, sub.name, sub.steps || []))}
                         </div>
                       );
                     })}

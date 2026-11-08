@@ -262,7 +262,12 @@ function reorderSectionsAndNodes(
 
   const stepNumberMap = computeCanvasStepNumbers(clusteredSections, nextNodes);
   const resequencedNodes = nextNodes.map(n => {
-    if (!n.isCountedStep) return n;
+    if (!n.isCountedStep) {
+      if (n.isLinkedToPrevious) {
+        return { ...n, isLinkedToPrevious: false };
+      }
+      return n;
+    }
     const currentNumStr = stepNumberMap.get(n.id) || '';
     if (!n.title || /^step\s*[\d.]+$/i.test(n.title.trim())) {
       return { ...n, title: `Step ${currentNumStr}` };
@@ -1896,11 +1901,22 @@ export function KitchenCanvas({
     const updatedNodes = workspace.canvasNodes.map((n, idx, arr) => {
       if (n.id === stepId) {
         const next = { ...n, ...updated };
+        if (updated.isCountedStep !== undefined && !updated.isCountedStep) {
+          next.isLinkedToPrevious = false;
+        }
         if (updated.isLinkedToPrevious !== undefined && updated.isLinkedToPrevious !== n.isLinkedToPrevious) {
           if (updated.isLinkedToPrevious) {
-            const prevNode = arr[idx - 1];
-            if (prevNode) {
-              next.parentId = prevNode.id;
+            if (!next.isCountedStep) {
+              next.isLinkedToPrevious = false;
+            } else {
+              // Find preceding counted step, passing through any uncounted notes
+              let prevCountedIdx = idx - 1;
+              while (prevCountedIdx >= 0 && !arr[prevCountedIdx].isCountedStep) {
+                prevCountedIdx--;
+              }
+              if (prevCountedIdx >= 0) {
+                next.parentId = arr[prevCountedIdx].id;
+              }
             }
           }
         }

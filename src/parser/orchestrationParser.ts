@@ -146,6 +146,14 @@ export function validateFablang(rawText: string): FablangSyntaxError[] {
       }
     }
 
+    if (isUncounted && /\[link\]/i.test(line)) {
+      errors.push({
+        line: lineNum,
+        message: 'Invalid directive: uncounted note steps cannot have [link] directive',
+        rawLine: line
+      });
+    }
+
     // 5. Yield production directive validation
     if (line.includes('->')) {
       if (!/->\s*\*([^*]+)\*(?:\{[^}]*\})?/.test(line)) {
@@ -455,6 +463,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
   } = { galleryUrls: [] };
 
   let previousStepId: string | null = null;
+  let lastCountedStepId: string | null = null;
   let secMainStepCounter = 0;
   let lastMainStepNum = '';
   let secSubstepCounter = 0;
@@ -485,6 +494,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         currentRootSectionId = secId;
         currentSectionId = secId;
         previousStepId = null;
+        lastCountedStepId = null;
         secMainStepCounter = 0;
         lastMainStepNum = '';
         secSubstepCounter = 0;
@@ -501,6 +511,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         sections.push(newSubSec);
         currentSectionId = secId;
         previousStepId = null;
+        lastCountedStepId = null;
         secMainStepCounter = 0;
         lastMainStepNum = '';
         secSubstepCounter = 0;
@@ -553,7 +564,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
       }
 
       if (/\[link\]/i.test(prose)) {
-        isLinked = true;
+        isLinked = !isUncountedStep;
         prose = prose.replace(/\[link\]/gi, '').trim();
       }
 
@@ -803,7 +814,12 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         });
       }
 
-      const parentId = previousStepId ? previousStepId : currentSectionId;
+      let parentId: string;
+      if (isLinked) {
+        parentId = lastCountedStepId ? lastCountedStepId : (previousStepId || currentSectionId);
+      } else {
+        parentId = previousStepId ? previousStepId : currentSectionId;
+      }
       const activeSection = sections.find(s => s.id === currentSectionId);
 
       let defaultTitle = 'Note';
@@ -839,6 +855,9 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
       canvasNodes.push(stepNode);
       previousStepId = stepId;
+      if (isCountedStep) {
+        lastCountedStepId = stepId;
+      }
       pendingStepDirectives = { galleryUrls: [] };
     }
   }

@@ -711,7 +711,10 @@ export function StepNode({
               checked={node.isCountedStep}
               onChange={e => {
                 const checked = (e.target as HTMLInputElement).checked;
-                const updates: Partial<CanvasStepNode> = { isCountedStep: checked };
+                const updates: Partial<CanvasStepNode> = {
+                  isCountedStep: checked,
+                  ...(!checked ? { isLinkedToPrevious: false } : {})
+                };
                 if (!checked && (node.title === `Step ${stepNumber}` || node.title === 'Step Note' || node.title === 'Note')) {
                   updates.title = '';
                 } else if (checked && (!node.title || node.title === 'Note' || node.title === 'Step Note')) {
@@ -724,12 +727,13 @@ export function StepNode({
           </label>
 
           <label
-            className="step-checkbox-label"
-            title="Link and indent directly under the previous step"
+            className={`step-checkbox-label ${!node.isCountedStep ? 'disabled' : ''}`}
+            title={!node.isCountedStep ? 'Uncounted notes cannot be linked to previous step' : 'Link and indent directly under the previous step'}
           >
             <input
               type="checkbox"
-              checked={node.isLinkedToPrevious}
+              disabled={!node.isCountedStep}
+              checked={node.isCountedStep ? node.isLinkedToPrevious : false}
               onChange={e =>
                 onChange({ isLinkedToPrevious: (e.target as HTMLInputElement).checked })
               }

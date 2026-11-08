@@ -122,7 +122,7 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       stepId: node.id,
       title: node.title,
       isCountedStep: node.isCountedStep,
-      isLinkedToPrevious: node.isLinkedToPrevious,
+      isLinkedToPrevious: node.isCountedStep !== false ? node.isLinkedToPrevious : false,
       producesYield: node.producesYield,
       image: node.media?.galleryUrls?.[0],
       media: node.media,
@@ -238,7 +238,7 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
           parentId,
           sectionId,
           isCountedStep: node.isCountedStep !== false,
-          isLinkedToPrevious: Boolean(node.isLinkedToPrevious),
+          isLinkedToPrevious: node.isCountedStep !== false ? Boolean(node.isLinkedToPrevious) : false,
           mentions: Array.isArray(node.mentions) ? node.mentions : [],
           media: node.media || {}
         };
