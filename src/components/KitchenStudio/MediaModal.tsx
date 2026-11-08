@@ -152,7 +152,7 @@ export function MediaModal({
     setIsDragging(false);
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -160,6 +160,34 @@ export function MediaModal({
     const file = e.dataTransfer?.files?.[0];
     if (file) {
       processFile(file);
+      return;
+    }
+
+    // Dragged an image directly from another browser window / website
+    const textUri = e.dataTransfer?.getData('text/uri-list');
+    const textPlain = e.dataTransfer?.getData('text/plain');
+    const textHtml = e.dataTransfer?.getData('text/html');
+
+    let candidateUrl = (textUri || textPlain || '').trim();
+
+    if (!candidateUrl && textHtml) {
+      const match = textHtml.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (match && match[1]) {
+        candidateUrl = match[1].trim();
+      }
+    }
+
+    if (candidateUrl && /^https?:\/\//i.test(candidateUrl)) {
+      const resolved = await resolveRefToPreview(candidateUrl);
+      if (effectiveMode === 'single') {
+        setPreviewUrl(resolved);
+        setActualRef(candidateUrl);
+        setUrlInput('');
+      } else {
+        setGalleryList((prev) => [...prev, candidateUrl]);
+        setGalleryPreviewMap((prev) => ({ ...prev, [candidateUrl]: resolved }));
+        setUrlInput('');
+      }
     }
   };
 

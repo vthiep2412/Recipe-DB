@@ -21,7 +21,8 @@ import type {
 } from '../../types/orchestration';
 import { formatFraction } from '../../parser/cooklangParser';
 import { MediaModal } from './MediaModal';
-import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
+
+import { useResolvedMediaUrl } from '../../utils/media';
 
 const EMPTY_URLS: string[] = [];
 
@@ -299,6 +300,7 @@ export function StepNode({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
+  const stepThumbnailUrl = useResolvedMediaUrl(node.media?.galleryUrls?.[0], 'step');
   const [showOrphanedConfirmModal, setShowOrphanedConfirmModal] = useState(false);
   const [showInlineToolsTooltip, setShowInlineToolsTooltip] = useState(false);
   const [showOrphanedTooltip, setShowOrphanedTooltip] = useState(false);
@@ -783,7 +785,7 @@ export function StepNode({
               tabIndex={0}
               title="Manage step pictures"
             >
-              <img src={getOptimizedImageUrl(node.media.galleryUrls[0], 'step')} alt={`Step ${stepNumber}`} />
+              <img src={stepThumbnailUrl || ''} alt={`Step ${stepNumber}`} />
               {node.media.galleryUrls.length > 1 && (
                 <div className="studio-media-counter-badge">
                   ×{node.media.galleryUrls.length}

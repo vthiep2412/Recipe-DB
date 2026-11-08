@@ -10,8 +10,8 @@ import { MediaModal } from './MediaModal';
 import { ObsidianSourceEditor } from './ObsidianSourceEditor';
 import { renderAppMarkdown } from '../../utils/markdown';
 import { TagManagerModal } from './TagManagerModal';
-import { getYouTubeEmbedUrl } from '../../utils/media';
-import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
+import { getYouTubeEmbedUrl, useResolvedMediaUrl } from '../../utils/media';
+
 
 interface RecipeMetadataModalProps {
   isOpen: boolean;
@@ -65,6 +65,8 @@ export function RecipeMetadataModal({
   const allImages = useMemo(() => {
     return [pictureUrl, ...galleryUrls].filter(Boolean);
   }, [pictureUrl, galleryUrls]);
+
+  const heroImagePreviewUrl = useResolvedMediaUrl(allImages[0], 'card');
 
   // Active media modal state
   const [activeMediaModal, setActiveMediaModal] = useState<{
@@ -437,7 +439,7 @@ export function RecipeMetadataModal({
                 >
                   {allImages.length > 0 ? (
                     <div className="root-media-filled">
-                      <img src={getOptimizedImageUrl(allImages[0], 'card')} alt="Recipe picture" />
+                      <img src={heroImagePreviewUrl || ''} alt="Recipe picture" />
                       {allImages.length > 1 && (
                         <div className="studio-media-counter-badge">
                           ×{allImages.length}
