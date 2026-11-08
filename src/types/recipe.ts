@@ -42,6 +42,14 @@ export interface RecipeSubsection {
   id: string;
   name: string;
   description?: string;
+  image?: string;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
   steps: RecipeStep[];
 }
 
@@ -50,6 +58,13 @@ export interface RecipeSection {
   name: string;
   description?: string;
   image?: string;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
   subsections?: RecipeSubsection[];
   steps: RecipeStep[];
 }

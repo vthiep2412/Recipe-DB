@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
-import { createPortal } from 'preact/compat';
 import {
   ChefHat,
   Link as LinkIcon,
@@ -7,9 +6,6 @@ import {
   Plus,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
-  X,
   Check,
   CookingPot,
   AlertTriangle,
@@ -17,6 +13,8 @@ import {
   Bookmark,
   NotepadText
 } from 'lucide-preact';
+import { RecipeLightbox } from './RecipeDetail/RecipeLightbox';
+import { RecipeHeroGallery } from './RecipeDetail/RecipeHeroGallery';
 import { renderAppMarkdown } from '../utils/markdown';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
 import type { ActiveTimer } from '../types/timer';
@@ -192,7 +190,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const [isSidebarOverflowing, setIsSidebarOverflowing] = useState(false);
-  const [lightboxImage, setLightboxImage] = useState<string>(recipe?.image || '');
   const [lightboxList, setLightboxList] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
   const [resolvedHeroImages, setResolvedHeroImages] = useState<string[]>([]);
@@ -222,9 +219,6 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       );
       if (isCurrent) {
         setResolvedHeroImages(resolved);
-        if (resolved.length > 0) {
-          setLightboxImage(resolved[0]);
-        }
       }
     };
 
@@ -256,48 +250,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const openLightbox = (index: number, customList?: string[]) => {
     const rawList = customList && customList.length > 0 ? customList : heroImages;
     if (!rawList.length) return;
-    const list = rawList.map((url) => getOptimizedImageUrl(url, 'lightbox'));
-    const safeIdx = Math.max(0, Math.min(index, list.length - 1));
-    setLightboxList(list);
+    const safeIdx = Math.max(0, Math.min(index, rawList.length - 1));
+    setLightboxList(rawList);
     setLightboxIndex(safeIdx);
-    setLightboxImage(list[safeIdx]);
     setIsLightboxOpen(true);
   };
 
-  const handleLightboxPrev = () => {
-    if (lightboxList.length <= 1) return;
-    setLightboxIndex((prev) => {
-      const nextIdx = prev > 0 ? prev - 1 : lightboxList.length - 1;
-      setLightboxImage(lightboxList[nextIdx]);
-      return nextIdx;
-    });
-  };
 
-  const handleLightboxNext = () => {
-    if (lightboxList.length <= 1) return;
-    setLightboxIndex((prev) => {
-      const nextIdx = prev < lightboxList.length - 1 ? prev + 1 : 0;
-      setLightboxImage(lightboxList[nextIdx]);
-      return nextIdx;
-    });
-  };
-
-  useEffect(() => {
-    if (!isLightboxOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsLightboxOpen(false);
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        handleLightboxPrev();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        handleLightboxNext();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLightboxOpen, lightboxList]);
 
   const isProgressHydratedRef = useRef(false);
 
@@ -1265,6 +1224,161 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     );
   };
 
+  const renderMediaBannerAndClip = (title: string, images: string[], clip?: { startSec: number; endSec?: number }) => {
+    if (images.length === 0 && !clip) return null;
+
+    return (
+      <div className="section-media-wrapper" style={{ marginTop: '0.35rem', marginBottom: '0.65rem' }}>
+        {images.length === 1 && (
+          <div className="cook-step-media-banner-wrap single">
+            <div
+              className="cook-step-media-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                openLightbox(0, images);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`View ${title} image`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openLightbox(0, images);
+                }
+              }}
+            >
+              <img
+                src={getOptimizedImageUrl(images[0], 'step')}
+                alt={title}
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+        {images.length === 2 && (
+          <div className="cook-step-media-banner-wrap split">
+            <div
+              className="cook-step-media-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                openLightbox(0, images);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`View ${title} image 1`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openLightbox(0, images);
+                }
+              }}
+            >
+              <img
+                src={getOptimizedImageUrl(images[0], 'step')}
+                alt={`${title} 1`}
+                loading="lazy"
+              />
+            </div>
+            <div
+              className="cook-step-media-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                openLightbox(1, images);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`View ${title} image 2`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openLightbox(1, images);
+                }
+              }}
+            >
+              <img
+                src={getOptimizedImageUrl(images[1], 'step')}
+                alt={`${title} 2`}
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+        {images.length >= 3 && (
+          <div className="cook-step-media-banner-wrap split">
+            <div
+              className="cook-step-media-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                openLightbox(0, images);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`View ${title} image 1`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openLightbox(0, images);
+                }
+              }}
+            >
+              <img
+                src={getOptimizedImageUrl(images[0], 'step')}
+                alt={`${title} 1`}
+                loading="lazy"
+              />
+            </div>
+            <div
+              className="cook-step-media-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                openLightbox(1, images);
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`View all ${images.length} images`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openLightbox(1, images);
+                }
+              }}
+            >
+              <img
+                src={getOptimizedImageUrl(images[1], 'step')}
+                alt={`${title} 2`}
+                loading="lazy"
+              />
+              <div className="cook-step-media-overlay-badge">
+                <span>+{images.length}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {clip && typeof clip.startSec === 'number' && (
+          <div className="cook-step-clip-wrapper">
+            <button
+              type="button"
+              className="cook-step-clip-btn"
+              onClick={(e) => handlePlayVideoClip(clip.startSec, clip.endSec, e)}
+              title={`Play ${title} video clip`}
+            >
+              <Play size={11} fill="currentColor" />
+              <span>Clip {formatClipTime(clip.startSec, clip.endSec)}</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderStepCard = (step: RecipeStep, secName: string, secSteps: RecipeStep[] = []) => {
     const isSecActive = activeSectionId === secName;
     const rememberedStepInSec = sectionActiveSteps[secName] ?? -1;
@@ -1705,178 +1819,17 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     <div className={`cook-preview-view cook-rich ${timers.length > 0 ? 'timer-active' : ''}`}>
       <div className="cook-main-pane">
         {/* 1. MEDIA HEADER (grid-area: media) */}
-        {(heroImages.length > 0 || hasVideo) && (
-          <div className={`cook-media-header ${isMultiMedia ? 'is-multi' : (isMediaExpanded ? 'expanded' : 'collapsed')} ${hasVideo ? 'has-video' : ''}`}>
-            <div className={`cook-media-content ${isMultiMedia ? 'split' : 'single'}`}>
-              {hasVideo ? (
-                <>
-                  {heroImages.length > 0 && (
-                    <div className="cook-media-item" style={{ position: 'relative' }}>
-                      <img
-                        src={heroImages[0]}
-                        alt={recipe.title}
-                        tabIndex={0}
-                        role="button"
-                        aria-label="View full size image"
-                        onClick={() => openLightbox(0)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            openLightbox(0);
-                          }
-                        }}
-                      />
-                      {heroImages.length > 1 && (
-                        <div
-                          className="cook-media-overlay-badge"
-                          onClick={() => openLightbox(0)}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`View all ${heroImages.length} images`}
-                        >
-                          <span>+{heroImages.length}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="cook-media-item video-player-wrap">
-                    {youtubeEmbedUrl ? (
-                      <iframe
-                        src={youtubeEmbedUrl}
-                        title="Recipe Video"
-                        className="cook-media-video-player cook-media-youtube-iframe"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    ) : (
-                      <video
-                        ref={videoRef}
-                        src={recipe.video}
-                        poster={heroImages[0]}
-                        controls
-                        playsInline
-                        className="cook-media-video-player"
-                      />
-                    )}
-                  </div>
-                </>
-              ) : heroImages.length >= 3 ? (
-                <>
-                  <div className="cook-media-item">
-                    <img
-                      src={heroImages[0]}
-                      alt={`${recipe.title} 1`}
-                      tabIndex={0}
-                      role="button"
-                      aria-label="View full size image"
-                      onClick={() => openLightbox(0)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openLightbox(0);
-                        }
-                      }}
-                    />
-                  </div>
-
-                  <div className="cook-media-item" style={{ position: 'relative' }}>
-                    <img
-                      src={heroImages[1]}
-                      alt={`${recipe.title} 2`}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`View all ${heroImages.length} images`}
-                      onClick={() => openLightbox(1)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openLightbox(1);
-                        }
-                      }}
-                    />
-                    <div
-                      className="cook-media-overlay-badge"
-                      onClick={() => openLightbox(1)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`View all ${heroImages.length} images`}
-                    >
-                      <span>+{heroImages.length}</span>
-                    </div>
-                  </div>
-                </>
-              ) : heroImages.length === 2 ? (
-                <>
-                  <div className="cook-media-item">
-                    <img
-                      src={heroImages[0]}
-                      alt={`${recipe.title} 1`}
-                      tabIndex={0}
-                      role="button"
-                      aria-label="View full size image"
-                      onClick={() => openLightbox(0)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openLightbox(0);
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="cook-media-item">
-                    <img
-                      src={heroImages[1]}
-                      alt={`${recipe.title} 2`}
-                      tabIndex={0}
-                      role="button"
-                      aria-label="View full size image"
-                      onClick={() => openLightbox(1)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openLightbox(1);
-                        }
-                      }}
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="cook-media-item">
-                  <img
-                    src={heroImages[0]}
-                    alt={recipe.title}
-                    tabIndex={0}
-                    role="button"
-                    aria-label="View full size image"
-                    onClick={() => openLightbox(0)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openLightbox(0);
-                      }
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {!isMultiMedia && (
-              !isMediaExpanded ? (
-                <div className="cook-media-fade-overlay" onClick={() => setIsMediaExpanded(true)}>
-                  <div className="cook-media-expand-btn">
-                    <ChevronDown size={24} />
-                  </div>
-                </div>
-              ) : (
-                <div className="cook-media-close-bar" onClick={() => setIsMediaExpanded(false)}>
-                  <ChevronUp size={16} />
-                  <span>Collapse</span>
-                </div>
-              )
-            )}
-          </div>
-        )}
+        <RecipeHeroGallery
+          recipe={recipe}
+          heroImages={heroImages}
+          hasVideo={hasVideo}
+          isMultiMedia={isMultiMedia}
+          isMediaExpanded={isMediaExpanded}
+          youtubeEmbedUrl={youtubeEmbedUrl}
+          videoRef={videoRef}
+          onOpenLightbox={openLightbox}
+          onToggleExpand={setIsMediaExpanded}
+        />
 
       {/* 2. HERO ROW (grid-area: hero) */}
       <div className="cook-hero">
@@ -2022,20 +1975,19 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 <div className="cook-section-band">{section.name}</div>
               )}
 
-              {section.image && (
-                <img
-                  src={getOptimizedImageUrl(section.image, 'step')}
-                  alt={section.name}
-                  className="section-media-banner"
-                  loading="lazy"
-                />
-              )}
-
               {section.description && (
                 <div className="cook-section-desc">
                   {section.description}
                 </div>
               )}
+
+              {(() => {
+                const secImages = [
+                  ...(section.image ? [section.image] : []),
+                  ...(section.media?.galleryUrls || [])
+                ].filter((url, idx, arr) => arr.indexOf(url) === idx);
+                return renderMediaBannerAndClip(section.name, secImages, section.media?.videoClip);
+              })()}
 
               <div className="cook-section-steps">
                 {(section.steps || []).map(step => renderStepCard(step, section.name, section.steps || []))}
@@ -2053,6 +2005,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                           {sub.description}
                         </div>
                       )}
+                      {(() => {
+                        const subImages = [
+                          ...(sub.image ? [sub.image] : []),
+                          ...(sub.media?.galleryUrls || [])
+                        ].filter((url, idx, arr) => arr.indexOf(url) === idx);
+                        return renderMediaBannerAndClip(sub.name, subImages, sub.media?.videoClip);
+                      })()}
                       <div className="cook-subsection-steps">
                         {(sub.steps || []).map(step => renderStepCard(step, sub.name, sub.steps || []))}
                       </div>
@@ -2256,88 +2215,13 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
       </aside>
 
       {/* Lightbox Modal */}
-      {isLightboxOpen && lightboxImage && (() => {
-        const lightboxModalElement = (
-          <div
-            className="cook-lightbox-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Full size recipe photo"
-            onClick={() => setIsLightboxOpen(false)}
-          >
-            <button
-              type="button"
-              className="cook-lightbox-close"
-              onClick={() => setIsLightboxOpen(false)}
-              aria-label="Close image"
-            >
-              <X size={20} />
-            </button>
-
-            {lightboxList.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  className="cook-lightbox-ghost-nav cook-lightbox-nav-prev"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleLightboxPrev();
-                  }}
-                  aria-label="Previous image"
-                >
-                  <ChevronLeft size={38} />
-                </button>
-
-                <button
-                  type="button"
-                  className="cook-lightbox-ghost-nav cook-lightbox-nav-next"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleLightboxNext();
-                  }}
-                  aria-label="Next image"
-                >
-                  <ChevronRight size={38} />
-                </button>
-              </>
-            )}
-
-            <div className="cook-lightbox-center-container" onClick={(e) => e.stopPropagation()}>
-              <div className="cook-lightbox-img-wrap">
-                <img src={getOptimizedImageUrl(lightboxImage, 'lightbox')} alt={recipe.title} className="cook-lightbox-img" />
-              </div>
-
-              {lightboxList.length > 1 && (
-                <div className="cook-lightbox-controls">
-                  <div className="cook-lightbox-counter">
-                    {lightboxIndex + 1} / {lightboxList.length}
-                  </div>
-                  <div className="cook-lightbox-thumb-strip">
-                    {lightboxList.map((url, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        className={`cook-lightbox-thumb-btn ${idx === lightboxIndex ? 'is-active' : ''}`}
-                        onClick={() => {
-                          setLightboxIndex(idx);
-                          setLightboxImage(url);
-                        }}
-                        aria-label={`Jump to image ${idx + 1}`}
-                      >
-                        <img src={getOptimizedImageUrl(url, 'thumb')} alt={`Thumbnail ${idx + 1}`} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-
-        return typeof document !== 'undefined'
-          ? createPortal(lightboxModalElement, document.body)
-          : lightboxModalElement;
-      })()}
+      <RecipeLightbox
+        isOpen={isLightboxOpen}
+        images={lightboxList}
+        initialIndex={lightboxIndex}
+        title={recipe.title}
+        onClose={() => setIsLightboxOpen(false)}
+      />
 
       {/* Timer Alarm Modal when countdown reaches 0 */}
       <TimerAlarmModal
