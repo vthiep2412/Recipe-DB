@@ -15,6 +15,8 @@ import { authStore } from './authStore';
 import { localMediaStore } from './localMediaStore';
 import { uploadAsset, getStreamMasterUrl } from './cloudinaryUpload';
 import { WorkspaceStorageService } from './workspaceStorageService';
+import { transcodeToAvifBlob, computeImageDHash } from '../utils/imageOptimizer';
+import { findExistingCloudinaryAsset, registerUploadedAsset } from './mediaDeduplicationService';
 
 export function slugifyRecipeTitle(title: string): string {
   if (!title) return '';
@@ -150,8 +152,19 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
       try {
         const blob = (await localMediaStore.loadBlob(fullKey)) || (await localMediaStore.loadBlob(rawKey));
         if (blob) {
-          const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
-          replacementMap.set(fullKey, getStreamMasterUrl(uploaded.secure_url));
+          const optimizedBlob = await transcodeToAvifBlob(blob);
+          const existing = await findExistingCloudinaryAsset(optimizedBlob);
+
+          if (existing?.url) {
+            replacementMap.set(fullKey, getStreamMasterUrl(existing.url));
+          } else {
+            const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
+            replacementMap.set(fullKey, getStreamMasterUrl(uploaded.secure_url));
+            const phash = await computeImageDHash(optimizedBlob);
+            if (phash) {
+              await registerUploadedAsset(phash, uploaded.secure_url);
+            }
+          }
         }
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload IDB asset to Cloudinary: ${fullKey}`, err);
@@ -166,8 +179,19 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
       try {
         const blob = await dataUrlToBlob(dataUrl);
         if (blob) {
-          const uploaded = await uploadAsset(blob, 'image', 'recipes/images');
-          replacementMap.set(dataUrl, getStreamMasterUrl(uploaded.secure_url));
+          const optimizedBlob = await transcodeToAvifBlob(blob);
+          const existing = await findExistingCloudinaryAsset(optimizedBlob);
+
+          if (existing?.url) {
+            replacementMap.set(dataUrl, getStreamMasterUrl(existing.url));
+          } else {
+            const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
+            replacementMap.set(dataUrl, getStreamMasterUrl(uploaded.secure_url));
+            const phash = await computeImageDHash(optimizedBlob);
+            if (phash) {
+              await registerUploadedAsset(phash, uploaded.secure_url);
+            }
+          }
         }
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload base64 asset to Cloudinary`, err);

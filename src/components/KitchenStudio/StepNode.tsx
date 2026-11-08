@@ -783,7 +783,7 @@ export function StepNode({
               tabIndex={0}
               title="Manage step pictures"
             >
-              <img src={getOptimizedImageUrl(node.media.galleryUrls[0])} alt={`Step ${stepNumber}`} />
+              <img src={getOptimizedImageUrl(node.media.galleryUrls[0], 'step')} alt={`Step ${stepNumber}`} />
               {node.media.galleryUrls.length > 1 && (
                 <div className="studio-media-counter-badge">
                   ×{node.media.galleryUrls.length}

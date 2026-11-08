@@ -1,12 +1,19 @@
 import type { LocalMediaStoreAPI } from '../types/cloud';
 
 const DB_NAME = 'recipedb_local_media';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'blobs';
+const PHASH_STORE_NAME = 'phash_index';
 
 interface BlobRecord {
   key: string;
   blob: Blob;
+  createdAt: number;
+}
+
+export interface PhashRecord {
+  phash: string;
+  cloudinaryUrl: string;
   createdAt: number;
 }
 
@@ -29,6 +36,9 @@ function getDatabase(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(PHASH_STORE_NAME)) {
+        db.createObjectStore(PHASH_STORE_NAME, { keyPath: 'phash' });
       }
     };
 
@@ -130,6 +140,52 @@ export const localMediaStore: LocalMediaStoreAPI = {
         }
       };
 
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async savePhashMapping(phash: string, cloudinaryUrl: string): Promise<void> {
+    if (!phash || !cloudinaryUrl) return;
+    const db = await getDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(PHASH_STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(PHASH_STORE_NAME);
+      const record: PhashRecord = {
+        phash,
+        cloudinaryUrl,
+        createdAt: Date.now()
+      };
+      const request = store.put(record);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async getPhashMapping(phash: string): Promise<string | null> {
+    if (!phash) return null;
+    const db = await getDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(PHASH_STORE_NAME, 'readonly');
+      const store = transaction.objectStore(PHASH_STORE_NAME);
+      const request = store.get(phash);
+      request.onsuccess = () => {
+        const result = request.result as PhashRecord | undefined;
+        resolve(result?.cloudinaryUrl ?? null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  async getAllPhashMappings(): Promise<Array<{ phash: string; cloudinaryUrl: string }>> {
+    const db = await getDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(PHASH_STORE_NAME, 'readonly');
+      const store = transaction.objectStore(PHASH_STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const results = (request.result as PhashRecord[]) || [];
+        resolve(results.map(r => ({ phash: r.phash, cloudinaryUrl: r.cloudinaryUrl })));
+      };
       request.onerror = () => reject(request.error);
     });
   }

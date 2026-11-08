@@ -369,7 +369,7 @@ export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
               >
                 {recipe.image && (
                   <img
-                    src={getOptimizedImageUrl(recipe.image)}
+                    src={getOptimizedImageUrl(recipe.image, 'card')}
                     alt={recipe.title}
                     className="recipe-card-img"
                     loading="lazy"

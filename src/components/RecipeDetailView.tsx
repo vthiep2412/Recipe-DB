@@ -244,7 +244,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const heroImages = (resolvedHeroImages.length > 0
     ? resolvedHeroImages
     : ([recipe.image, ...(recipe.gallery || [])].filter(Boolean) as string[])
-  ).map((url) => getOptimizedImageUrl(url));
+  ).map((url) => getOptimizedImageUrl(url, 'hero'));
 
   const youtubeEmbedUrl = useMemo(() => {
     return getYouTubeEmbedUrl(recipe.video);
@@ -256,7 +256,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
   const openLightbox = (index: number, customList?: string[]) => {
     const rawList = customList && customList.length > 0 ? customList : heroImages;
     if (!rawList.length) return;
-    const list = rawList.map((url) => getOptimizedImageUrl(url));
+    const list = rawList.map((url) => getOptimizedImageUrl(url, 'lightbox'));
     const safeIdx = Math.max(0, Math.min(index, list.length - 1));
     setLightboxList(list);
     setLightboxIndex(safeIdx);
@@ -1422,7 +1422,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 }}
               >
                 <img
-                  src={getOptimizedImageUrl(allStepImages[0])}
+                  src={getOptimizedImageUrl(allStepImages[0], 'step')}
                   alt={step.title || `Step ${step.index}`}
                   loading="lazy"
                 />
@@ -1450,7 +1450,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 }}
               >
                 <img
-                  src={getOptimizedImageUrl(allStepImages[0])}
+                  src={getOptimizedImageUrl(allStepImages[0], 'step')}
                   alt={`${step.title || `Step ${step.index}`} 1`}
                   loading="lazy"
                 />
@@ -1473,7 +1473,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 }}
               >
                 <img
-                  src={getOptimizedImageUrl(allStepImages[1])}
+                  src={getOptimizedImageUrl(allStepImages[1], 'step')}
                   alt={`${step.title || `Step ${step.index}`} 2`}
                   loading="lazy"
                 />
@@ -1501,7 +1501,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 }}
               >
                 <img
-                  src={getOptimizedImageUrl(allStepImages[0])}
+                  src={getOptimizedImageUrl(allStepImages[0], 'step')}
                   alt={`${step.title || `Step ${step.index}`} 1`}
                   loading="lazy"
                 />
@@ -1524,7 +1524,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 }}
               >
                 <img
-                  src={getOptimizedImageUrl(allStepImages[1])}
+                  src={getOptimizedImageUrl(allStepImages[1], 'step')}
                   alt={`${step.title || `Step ${step.index}`} 2`}
                   loading="lazy"
                 />
@@ -2024,7 +2024,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
               {section.image && (
                 <img
-                  src={getOptimizedImageUrl(section.image)}
+                  src={getOptimizedImageUrl(section.image, 'step')}
                   alt={section.name}
                   className="section-media-banner"
                   loading="lazy"
@@ -2304,7 +2304,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
 
             <div className="cook-lightbox-center-container" onClick={(e) => e.stopPropagation()}>
               <div className="cook-lightbox-img-wrap">
-                <img src={getOptimizedImageUrl(lightboxImage)} alt={recipe.title} className="cook-lightbox-img" />
+                <img src={getOptimizedImageUrl(lightboxImage, 'lightbox')} alt={recipe.title} className="cook-lightbox-img" />
               </div>
 
               {lightboxList.length > 1 && (
@@ -2324,7 +2324,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         }}
                         aria-label={`Jump to image ${idx + 1}`}
                       >
-                        <img src={getOptimizedImageUrl(url)} alt={`Thumbnail ${idx + 1}`} />
+                        <img src={getOptimizedImageUrl(url, 'thumb')} alt={`Thumbnail ${idx + 1}`} />
                       </button>
                     ))}
                   </div>

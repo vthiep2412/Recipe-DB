@@ -10,20 +10,40 @@ const API_KEY = (import.meta.env.VITE_CLOUDINARY_API_KEY as string) || '';
 
 export const STREAM_IMAGE_TRANSFORMATION = 'f_auto,q_auto:good,fl_strip_profile';
 
-export function getStreamMasterUrl(url: string): string {
-  return getOptimizedImageUrl(url);
+export type ImageVariant = 'hero' | 'step' | 'thumb' | 'card' | 'lightbox' | string;
+
+export function getVariantTransformation(variant?: ImageVariant): string {
+  switch (variant) {
+    case 'hero':
+      return 'w_1200,c_limit,f_auto,q_auto:good,fl_strip_profile';
+    case 'step':
+      return 'w_800,c_limit,f_auto,q_auto:good,fl_strip_profile';
+    case 'card':
+    case 'thumb':
+      return 'w_400,c_fill,ar_16:10,f_auto,q_auto:good,fl_strip_profile';
+    case 'lightbox':
+      return 'w_1920,c_limit,f_auto,q_auto:good,fl_strip_profile';
+    default:
+      return 'w_1200,c_limit,f_auto,q_auto:good,fl_strip_profile';
+  }
+}
+
+export function getStreamMasterUrl(url: string, variant?: ImageVariant): string {
+  return getOptimizedImageUrl(url, variant);
 }
 
 export function getOptimizedImageUrl(
   url?: string | null,
-  _variant?: 'hero' | 'step' | 'thumb' | 'card' | 'lightbox' | string
+  variant?: ImageVariant
 ): string {
   if (!url || typeof url !== 'string' || !url.includes('cloudinary.com') || !url.includes('/upload/')) {
     return url || '';
   }
 
-  // Already transformed with the stream configuration
-  if (url.includes(`/upload/${STREAM_IMAGE_TRANSFORMATION}/`)) {
+  const targetTransform = getVariantTransformation(variant);
+
+  // Already transformed with the requested configuration
+  if (url.includes(`/upload/${targetTransform}/`)) {
     return url;
   }
 
@@ -43,11 +63,11 @@ export function getOptimizedImageUrl(
 
     if (isTransformSegment) {
       const rest = afterUpload.slice(firstSlashIdx + 1);
-      return `${url.slice(0, uploadIndex)}/upload/${STREAM_IMAGE_TRANSFORMATION}/${rest}`;
+      return `${url.slice(0, uploadIndex)}/upload/${targetTransform}/${rest}`;
     }
   }
 
-  return `${url.slice(0, uploadIndex)}/upload/${STREAM_IMAGE_TRANSFORMATION}/${afterUpload}`;
+  return `${url.slice(0, uploadIndex)}/upload/${targetTransform}/${afterUpload}`;
 }
 
 export async function uploadAsset(
@@ -63,7 +83,16 @@ export async function uploadAsset(
   const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
   const form = new FormData();
 
-  form.append('file', source);
+  if (typeof source === 'string') {
+    form.append('file', source);
+  } else if (source instanceof File) {
+    form.append('file', source, source.name);
+  } else {
+    // Blob without filename
+    const ext = source.type === 'image/avif' ? 'avif' : source.type === 'image/webp' ? 'webp' : 'jpg';
+    form.append('file', source, `upload.${ext}`);
+  }
+
   form.append('upload_preset', UPLOAD_PRESET);
   if (API_KEY) {
     form.append('api_key', API_KEY);

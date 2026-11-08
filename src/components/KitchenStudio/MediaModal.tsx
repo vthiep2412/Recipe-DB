@@ -4,6 +4,7 @@ import { Image, Video, RefreshCw, Trash2, X } from 'lucide-preact';
 import { localMediaStore } from '../../services/localMediaStore';
 import { getYouTubeEmbedUrl } from '../../utils/media';
 import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
+import { transcodeToAvifBlob } from '../../utils/imageOptimizer';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -103,14 +104,17 @@ export function MediaModal({
   const processFile = async (file: File) => {
     if (!file) return;
 
-    // 1. Instant object URL for zero-latency local preview
-    const objectUrl = URL.createObjectURL(file);
+    // 1. Transcode raw photo to compressed AVIF (or WebP fallback) before storing
+    const optimizedFile = await transcodeToAvifBlob(file);
+
+    // 2. Instant object URL for zero-latency local preview
+    const objectUrl = URL.createObjectURL(optimizedFile);
     createdUrlsRef.current.add(objectUrl);
     const assetId = `idb:asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // 2. Persist blob into IndexedDB
+    // 3. Persist optimized blob into IndexedDB (zero network or Supabase calls)
     try {
-      await localMediaStore.saveBlob(assetId, file);
+      await localMediaStore.saveBlob(assetId, optimizedFile);
     } catch {
       // Storage quota fallback
     }
