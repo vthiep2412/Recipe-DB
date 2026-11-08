@@ -3247,6 +3247,23 @@
   text-decoration-color: rgba(255, 157, 66, 0.5);
 }
 
+/* Standard Markdown Links in Source Editor */
+.obsidian-token-link {
+  color: var(--interactive-accent, #ff7a00);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 122, 0, 0.6);
+  text-underline-offset: 2.5px;
+}
+
+.obsidian-token-link-url {
+  color: var(--text-muted, #9ca3af);
+  text-decoration: underline;
+  text-decoration-color: rgba(156, 163, 175, 0.3);
+  text-underline-offset: 2px;
+  font-size: 0.9em;
+}
+
 /* Inline code */
 .obsidian-token-code {
   background: var(--background-modifier-hover, rgba(255, 255, 255, 0.08));
@@ -3355,6 +3372,21 @@
 .metadata-markdown-preview li {
   margin: 0.2rem 0;
   line-height: 1.7;
+}
+
+.metadata-markdown-preview a {
+  color: var(--interactive-accent, #ff7a00);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 122, 0, 0.6);
+  text-underline-offset: 2.5px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.metadata-markdown-preview a:hover {
+  filter: brightness(1.15);
+  text-decoration-color: var(--interactive-accent, #ff7a00);
 }
 
 .metadata-images-grid {

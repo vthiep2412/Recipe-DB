@@ -1985,8 +1985,16 @@
 
 .cook-desc-markdown a {
   color: var(--text-accent, #f97316);
+  font-weight: 600;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: rgba(249, 115, 22, 0.6);
+  text-underline-offset: 2.5px;
+  transition: filter 0.15s ease;
+}
+
+.cook-desc-markdown a:hover {
+  filter: brightness(1.15);
+  text-decoration-color: var(--text-accent, #f97316);
 }
 
 .cook-desc-fade {
@@ -3526,9 +3534,9 @@
 .cook-step.cook-step-note-callout.is-chain-through-note::before {
   content: '';
   position: absolute;
-  top: -12px;
-  bottom: -12px;
-  left: -12px;
+  top: -14px;
+  bottom: -4px;
+  left: -15px;
   width: 3px;
   background-color: var(--interactive-accent);
   pointer-events: none;

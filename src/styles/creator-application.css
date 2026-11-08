@@ -258,7 +258,15 @@
 
 .creator-markdown-preview a {
   color: var(--color-primary, #ff5722);
+  font-weight: 600;
   text-decoration: underline;
+  text-decoration-color: rgba(255, 87, 34, 0.6);
+  text-underline-offset: 2.5px;
+  transition: filter 0.15s ease;
+}
+
+.creator-markdown-preview a:hover {
+  filter: brightness(1.15);
 }
 
 .creator-markdown-preview ul,

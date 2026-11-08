@@ -11,7 +11,7 @@ export interface ObsidianSourceEditorProps {
 }
 
 function tokenizeInlineText(parentEl: HTMLElement, text: string) {
-  const tokenRegex = /(\[\[[^\n\]]+\]\]|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`|<br\s*\/?>|\\+$)/gi;
+  const tokenRegex = /(\[\[[^\n\]]+\]\]|\[[^\n\]]+\]\([^\n\)]+\)|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`|<br\s*\/?>|\\+$)/gi;
   let lastIdx = 0;
   let match: RegExpExecArray | null;
 
@@ -36,6 +36,37 @@ function tokenizeInlineText(parentEl: HTMLElement, text: string) {
       closeSpan.className = 'obsidian-syntax-dim';
       closeSpan.textContent = ']]';
       parentEl.appendChild(closeSpan);
+    } else if (/^\[([^\n\]]+)\]\(([^\n\)]+)\)$/.test(tokenStr)) {
+      const linkMatch = tokenStr.match(/^\[([^\n\]]+)\]\(([^\n\)]+)\)$/);
+      if (linkMatch) {
+        const linkText = linkMatch[1];
+        const linkUrl = linkMatch[2];
+
+        const openBracket = document.createElement('span');
+        openBracket.className = 'obsidian-syntax-dim';
+        openBracket.textContent = '[';
+        parentEl.appendChild(openBracket);
+
+        const linkSpan = document.createElement('span');
+        linkSpan.className = 'obsidian-token-link';
+        linkSpan.textContent = linkText;
+        parentEl.appendChild(linkSpan);
+
+        const midSyntax = document.createElement('span');
+        midSyntax.className = 'obsidian-syntax-dim';
+        midSyntax.textContent = '](';
+        parentEl.appendChild(midSyntax);
+
+        const urlSpan = document.createElement('span');
+        urlSpan.className = 'obsidian-token-link-url';
+        urlSpan.textContent = linkUrl;
+        parentEl.appendChild(urlSpan);
+
+        const closeParen = document.createElement('span');
+        closeParen.className = 'obsidian-syntax-dim';
+        closeParen.textContent = ')';
+        parentEl.appendChild(closeParen);
+      }
     } else if (tokenStr.startsWith('***') && tokenStr.endsWith('***')) {
       const inner = tokenStr.slice(3, -3);
       const openSpan = document.createElement('span');
