@@ -10,6 +10,12 @@ export interface ObsidianSourceEditorProps {
   className?: string;
 }
 
+interface HistoryItem {
+  text: string;
+  lineIndex: number;
+  col: number;
+}
+
 function tokenizeInlineText(parentEl: HTMLElement, text: string) {
   const tokenRegex = /(\[\[[^\n\]]+\]\]|\[[^\n\]]+\]\([^\n\)]+\)|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`|<br\s*\/?>|\\+$)/gi;
   let lastIdx = 0;
@@ -149,6 +155,7 @@ function renderObsidianLine(lineText: string, lineIndex: number): HTMLDivElement
   const lineDiv = document.createElement('div');
   lineDiv.className = 'obsidian-editor-line';
   lineDiv.dataset.lineIndex = String(lineIndex);
+  lineDiv.dataset.rawText = lineText;
 
   if (!lineText) {
     lineDiv.classList.add('is-empty');
@@ -210,12 +217,26 @@ function renderObsidianLine(lineText: string, lineIndex: number): HTMLDivElement
   return lineDiv;
 }
 
-function renderObsidianDocument(container: HTMLElement, docText: string) {
+function reconcileDocument(container: HTMLElement, docText: string) {
   const lines = docText.split('\n');
-  container.innerHTML = '';
+
+  while (container.children.length > lines.length) {
+    container.removeChild(container.lastChild!);
+  }
+
   for (let i = 0; i < lines.length; i++) {
-    const lineEl = renderObsidianLine(lines[i], i);
-    container.appendChild(lineEl);
+    const lineText = lines[i];
+    const existingLine = container.children[i] as HTMLElement | undefined;
+
+    if (!existingLine) {
+      const newLine = renderObsidianLine(lineText, i);
+      container.appendChild(newLine);
+    } else if (existingLine.dataset.rawText !== lineText) {
+      const newLine = renderObsidianLine(lineText, i);
+      container.replaceChild(newLine, existingLine);
+    } else if (existingLine.dataset.lineIndex !== String(i)) {
+      existingLine.dataset.lineIndex = String(i);
+    }
   }
 }
 
@@ -225,10 +246,11 @@ function extractTextFromEditor(container: HTMLElement): string {
     const node = container.childNodes[i];
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
-      if (el.childNodes.length === 1 && el.childNodes[0].nodeName === 'BR') {
+      const text = el.textContent || '';
+      if (!text && (el.childNodes.length === 0 || (el.childNodes.length === 1 && el.childNodes[0].nodeName === 'BR'))) {
         lines.push('');
       } else {
-        lines.push(el.textContent || '');
+        lines.push(text);
       }
     } else if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent || '';
@@ -254,12 +276,19 @@ function getCaretLineAndCol(container: HTMLElement): { lineIndex: number; col: n
   const lineIndex = Array.from(container.children).indexOf(lineEl);
   if (lineIndex === -1) return null;
 
+  const text = lineEl.textContent || '';
+  if (!text) {
+    return { lineIndex, col: 0 };
+  }
+
   const preRange = document.createRange();
   preRange.selectNodeContents(lineEl);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  const col = preRange.toString().length;
-
-  return { lineIndex, col };
+  try {
+    preRange.setEnd(range.startContainer, range.startOffset);
+    return { lineIndex, col: preRange.toString().length };
+  } catch {
+    return { lineIndex, col: 0 };
+  }
 }
 
 function setCaretLineAndCol(container: HTMLElement, lineIndex: number, col: number) {
@@ -273,7 +302,12 @@ function setCaretLineAndCol(container: HTMLElement, lineIndex: number, col: numb
   const lineEl = lines[clampedLineIdx] as HTMLElement;
   if (!lineEl) return;
 
-  if (lineEl.classList.contains('is-empty') || lineEl.textContent === '') {
+  if (document.activeElement !== container) {
+    container.focus();
+  }
+
+  const text = lineEl.textContent || '';
+  if (!text || lineEl.childNodes.length === 0) {
     const range = document.createRange();
     range.selectNodeContents(lineEl);
     range.collapse(true);
@@ -292,9 +326,20 @@ function setCaretLineAndCol(container: HTMLElement, lineIndex: number, col: numb
 
   while (textNode) {
     const len = textNode.textContent?.length || 0;
-    if (remaining <= len) {
+    if (remaining < len) {
       targetNode = textNode;
       targetOffset = remaining;
+      found = true;
+      break;
+    } else if (remaining === len) {
+      const next = walker.nextNode();
+      if (next) {
+        targetNode = next;
+        targetOffset = 0;
+      } else {
+        targetNode = textNode;
+        targetOffset = len;
+      }
       found = true;
       break;
     }
@@ -322,92 +367,434 @@ export function ObsidianSourceEditor({ value, onChange, placeholder, className }
   const isComposingRef = useRef(false);
   const lastValueRef = useRef(value);
 
-  const syncDocument = (text: string) => {
-    if (!editorRef.current) return;
-    renderObsidianDocument(editorRef.current, text);
+  // Undo / Redo history
+  const historyRef = useRef<HistoryItem[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const isHistoryNavigatingRef = useRef(false);
+  const lastHistoryPushTimeRef = useRef<number>(0);
+
+  const handleUndo = () => {
+    if (historyIndexRef.current > 0) {
+      isHistoryNavigatingRef.current = true;
+      historyIndexRef.current--;
+      const target = historyRef.current[historyIndexRef.current];
+
+      lastValueRef.current = target.text;
+      onChange(target.text);
+
+      if (editorRef.current) {
+        const prevScrollTop = editorRef.current.scrollTop;
+        reconcileDocument(editorRef.current, target.text);
+        setCaretLineAndCol(editorRef.current, target.lineIndex, target.col);
+        editorRef.current.scrollTop = prevScrollTop;
+      }
+
+      isHistoryNavigatingRef.current = false;
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      isHistoryNavigatingRef.current = true;
+      historyIndexRef.current++;
+      const target = historyRef.current[historyIndexRef.current];
+
+      lastValueRef.current = target.text;
+      onChange(target.text);
+
+      if (editorRef.current) {
+        const prevScrollTop = editorRef.current.scrollTop;
+        reconcileDocument(editorRef.current, target.text);
+        setCaretLineAndCol(editorRef.current, target.lineIndex, target.col);
+        editorRef.current.scrollTop = prevScrollTop;
+      }
+
+      isHistoryNavigatingRef.current = false;
+    }
   };
 
   useEffect(() => {
     if (editorRef.current && value !== lastValueRef.current) {
       lastValueRef.current = value;
-      syncDocument(value);
+      const prevScrollTop = editorRef.current.scrollTop;
+      const caret = getCaretLineAndCol(editorRef.current);
+      reconcileDocument(editorRef.current, value);
+      if (caret) {
+        setCaretLineAndCol(editorRef.current, caret.lineIndex, caret.col);
+      }
+      editorRef.current.scrollTop = prevScrollTop;
     }
   }, [value]);
 
   useEffect(() => {
     if (editorRef.current) {
-      syncDocument(value);
+      reconcileDocument(editorRef.current, value);
+      historyRef.current = [{ text: value, lineIndex: 0, col: 0 }];
+      historyIndexRef.current = 0;
     }
   }, []);
 
   const handleInput = () => {
-    if (!editorRef.current || isComposingRef.current) return;
+    if (!editorRef.current || isComposingRef.current || isHistoryNavigatingRef.current) return;
     const caret = getCaretLineAndCol(editorRef.current);
     const newText = extractTextFromEditor(editorRef.current);
+
     lastValueRef.current = newText;
     onChange(newText);
-    renderObsidianDocument(editorRef.current, newText);
+
+    const now = Date.now();
+    const curCaret = caret || { lineIndex: 0, col: 0 };
+    if (now - lastHistoryPushTimeRef.current < 450 && historyIndexRef.current > 0) {
+      historyRef.current[historyIndexRef.current] = {
+        text: newText,
+        lineIndex: curCaret.lineIndex,
+        col: curCaret.col,
+      };
+    } else {
+      if (historyIndexRef.current < historyRef.current.length - 1) {
+        historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+      }
+      historyRef.current.push({
+        text: newText,
+        lineIndex: curCaret.lineIndex,
+        col: curCaret.col,
+      });
+      if (historyRef.current.length > 150) historyRef.current.shift();
+      historyIndexRef.current = historyRef.current.length - 1;
+    }
+    lastHistoryPushTimeRef.current = now;
+
+    const prevScrollTop = editorRef.current.scrollTop;
+    const prevScrollLeft = editorRef.current.scrollLeft;
+
+    reconcileDocument(editorRef.current, newText);
     if (caret) {
       setCaretLineAndCol(editorRef.current, caret.lineIndex, caret.col);
     }
+
+    editorRef.current.scrollTop = prevScrollTop;
+    editorRef.current.scrollLeft = prevScrollLeft;
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Tab') {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+    // Track starting cursor position before the very first key typed into document
+    if (!isCmdOrCtrl && e.key.length === 1 && historyRef.current.length === 1 && editorRef.current) {
+      const caret = getCaretLineAndCol(editorRef.current);
+      if (caret && historyRef.current[0]) {
+        historyRef.current[0].lineIndex = caret.lineIndex;
+        historyRef.current[0].col = caret.col;
+      }
+    }
+
+    // Undo / Redo
+    if (isCmdOrCtrl && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
-      document.execCommand('insertText', false, '  ');
+      if (e.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+      return;
+    }
+    if (isCmdOrCtrl && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      handleRedo();
       return;
     }
 
-    if (e.key === 'Enter') {
+    // Shift + 8 (*): Wrap selection with asterisks and select the wrapped content
+    if (e.key === '*' || (e.shiftKey && (e.key === '8' || e.code === 'Digit8'))) {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && editorRef.current) {
+        const range = sel.getRangeAt(0);
+        if (editorRef.current.contains(range.commonAncestorContainer)) {
+          const selectedText = sel.toString();
+          if (selectedText) {
+            e.preventDefault();
+            const wrapped = `*${selectedText}*`;
+            document.execCommand('insertText', false, wrapped);
+
+            // Reselect the newly inserted wrapped text so pressing again wraps it again
+            const activeSel = window.getSelection();
+            if (activeSel && activeSel.rangeCount > 0) {
+              for (let i = 0; i < wrapped.length; i++) {
+                activeSel.modify('extend', 'backward', 'character');
+              }
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // Ctrl + Backspace: Word deletion backwards without jumping to head
+    if (isCmdOrCtrl && e.key === 'Backspace') {
+      e.preventDefault();
       if (!editorRef.current) return;
       const caret = getCaretLineAndCol(editorRef.current);
       if (!caret) return;
 
-      const lines = editorRef.current.children;
-      const currentLineEl = lines[caret.lineIndex] as HTMLElement;
-      if (!currentLineEl) return;
+      const docText = extractTextFromEditor(editorRef.current);
+      const lines = docText.split('\n');
+      const line = lines[caret.lineIndex] || '';
 
-      const currentText = currentLineEl.textContent || '';
-      const emptyBulletMatch = currentText.match(/^(\s*[-*+]\s*)$/);
-      if (emptyBulletMatch && caret.col <= currentText.length) {
-        e.preventDefault();
-        const docText = extractTextFromEditor(editorRef.current);
-        const allLines = docText.split('\n');
-        allLines[caret.lineIndex] = '';
-        const nextDoc = allLines.join('\n');
+      if (caret.col === 0) {
+        if (caret.lineIndex > 0) {
+          const prevLine = lines[caret.lineIndex - 1] || '';
+          const newCol = prevLine.length;
+          lines[caret.lineIndex - 1] = prevLine + line;
+          lines.splice(caret.lineIndex, 1);
+
+          const nextDoc = lines.join('\n');
+          lastValueRef.current = nextDoc;
+          onChange(nextDoc);
+
+          const prevScrollTop = editorRef.current.scrollTop;
+          reconcileDocument(editorRef.current, nextDoc);
+          setCaretLineAndCol(editorRef.current, caret.lineIndex - 1, newCol);
+          editorRef.current.scrollTop = prevScrollTop;
+        }
+        return;
+      }
+
+      const beforeCaret = line.slice(0, caret.col);
+      const afterCaret = line.slice(caret.col);
+      const match = beforeCaret.match(/(\s+|[^\s\w]+|\w+)\s*$/);
+      const deleteCount = match ? match[0].length : 1;
+      const newBefore = beforeCaret.slice(0, beforeCaret.length - deleteCount);
+      const newCol = newBefore.length;
+      lines[caret.lineIndex] = newBefore + afterCaret;
+
+      const nextDoc = lines.join('\n');
+      lastValueRef.current = nextDoc;
+      onChange(nextDoc);
+
+      const prevScrollTop = editorRef.current.scrollTop;
+      reconcileDocument(editorRef.current, nextDoc);
+      setCaretLineAndCol(editorRef.current, caret.lineIndex, newCol);
+      editorRef.current.scrollTop = prevScrollTop;
+      return;
+    }
+
+    // Ctrl + Delete: Word deletion forwards
+    if (isCmdOrCtrl && e.key === 'Delete') {
+      e.preventDefault();
+      if (!editorRef.current) return;
+      const caret = getCaretLineAndCol(editorRef.current);
+      if (!caret) return;
+
+      const docText = extractTextFromEditor(editorRef.current);
+      const lines = docText.split('\n');
+      const line = lines[caret.lineIndex] || '';
+
+      if (caret.col >= line.length) {
+        if (caret.lineIndex < lines.length - 1) {
+          lines[caret.lineIndex] = line + (lines[caret.lineIndex + 1] || '');
+          lines.splice(caret.lineIndex + 1, 1);
+
+          const nextDoc = lines.join('\n');
+          lastValueRef.current = nextDoc;
+          onChange(nextDoc);
+
+          const prevScrollTop = editorRef.current.scrollTop;
+          reconcileDocument(editorRef.current, nextDoc);
+          setCaretLineAndCol(editorRef.current, caret.lineIndex, caret.col);
+          editorRef.current.scrollTop = prevScrollTop;
+        }
+        return;
+      }
+
+      const beforeCaret = line.slice(0, caret.col);
+      const afterCaret = line.slice(caret.col);
+      const match = afterCaret.match(/^\s*(\s+|[^\s\w]+|\w+)/);
+      const deleteCount = match ? match[0].length : 1;
+      const newAfter = afterCaret.slice(deleteCount);
+      lines[caret.lineIndex] = beforeCaret + newAfter;
+
+      const nextDoc = lines.join('\n');
+      lastValueRef.current = nextDoc;
+      onChange(nextDoc);
+
+      const prevScrollTop = editorRef.current.scrollTop;
+      reconcileDocument(editorRef.current, nextDoc);
+      setCaretLineAndCol(editorRef.current, caret.lineIndex, caret.col);
+      editorRef.current.scrollTop = prevScrollTop;
+      return;
+    }
+
+    // Tab / Shift+Tab indentation
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (!editorRef.current) return;
+      const caret = getCaretLineAndCol(editorRef.current);
+      if (!caret) return;
+
+      const docText = extractTextFromEditor(editorRef.current);
+      const lines = docText.split('\n');
+      const line = lines[caret.lineIndex] || '';
+
+      if (e.shiftKey) {
+        if (line.startsWith('  ')) {
+          lines[caret.lineIndex] = line.slice(2);
+          const newCol = Math.max(0, caret.col - 2);
+          const nextDoc = lines.join('\n');
+          lastValueRef.current = nextDoc;
+          onChange(nextDoc);
+
+          const prevScrollTop = editorRef.current.scrollTop;
+          reconcileDocument(editorRef.current, nextDoc);
+          setCaretLineAndCol(editorRef.current, caret.lineIndex, newCol);
+          editorRef.current.scrollTop = prevScrollTop;
+        }
+      } else {
+        const beforeCaret = line.slice(0, caret.col);
+        const afterCaret = line.slice(caret.col);
+        lines[caret.lineIndex] = beforeCaret + '  ' + afterCaret;
+        const newCol = caret.col + 2;
+
+        const nextDoc = lines.join('\n');
         lastValueRef.current = nextDoc;
         onChange(nextDoc);
-        renderObsidianDocument(editorRef.current, nextDoc);
+
+        const prevScrollTop = editorRef.current.scrollTop;
+        reconcileDocument(editorRef.current, nextDoc);
+        setCaretLineAndCol(editorRef.current, caret.lineIndex, newCol);
+        editorRef.current.scrollTop = prevScrollTop;
+      }
+      return;
+    }
+
+    // Backspace at line head (merge with previous line)
+    if (e.key === 'Backspace' && !isCmdOrCtrl && !e.altKey) {
+      if (!editorRef.current) return;
+      const caret = getCaretLineAndCol(editorRef.current);
+      if (caret && caret.col === 0 && caret.lineIndex > 0) {
+        e.preventDefault();
+        const docText = extractTextFromEditor(editorRef.current);
+        const lines = docText.split('\n');
+        const prevLine = lines[caret.lineIndex - 1] || '';
+        const currentLine = lines[caret.lineIndex] || '';
+        const targetCol = prevLine.length;
+
+        lines[caret.lineIndex - 1] = prevLine + currentLine;
+        lines.splice(caret.lineIndex, 1);
+
+        const nextDoc = lines.join('\n');
+        lastValueRef.current = nextDoc;
+        onChange(nextDoc);
+
+        const prevScrollTop = editorRef.current.scrollTop;
+        reconcileDocument(editorRef.current, nextDoc);
+        setCaretLineAndCol(editorRef.current, caret.lineIndex - 1, targetCol);
+        editorRef.current.scrollTop = prevScrollTop;
+        return;
+      }
+    }
+
+    // Enter: smart lists & line splitting
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!editorRef.current) return;
+      const caret = getCaretLineAndCol(editorRef.current);
+      if (!caret) return;
+
+      const docText = extractTextFromEditor(editorRef.current);
+      const lines = docText.split('\n');
+      const currentLine = lines[caret.lineIndex] || '';
+
+      const emptyBulletMatch = currentLine.match(/^(\s*[-*+]\s*|\s*\d+\.\s*)$/);
+      if (emptyBulletMatch) {
+        lines[caret.lineIndex] = '';
+        const nextDoc = lines.join('\n');
+        lastValueRef.current = nextDoc;
+        onChange(nextDoc);
+
+        const prevScrollTop = editorRef.current.scrollTop;
+        reconcileDocument(editorRef.current, nextDoc);
         setCaretLineAndCol(editorRef.current, caret.lineIndex, 0);
+        editorRef.current.scrollTop = prevScrollTop;
         return;
       }
 
-      const activeBulletMatch = currentText.match(/^(\s*[-*+]\s+)/);
-      if (activeBulletMatch && caret.col >= activeBulletMatch[1].length) {
-        e.preventDefault();
-        const bulletPrefix = activeBulletMatch[1];
-        const docText = extractTextFromEditor(editorRef.current);
-        const allLines = docText.split('\n');
-        const beforeCaret = currentText.slice(0, caret.col);
-        const afterCaret = currentText.slice(caret.col);
-        allLines[caret.lineIndex] = beforeCaret;
-        allLines.splice(caret.lineIndex + 1, 0, bulletPrefix + afterCaret);
-        const nextDoc = allLines.join('\n');
-        lastValueRef.current = nextDoc;
-        onChange(nextDoc);
-        renderObsidianDocument(editorRef.current, nextDoc);
-        setCaretLineAndCol(editorRef.current, caret.lineIndex + 1, bulletPrefix.length);
-        return;
+      const bulletMatch = currentLine.match(/^(\s*[-*+]\s+)/);
+      const numMatch = currentLine.match(/^(\s*)(\d+)(\.\s+)/);
+
+      let prefix = '';
+      if (bulletMatch && caret.col >= bulletMatch[1].length) {
+        prefix = bulletMatch[1];
+      } else if (numMatch && caret.col >= (numMatch[1].length + numMatch[2].length + numMatch[3].length)) {
+        const nextNum = parseInt(numMatch[2], 10) + 1;
+        prefix = `${numMatch[1]}${nextNum}${numMatch[3]}`;
       }
+
+      const beforeCaret = currentLine.slice(0, caret.col);
+      const afterCaret = currentLine.slice(caret.col);
+      lines[caret.lineIndex] = beforeCaret;
+      lines.splice(caret.lineIndex + 1, 0, prefix + afterCaret);
+
+      const nextDoc = lines.join('\n');
+      const targetLine = caret.lineIndex + 1;
+      const targetCol = prefix.length;
+
+      lastValueRef.current = nextDoc;
+      onChange(nextDoc);
+
+      const prevScrollTop = editorRef.current.scrollTop;
+      reconcileDocument(editorRef.current, nextDoc);
+      setCaretLineAndCol(editorRef.current, targetLine, targetCol);
+      editorRef.current.scrollTop = prevScrollTop;
+      return;
     }
   };
 
   const handlePaste = (e: ClipboardEvent) => {
     e.preventDefault();
+    if (!editorRef.current) return;
     const text = e.clipboardData?.getData('text/plain') || '';
     if (!text) return;
-    document.execCommand('insertText', false, text);
+
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const caret = getCaretLineAndCol(editorRef.current) || { lineIndex: 0, col: 0 };
+    const docText = extractTextFromEditor(editorRef.current);
+    const lines = docText.split('\n');
+
+    while (lines.length <= caret.lineIndex) {
+      lines.push('');
+    }
+
+    const currentLine = lines[caret.lineIndex] || '';
+    const beforeCaret = currentLine.slice(0, caret.col);
+    const afterCaret = currentLine.slice(caret.col);
+
+    const pastedLines = normalized.split('\n');
+    let targetLineIndex = caret.lineIndex;
+    let targetCol = 0;
+
+    if (pastedLines.length === 1) {
+      lines[caret.lineIndex] = beforeCaret + pastedLines[0] + afterCaret;
+      targetCol = beforeCaret.length + pastedLines[0].length;
+    } else {
+      lines[caret.lineIndex] = beforeCaret + pastedLines[0];
+      for (let i = 1; i < pastedLines.length - 1; i++) {
+        lines.splice(caret.lineIndex + i, 0, pastedLines[i]);
+      }
+      const lastPasted = pastedLines[pastedLines.length - 1];
+      lines.splice(caret.lineIndex + pastedLines.length - 1, 0, lastPasted + afterCaret);
+      targetLineIndex = caret.lineIndex + pastedLines.length - 1;
+      targetCol = lastPasted.length;
+    }
+
+    const nextDoc = lines.join('\n');
+    lastValueRef.current = nextDoc;
+    onChange(nextDoc);
+
+    const prevScrollTop = editorRef.current.scrollTop;
+    reconcileDocument(editorRef.current, nextDoc);
+    setCaretLineAndCol(editorRef.current, targetLineIndex, targetCol);
+    editorRef.current.scrollTop = prevScrollTop;
   };
 
   const handleClick = (e: MouseEvent) => {

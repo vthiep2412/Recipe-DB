@@ -2892,6 +2892,34 @@
   color: var(--text-normal, #f3f4f6);
 }
 
+.important-notes-body ul,
+.important-notes-body ol {
+  padding-left: 1.25rem;
+  margin: 0.4rem 0;
+  color: var(--text-normal, #f3f4f6);
+}
+
+.important-notes-body li {
+  margin: 0.2rem 0;
+}
+
+.important-notes-body code {
+  background-color: rgba(0, 0, 0, 0.25);
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-s);
+  font-family: monospace;
+  font-size: 0.88em;
+}
+
+[data-theme="light"] .important-notes-body strong,
+[data-theme="light"] .important-notes-body a {
+  color: #b45309;
+}
+
+[data-theme="light"] .important-notes-body code {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
 /* Clean hairline divider with no text label */
 .cook-section-hairline {
   height: 1px;
@@ -3291,8 +3319,48 @@
 .cook-section-desc {
   margin-bottom: 0.75rem;
   color: var(--text-muted);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.cook-section-desc p {
+  margin: 0.35rem 0;
+}
+
+.cook-section-desc p:first-child {
+  margin-top: 0;
+}
+
+.cook-section-desc p:last-child {
+  margin-bottom: 0;
+}
+
+.cook-section-desc strong {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.cook-section-desc a {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cook-section-desc ul,
+.cook-section-desc ol {
+  padding-left: 1.25rem;
+  margin: 0.4rem 0;
+}
+
+.cook-section-desc li {
+  margin: 0.2rem 0;
+}
+
+.cook-section-desc blockquote {
+  border-left: 3px solid var(--interactive-accent);
+  margin: 0.4rem 0;
+  padding: 0.2rem 0 0.2rem 0.65rem;
+  color: var(--text-muted);
 }
 
 /* Subsection hierarchy */
@@ -3330,10 +3398,50 @@
 }
 
 .cook-subsection-desc {
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   color: var(--text-muted);
   margin-bottom: 0.5rem;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.cook-subsection-desc p {
+  margin: 0.3rem 0;
+}
+
+.cook-subsection-desc p:first-child {
+  margin-top: 0;
+}
+
+.cook-subsection-desc p:last-child {
+  margin-bottom: 0;
+}
+
+.cook-subsection-desc strong {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.cook-subsection-desc a {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cook-subsection-desc ul,
+.cook-subsection-desc ol {
+  padding-left: 1.25rem;
+  margin: 0.35rem 0;
+}
+
+.cook-subsection-desc li {
+  margin: 0.2rem 0;
+}
+
+.cook-subsection-desc blockquote {
+  border-left: 3px solid var(--interactive-accent);
+  margin: 0.35rem 0;
+  padding: 0.2rem 0 0.2rem 0.65rem;
+  color: var(--text-muted);
 }
 
 .cook-sidebar-subsection {

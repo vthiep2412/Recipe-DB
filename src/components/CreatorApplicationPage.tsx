@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { ChefHat, ArrowLeft, Edit3, BookOpen, Send, Clock, Sparkles, CheckCircle2, AlertCircle, Info } from 'lucide-preact';
 import { toast } from 'sonner';
 import { authStore } from '../services/authStore';
@@ -45,13 +45,51 @@ export function CreatorApplicationPage({ onNavigate }: Props) {
   }, [user?.id]);
 
   const renderedMarkdownHtml = useMemo(() => {
-    if (!isReadingMode && !existingApp) return '';
     const textToRender = existingApp ? existingApp.applicationMd : content;
     return renderAppMarkdown(textToRender, {
       fallbackText: '*No content written yet.*',
       profile: 'recipe'
     });
-  }, [content, isReadingMode, existingApp]);
+  }, [content, existingApp]);
+
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
+  const previewWrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleMode = (targetReadingMode: boolean) => {
+    if (targetReadingMode === isReadingMode) return;
+
+    if (targetReadingMode) {
+      const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+      let ratio = 0;
+      if (editorEl) {
+        const maxScroll = editorEl.scrollHeight - editorEl.clientHeight;
+        ratio = maxScroll > 0 ? editorEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(true);
+      requestAnimationFrame(() => {
+        const previewEl = previewWrapperRef.current;
+        if (previewEl) {
+          const previewMax = previewEl.scrollHeight - previewEl.clientHeight;
+          previewEl.scrollTop = ratio * previewMax;
+        }
+      });
+    } else {
+      const previewEl = previewWrapperRef.current;
+      let ratio = 0;
+      if (previewEl) {
+        const maxScroll = previewEl.scrollHeight - previewEl.clientHeight;
+        ratio = maxScroll > 0 ? previewEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(false);
+      requestAnimationFrame(() => {
+        const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+        if (editorEl) {
+          const editorMax = editorEl.scrollHeight - editorEl.clientHeight;
+          editorEl.scrollTop = ratio * editorMax;
+        }
+      });
+    }
+  };
 
   const handleSubmit = async () => {
     if (!user?.id) {
@@ -287,7 +325,7 @@ export function CreatorApplicationPage({ onNavigate }: Props) {
                 <button
                   type="button"
                   className={`metadata-segment-btn ${!isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(false)}
+                  onClick={() => handleToggleMode(false)}
                   title="Source Mode (Markdown)"
                 >
                   <Edit3 size={13} />
@@ -296,7 +334,7 @@ export function CreatorApplicationPage({ onNavigate }: Props) {
                 <button
                   type="button"
                   className={`metadata-segment-btn ${isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(true)}
+                  onClick={() => handleToggleMode(true)}
                   title="Reading View (Rendered Preview)"
                 >
                   <BookOpen size={13} />
@@ -306,18 +344,22 @@ export function CreatorApplicationPage({ onNavigate }: Props) {
             </div>
 
             <div className="creator-editor-container">
-              {!isReadingMode ? (
+              <div
+                ref={editorWrapperRef}
+                style={{ display: isReadingMode ? 'none' : 'flex', width: '100%', height: '100%', minHeight: 0 }}
+              >
                 <ObsidianSourceEditor
                   value={content}
                   onChange={setContent}
                   placeholder="Describe your recipe experience, proof or links of your creations, other platforms, and your goals..."
                 />
-              ) : (
-                <div
-                  className="creator-markdown-preview"
-                  dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
-                />
-              )}
+              </div>
+              <div
+                ref={previewWrapperRef}
+                className="creator-markdown-preview"
+                style={{ display: isReadingMode ? 'block' : 'none' }}
+                dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
+              />
             </div>
 
             <footer className="creator-editor-footer">

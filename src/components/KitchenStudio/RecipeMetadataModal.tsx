@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag } from 'lucide-preact';
+import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag, Info } from 'lucide-preact';
 import { toast } from 'sonner';
 import type { RecipeGraph } from '../../types/orchestration';
 import { formatSecondsToDisplay } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
 import { ConfirmModal } from '../ConfirmModal';
 import { MediaModal } from './MediaModal';
+import { Tooltip } from '../Tooltip';
 import { ObsidianSourceEditor } from './ObsidianSourceEditor';
 import { renderAppMarkdown } from '../../utils/markdown';
 import { TagManagerModal } from './TagManagerModal';
@@ -384,12 +385,50 @@ export function RecipeMetadataModal({
   };
 
   const renderedMarkdownHtml = useMemo(() => {
-    if (!isReadingMode) return '';
     return renderAppMarkdown(description, {
       fallbackText: '*No description entered yet. Switch to Source Mode to write.*',
       profile: 'recipe'
     });
-  }, [description, isReadingMode]);
+  }, [description]);
+
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
+  const previewWrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleMode = (targetReadingMode: boolean) => {
+    if (targetReadingMode === isReadingMode) return;
+
+    if (targetReadingMode) {
+      const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+      let ratio = 0;
+      if (editorEl) {
+        const maxScroll = editorEl.scrollHeight - editorEl.clientHeight;
+        ratio = maxScroll > 0 ? editorEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(true);
+      requestAnimationFrame(() => {
+        const previewEl = previewWrapperRef.current;
+        if (previewEl) {
+          const previewMax = previewEl.scrollHeight - previewEl.clientHeight;
+          previewEl.scrollTop = ratio * previewMax;
+        }
+      });
+    } else {
+      const previewEl = previewWrapperRef.current;
+      let ratio = 0;
+      if (previewEl) {
+        const maxScroll = previewEl.scrollHeight - previewEl.clientHeight;
+        ratio = maxScroll > 0 ? previewEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(false);
+      requestAnimationFrame(() => {
+        const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+        if (editorEl) {
+          const editorMax = editorEl.scrollHeight - editorEl.clientHeight;
+          editorEl.scrollTop = ratio * editorMax;
+        }
+      });
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -701,9 +740,14 @@ export function RecipeMetadataModal({
               )}
             </div>
 
-            {/* Box 4: Important Notes (No Markdown) */}
+            {/* Box 4: Important Notes */}
             <div className="metadata-field-group">
-              <label className="metadata-field-label">Important Notes (No Markdown)</label>
+              <label className="metadata-field-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                Important Notes
+                <Tooltip content="Markdown is supported in recipe view, but live preview is not available in this modal.">
+                  <Info size={14} className="metadata-info-icon" style={{ cursor: 'help', color: 'var(--text-muted)' }} />
+                </Tooltip>
+              </label>
               <textarea
                 className="metadata-textarea"
                 rows={3}
@@ -726,7 +770,7 @@ export function RecipeMetadataModal({
                 <button
                   type="button"
                   className={`metadata-segment-btn ${!isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(false)}
+                  onClick={() => handleToggleMode(false)}
                   title="Source Mode (Markdown)"
                 >
                   <Edit3 size={13} />
@@ -735,7 +779,7 @@ export function RecipeMetadataModal({
                 <button
                   type="button"
                   className={`metadata-segment-btn ${isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(true)}
+                  onClick={() => handleToggleMode(true)}
                   title="Reading View (Rendered Preview)"
                 >
                   <BookOpen size={13} />
@@ -745,18 +789,22 @@ export function RecipeMetadataModal({
             </div>
 
             <div className="metadata-editor-wrapper">
-              {!isReadingMode ? (
+              <div
+                ref={editorWrapperRef}
+                style={{ display: isReadingMode ? 'none' : 'flex', width: '100%', height: '100%', minHeight: 0 }}
+              >
                 <ObsidianSourceEditor
                   value={description}
                   onChange={setDescription}
                   placeholder="Write description in Markdown..."
                 />
-              ) : (
-                <div
-                  className="metadata-markdown-preview"
-                  dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
-                />
-              )}
+              </div>
+              <div
+                ref={previewWrapperRef}
+                className="metadata-markdown-preview"
+                style={{ display: isReadingMode ? 'block' : 'none' }}
+                dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
+              />
             </div>
           </div>
         </div>

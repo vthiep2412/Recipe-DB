@@ -50,7 +50,13 @@ export function renderAppMarkdown(
     return `<span class="obsidian-reading-link">${escapeHtmlAttr(linkText)}</span>`;
   });
 
-  // 5. Marked renderer configuration
+  // 5. Normalize leading 0-based list items (e.g. "0. " or "0) ") to standard 1-based markers
+  // Allows lists to interrupt paragraphs and auto-numbers from 1
+  text = text.replace(/(^|\n)([ \t]*)0([.)]\s+)/g, (_match, prefix, indent, marker) => {
+    return `${prefix}${indent}1${marker}`;
+  });
+
+  // 6. Marked renderer configuration
   const renderer = new marked.Renderer();
 
   renderer.link = ({ href, title, text: linkText }) => {
@@ -72,7 +78,7 @@ export function renderAppMarkdown(
     };
   }
 
-  // 6. Parse with marked (breaks: true so standard soft newlines also render as line breaks)
+  // 7. Parse with marked (breaks: true so standard soft newlines also render as line breaks)
   const parsed = marked.parse(text, {
     renderer,
     breaks: true,
@@ -80,6 +86,6 @@ export function renderAppMarkdown(
     async: false
   }) as string;
 
-  // 7. Defense-in-depth sanitization via DOMPurify
+  // 8. Defense-in-depth sanitization via DOMPurify
   return sanitizeHtml(parsed, profile);
 }

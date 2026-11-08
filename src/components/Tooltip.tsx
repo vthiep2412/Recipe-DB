@@ -23,12 +23,33 @@ export function Tooltip({
 
   useLayoutEffect(() => {
     if (isOpen && bubbleRef.current) {
-      const rect = bubbleRef.current.getBoundingClientRect();
+      const bubble = bubbleRef.current;
+      const rect = bubble.getBoundingClientRect();
       const margin = 8;
-      if (rect.left < margin) {
-        setShiftX(margin - rect.left);
-      } else if (rect.right > window.innerWidth - margin) {
-        setShiftX(window.innerWidth - margin - rect.right);
+
+      let minLeft = margin;
+      let maxRight = window.innerWidth - margin;
+
+      let el: HTMLElement | null = bubble.parentElement;
+      while (el && el !== document.body) {
+        const style = window.getComputedStyle(el);
+        const overflow = style.overflow + style.overflowX + style.overflowY;
+        if (/auto|hidden|scroll/i.test(overflow)) {
+          const pRect = el.getBoundingClientRect();
+          minLeft = Math.max(minLeft, pRect.left + margin);
+          maxRight = Math.min(maxRight, pRect.right - margin);
+          break;
+        }
+        el = el.parentElement;
+      }
+
+      const unshiftedLeft = rect.left - shiftX;
+      const unshiftedRight = rect.right - shiftX;
+
+      if (unshiftedLeft < minLeft) {
+        setShiftX(minLeft - unshiftedLeft);
+      } else if (unshiftedRight > maxRight) {
+        setShiftX(maxRight - unshiftedRight);
       } else {
         setShiftX(0);
       }

@@ -2001,9 +2001,12 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
               )}
 
               {section.description && (
-                <div className="cook-section-desc">
-                  {section.description}
-                </div>
+                <div
+                  className="cook-section-desc"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeMarkdown(section.description)
+                  }}
+                />
               )}
 
               {(() => {
@@ -2026,9 +2029,12 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                         <span className="cook-subsection-band">{sub.name}</span>
                       </div>
                       {sub.description && (
-                        <div className="cook-subsection-desc">
-                          {sub.description}
-                        </div>
+                        <div
+                          className="cook-subsection-desc"
+                          dangerouslySetInnerHTML={{
+                            __html: sanitizeMarkdown(sub.description)
+                          }}
+                        />
                       )}
                       {(() => {
                         const subImages = [
