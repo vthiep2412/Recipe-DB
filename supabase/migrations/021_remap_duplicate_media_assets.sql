@@ -32,3 +32,7 @@ BEGIN
   WHERE cloudinary_url = old_url;
 END;
 $$;
+
+-- Restrict execution to trusted service_role only
+REVOKE EXECUTE ON FUNCTION public.remap_cloudinary_media_pair(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.remap_cloudinary_media_pair(TEXT, TEXT) TO service_role;
