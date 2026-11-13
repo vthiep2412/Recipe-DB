@@ -1,4 +1,4 @@
-import { computeImageDHash, computeHammingDistance } from '../utils/imageOptimizer';
+import { computeImageDHash, computeHammingDistance, ImageFingerprint } from '../utils/imageOptimizer';
 import { localMediaStore } from './localMediaStore';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -9,16 +9,50 @@ export interface DeduplicationLookupResult {
   matchedFrom: 'local_exact' | 'local_near' | 'supabase';
 }
 
+export interface DeduplicationLookupWithFingerprintResult {
+  existingUrl: string | null;
+  fingerprint: ImageFingerprint | null;
+  matchedFrom?: 'local_exact' | 'local_near' | 'supabase';
+}
+
+/**
+ * Normalizes a Cloudinary delivery URL to its 17x16 BMP thumbnail endpoint
+ * for serverless/low-bandwidth dHash computation.
+ */
+export function toCloudinaryBmpThumbnailUrl(url: string): string {
+  const uploadIdx = url.indexOf('/upload/');
+  if (uploadIdx === -1) return url;
+  const baseUrl = url.substring(0, uploadIdx + 8);
+  let rest = url.substring(uploadIdx + 8);
+
+  const versionMatch = rest.match(/(v\d+\/.*)/);
+  if (versionMatch) {
+    rest = versionMatch[1];
+  }
+
+  const lastDot = rest.lastIndexOf('.');
+  if (lastDot !== -1) {
+    rest = rest.substring(0, lastDot) + '.bmp';
+  } else {
+    rest = rest + '.bmp';
+  }
+
+  return `${baseUrl}w_17,h_16,c_scale/${rest}`;
+}
+
 /**
  * Checks both the local IndexedDB cache and the shared Supabase media registry
  * for an existing Cloudinary image matching or visually near-matching (256-bit Hamming distance <= 8)
  * and respecting the Aspect Ratio Guard (relative difference <= 2%).
+ * Returns both the existing URL (if found) and the pre-computed fingerprint.
  */
-export async function findExistingCloudinaryAsset(
+export async function findExistingCloudinaryAssetWithFingerprint(
   source: File | Blob
-): Promise<DeduplicationLookupResult | null> {
+): Promise<DeduplicationLookupWithFingerprintResult> {
   const fingerprint = await computeImageDHash(source);
-  if (!fingerprint) return null;
+  if (!fingerprint) {
+    return { existingUrl: null, fingerprint: null };
+  }
   const { phash, aspectRatio } = fingerprint;
 
   // 1. Fast local exact match
@@ -26,9 +60,8 @@ export async function findExistingCloudinaryAsset(
     const localExact = await localMediaStore.getPhashMapping(phash);
     if (localExact) {
       return {
-        url: localExact,
-        phash,
-        aspectRatio,
+        existingUrl: localExact,
+        fingerprint,
         matchedFrom: 'local_exact'
       };
     }
@@ -46,12 +79,10 @@ export async function findExistingCloudinaryAsset(
 
       const dist = computeHammingDistance(phash, mapping.phash);
       if (dist <= 8) {
-        // Also map this specific variant to IndexedDB for instant future hits
         await localMediaStore.savePhashMapping(phash, mapping.cloudinaryUrl, aspectRatio);
         return {
-          url: mapping.cloudinaryUrl,
-          phash,
-          aspectRatio,
+          existingUrl: mapping.cloudinaryUrl,
+          fingerprint,
           matchedFrom: 'local_near'
         };
       }
@@ -73,9 +104,8 @@ export async function findExistingCloudinaryAsset(
       if (!rpcError && rpcUrl && typeof rpcUrl === 'string') {
         await localMediaStore.savePhashMapping(phash, rpcUrl, aspectRatio);
         return {
-          url: rpcUrl,
-          phash,
-          aspectRatio,
+          existingUrl: rpcUrl,
+          fingerprint,
           matchedFrom: 'supabase'
         };
       }
@@ -97,9 +127,8 @@ export async function findExistingCloudinaryAsset(
           ) {
             await localMediaStore.savePhashMapping(phash, row.cloudinary_url, aspectRatio);
             return {
-              url: row.cloudinary_url,
-              phash,
-              aspectRatio,
+              existingUrl: row.cloudinary_url,
+              fingerprint,
               matchedFrom: 'supabase'
             };
           }
@@ -110,7 +139,27 @@ export async function findExistingCloudinaryAsset(
     }
   }
 
-  return null;
+  return { existingUrl: null, fingerprint };
+}
+
+/**
+ * Checks both the local IndexedDB cache and the shared Supabase media registry
+ * for an existing Cloudinary image matching or visually near-matching (256-bit Hamming distance <= 8)
+ * and respecting the Aspect Ratio Guard (relative difference <= 2%).
+ */
+export async function findExistingCloudinaryAsset(
+  source: File | Blob
+): Promise<DeduplicationLookupResult | null> {
+  const result = await findExistingCloudinaryAssetWithFingerprint(source);
+  if (!result.existingUrl || !result.fingerprint) {
+    return null;
+  }
+  return {
+    url: result.existingUrl,
+    phash: result.fingerprint.phash,
+    aspectRatio: result.fingerprint.aspectRatio,
+    matchedFrom: result.matchedFrom!
+  };
 }
 
 /**
@@ -148,5 +197,33 @@ export async function registerUploadedAsset(
     } catch (err) {
       console.warn('[mediaDeduplicationService] Failed registering asset in Supabase', err);
     }
+  }
+}
+
+/**
+ * Computes the 256-bit perceptual hash and registers a Cloudinary image
+ * directly from its URL (used as a fallback when client-side fetch of an external image is blocked by CORS).
+ */
+export async function registerAssetFromCloudinaryUrl(
+  cloudinaryUrl: string,
+  width?: number,
+  height?: number
+): Promise<void> {
+  if (!cloudinaryUrl) return;
+  try {
+    const bmpUrl = toCloudinaryBmpThumbnailUrl(cloudinaryUrl);
+    const res = await fetch(bmpUrl);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const fp = await computeImageDHash(blob);
+    if (fp) {
+      const aspectRatio =
+        width && height && height > 0
+          ? Number((width / height).toFixed(3))
+          : fp.aspectRatio;
+      await registerUploadedAsset(fp.phash, cloudinaryUrl, aspectRatio);
+    }
+  } catch (err) {
+    console.warn('[mediaDeduplicationService] Failed registering asset from Cloudinary URL', err);
   }
 }

@@ -40,6 +40,11 @@ export function getOptimizedImageUrl(
     return url || '';
   }
 
+  // Preserve animated GIFs without applying static lossy variants or crops
+  if (/\.gif($|\?)/i.test(url)) {
+    return url;
+  }
+
   const targetTransform = getVariantTransformation(variant);
 
   // Already transformed with the requested configuration

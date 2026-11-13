@@ -205,6 +205,20 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
                         ariaLabel="Convert Cup, tsp, tbsp"
                       />
                     </div>
+
+                    <div className="settings-row" style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--background-modifier-border)' }}>
+                      <div className="settings-info">
+                        <span className="settings-label">Convert Oven Temperatures</span>
+                        <span className="settings-desc">
+                          Automatically convert and standardize oven temperatures to {settings.standardUnit === 'metric' || settings.standardUnit === 'australia' ? 'Celsius (°C)' : 'Fahrenheit (°F)'}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={settings.convertTemperatures !== false}
+                        onChange={convertTemperatures => updateSettings({ convertTemperatures })}
+                        ariaLabel="Convert Oven Temperatures"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

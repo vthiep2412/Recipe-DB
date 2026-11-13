@@ -2411,6 +2411,16 @@
   line-height: 1.85;
 }
 
+.cook-temp-val {
+  font-weight: 700;
+  color: #fb923c;
+}
+
+[data-theme="light"] .cook-temp-val {
+  color: var(--text-normal);
+  font-weight: 700;
+}
+
 /* 2A Size and 2B Color Two-Tone Split Chips */
 .cook-ig {
   display: inline-flex;
@@ -2527,19 +2537,33 @@
 
 .cook-lightbox-img-wrap {
   position: relative;
-  min-width: min(85vw, 420px);
-  min-height: min(60vh, 320px);
+  min-width: 160px;
+  min-height: 160px;
   max-width: 85vw;
   max-height: 72vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background-color: rgba(18, 18, 18, 0.95);
+  background-color: rgba(18, 18, 18, 0.85);
   transition: width 0.2s ease, height 0.2s ease;
+}
+
+.cook-lightbox-img-wrap > img {
+  grid-area: 1 / 1;
+}
+
+.cook-lightbox-placeholder-img {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  display: block;
+  z-index: 1;
+  filter: blur(2px);
+  transform: scale(1.01);
+  pointer-events: none;
 }
 
 .cook-lightbox-img {
@@ -2547,30 +2571,30 @@
   max-height: 72vh;
   object-fit: contain;
   display: block;
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), filter 0.22s ease, transform 0.22s ease;
+  z-index: 2;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s ease;
 }
 
 .cook-lightbox-img.is-loading {
-  opacity: 0.15;
-  filter: blur(6px);
-  transform: scale(0.99);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .cook-lightbox-img.is-loaded {
   opacity: 1;
-  filter: blur(0);
   transform: scale(1);
 }
 
+.cook-lightbox-loader-overlay,
 .cook-lightbox-loader {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(1px);
+  z-index: 3;
   pointer-events: none;
 }
 

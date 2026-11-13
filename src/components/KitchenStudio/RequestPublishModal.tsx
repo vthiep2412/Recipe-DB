@@ -58,48 +58,71 @@ export function RequestPublishModal({
   useEffect(() => {
     if (isOpen) {
       setErrorMessage(null);
+      let isCancelled = false;
 
-      // Check if workspace matches an existing database recipe by UUID or slug
-      const candidateLookup = (workspace.id || workspace.graph?.id || '').trim();
-      recipeStorageService.getExistingRecipeInfo(candidateLookup).then(info => {
-        setExistingRecipe(info);
-      });
-
-      // Check if workspace or graph already has an assigned recipe ID/slug
-      const candidateId = (workspace.graph?.id || workspace.id || '').trim();
-      const isGenericWorkspace = candidateId.startsWith('workspace-');
-      const isGenericUntitled = /^untitled(-recipe)?(\s*\d+)?$/i.test(candidateId);
-      const hasSpecificId = candidateId && !isUuid && !isGenericWorkspace && !isGenericUntitled;
-
-      if (hasSpecificId) {
-        const clean = slugifyRecipeTitle(candidateId);
-        setSlugInput(clean);
-        checkSlug(clean);
-      } else {
-        const rawTitle = (workspace.title || workspace.graph?.title || '').trim();
-        const isUntitledTitle = !rawTitle || /^untitled(-recipe)?(\s*\d+)?$/i.test(rawTitle);
-
-        if (!isUntitledTitle) {
-          const derived = slugifyRecipeTitle(rawTitle);
-          setSlugInput(derived);
-          checkSlug(derived);
-        } else {
-          recipeStorageService.getNextAvailableUntitledSlug(workspace.id).then(availableSlug => {
-            setSlugInput(availableSlug);
-            checkSlug(availableSlug);
-          });
+      const initInfo = async () => {
+        // 1. Resolve existing database recipe by ID, graph.id, or slugified title
+        let info = null;
+        if (isUuid) {
+          info = await recipeStorageService.getExistingRecipeInfo(workspace.id);
         }
-      }
+        if (!info && workspace.graph?.id && !workspace.graph.id.startsWith('workspace-')) {
+          info = await recipeStorageService.getExistingRecipeInfo(workspace.graph.id);
+        }
+        if (!info && workspace.title) {
+          const titleSlug = slugifyRecipeTitle(workspace.title);
+          if (titleSlug && !/^untitled/i.test(titleSlug)) {
+            info = await recipeStorageService.getExistingRecipeInfo(titleSlug);
+          }
+        }
+
+        if (isCancelled) return;
+        setExistingRecipe(info);
+
+        // 2. Derive initial slug
+        let initialSlug = '';
+        if (info?.slug) {
+          initialSlug = info.slug;
+        } else {
+          const candidateId = (workspace.graph?.id || workspace.id || '').trim();
+          const isGenericWorkspace = candidateId.startsWith('workspace-');
+          const isGenericUntitled = /^untitled(-recipe)?(\s*\d+)?$/i.test(candidateId);
+          const hasSpecificId = candidateId && !isUuid && !isGenericWorkspace && !isGenericUntitled;
+
+          if (hasSpecificId) {
+            initialSlug = slugifyRecipeTitle(candidateId);
+          } else {
+            const rawTitle = (workspace.title || workspace.graph?.title || '').trim();
+            const isUntitledTitle = !rawTitle || /^untitled(-recipe)?(\s*\d+)?$/i.test(rawTitle);
+
+            if (!isUntitledTitle) {
+              initialSlug = slugifyRecipeTitle(rawTitle);
+            } else {
+              initialSlug = await recipeStorageService.getNextAvailableUntitledSlug(workspace.id);
+            }
+          }
+        }
+
+        if (isCancelled) return;
+        setSlugInput(initialSlug);
+        checkSlug(initialSlug, info?.id || (isUuid ? workspace.id : undefined));
+      };
+
+      void initInfo();
 
       // Automatically focus and select the Recipe Id input field
       setTimeout(() => {
         recipeIdInputRef.current?.focus();
         recipeIdInputRef.current?.select();
       }, 50);
+
+      return () => {
+        isCancelled = true;
+      };
     }
   }, [isOpen, workspace.id, workspace.graph?.id, workspace.title]);
 
-  const checkSlug = async (candidate: string) => {
+  const checkSlug = async (candidate: string, explicitExcludeId?: string) => {
     if (!candidate) {
       setIsSlugAvailable(false);
       return;
@@ -107,7 +130,7 @@ export function RequestPublishModal({
     const currentSeq = ++checkSeqRef.current;
     setIsCheckingCollision(true);
     try {
-      const excludeId = existingRecipe?.id || (isUuid ? workspace.id : undefined);
+      const excludeId = explicitExcludeId ?? (existingRecipe?.id || (isUuid ? workspace.id : undefined));
       const available = await recipeStorageService.checkRecipeSlugAvailable(
         candidate,
         excludeId

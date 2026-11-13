@@ -8,7 +8,7 @@ const RECIPE_ALLOWED_TAGS = [
   'td', 'th', 'thead', 'tr', 'ul'
 ];
 
-const RECIPE_ALLOWED_ATTR = ['href', 'title', 'target', 'rel', 'class'];
+const RECIPE_ALLOWED_ATTR = ['href', 'title', 'target', 'rel', 'class', 'data-internal-recipe'];
 
 const ADMIN_ALLOWED_TAGS = [
   'a', 'b', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -37,8 +37,15 @@ function ensurePurify(): any {
     if (purifyInstance && typeof purifyInstance.addHook === 'function') {
       purifyInstance.addHook('afterSanitizeAttributes', (node: any) => {
         if (node.tagName === 'A') {
-          node.setAttribute('target', '_blank');
-          node.setAttribute('rel', 'noopener noreferrer');
+          const href = node.getAttribute('href') || '';
+          const isInternal = href.startsWith('/recipes/');
+          if (isInternal) {
+            node.removeAttribute('target');
+            node.removeAttribute('rel');
+          } else {
+            node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
+          }
         }
       });
     }

@@ -76,6 +76,14 @@ bun run tunnel
 - **Inline Step Tools**: Step cards can display compact chip bars of ingredients and cookware directly in the method view.
 - **Widescreen Media Clamping**: Step and section images adhere to fixed 16:9 and 21:9 letterbox aspect ratios with height clamping.
 - **Dynamic Servings Scaling**: Stepper scales quantities and fraction display automatically.
+- **Zero-Syntax Temperature Tool & Unit Conversion**:
+  - **Kitchen Studio Canvas Tool**: Dedicated `+ Temp 🌡️` button in the Step Node action bar to create single temperatures (`350°F`) or ranges (`350-375°F`).
+  - **Zero-Syntax Storage**: Outputs clean standard plain text without custom markup, preserving standard Cooklang and Markdown compatibility.
+  - **Auto-Detection**: Any temperature typed or loaded in Kitchen Studio transforms into an interactive card token.
+  - **Dynamic Conversion**: Recipe View standardizes temperature formatting and converts between Fahrenheit and Celsius based on the user's unit settings.
+- **Smart Internal Recipe Links (`recipe:{slug-id}`)**:
+  - **Universal Linking**: Links formatted as `recipe:{slug-id}` (or markdown links `[Title](recipe:{slug-id})`) automatically resolve to `/recipes/{slug-id}` on the current host.
+  - **Seamless SPA Navigation**: Clicking internal recipe links transitions smoothly via client-side routing without full page reloads, while middle-click or right-click preserves new-tab browser behaviors.
 - **Multi-Image Hero, Step Galleries & YouTube Lightbox**:
   - **Dynamic Splits**: Automatically adapts layout for 1 photo (full-width), 2 photos (50/50 split), 3+ photos (split with Facebook-style `+N` darkened overlay), or video pinned to right (native MP4 or YouTube embed via `youtube-nocookie`).
   - **Step-Level Multi-Image Support**: Method steps support multiple pictures with an integrated gallery manager modal in Kitchen Studio (`+{count - 1}` badge indicator on card) and Facebook-style split banners in the cooking view.

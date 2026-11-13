@@ -6,6 +6,7 @@ export interface StandardIngredient {
   name: string
   category: 'produce' | 'dairy' | 'pantry' | 'meat' | 'spice' | 'baking' | 'liquid'
   allowedUnits: string[]
+  aliases?: string[]
 }
 
 interface DensityIngredientSchema {
@@ -43,39 +44,43 @@ function inferAllowedUnits(id: string, name: string): string[] {
 }
 
 const BASE_INGREDIENTS: StandardIngredient[] = [
-  { id: 'salt', name: 'Salt', category: 'pantry', allowedUnits: ['g', 'tsp', 'tbsp', 'pinch'] },
-  { id: 'black-pepper', name: 'Black pepper', category: 'spice', allowedUnits: ['g', 'tsp', 'pinch'] },
-  { id: 'olive-oil', name: 'Olive oil', category: 'pantry', allowedUnits: ['ml', 'tbsp', 'tsp', 'cup'] },
-  { id: 'butter', name: 'Butter', category: 'dairy', allowedUnits: ['g', 'tbsp', 'cup'] },
-  { id: 'garlic', name: 'Garlic', category: 'produce', allowedUnits: ['clove', 'g', 'piece'] },
-  { id: 'onion', name: 'Onion', category: 'produce', allowedUnits: ['piece', 'g'] },
-  { id: 'all-purpose-flour', name: 'All-purpose flour', category: 'baking', allowedUnits: ['g', 'kg', 'cup', 'tbsp'] },
-  { id: 'granulated-sugar', name: 'Granulated sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp', 'tsp'] },
-  { id: 'brown-sugar', name: 'Brown sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp'] },
-  { id: 'powdered-sugar', name: 'Powdered sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp'] },
-  { id: 'large-eggs', name: 'Eggs', category: 'dairy', allowedUnits: ['piece'] },
-  { id: 'egg-yolk', name: 'Egg yolk', category: 'dairy', allowedUnits: ['piece'] },
-  { id: 'egg-white', name: 'Egg white', category: 'dairy', allowedUnits: ['piece'] },
-  { id: 'whole-milk', name: 'Whole milk', category: 'dairy', allowedUnits: ['ml', 'l', 'cup', 'tbsp'] },
-  { id: 'heavy-cream', name: 'Heavy cream', category: 'dairy', allowedUnits: ['ml', 'cup', 'tbsp'] },
-  { id: 'mascarpone', name: 'Mascarpone cheese', category: 'dairy', allowedUnits: ['g', 'cup'] },
-  { id: 'vanilla-extract', name: 'Vanilla extract', category: 'baking', allowedUnits: ['tsp', 'tbsp', 'ml'] },
-  { id: 'baking-powder', name: 'Baking powder', category: 'baking', allowedUnits: ['g', 'tsp', 'tbsp'] },
-  { id: 'baking-soda', name: 'Baking soda', category: 'baking', allowedUnits: ['g', 'tsp'] },
-  { id: 'cocoa-powder', name: 'Cocoa powder', category: 'baking', allowedUnits: ['g', 'tbsp', 'cup'] },
-  { id: 'espresso-coffee', name: 'Espresso coffee', category: 'liquid', allowedUnits: ['ml', 'cup', 'tbsp'] },
-  { id: 'ladyfingers', name: 'Ladyfinger biscuits', category: 'pantry', allowedUnits: ['piece', 'g'] },
-  { id: 'lemon-juice', name: 'Lemon juice', category: 'produce', allowedUnits: ['ml', 'tbsp', 'tsp'] },
-  { id: 'soy-sauce', name: 'Soy sauce', category: 'pantry', allowedUnits: ['ml', 'tbsp', 'tsp'] },
-  { id: 'chicken-breast', name: 'Chicken breast', category: 'meat', allowedUnits: ['g', 'kg', 'piece'] },
-  { id: 'ground-beef', name: 'Ground beef', category: 'meat', allowedUnits: ['g', 'kg'] },
-  { id: 'parmesan-cheese', name: 'Parmesan cheese', category: 'dairy', allowedUnits: ['g', 'cup', 'tbsp'] }
+  { id: 'salt', name: 'Salt', category: 'pantry', allowedUnits: ['g', 'tsp', 'tbsp', 'pinch'], aliases: ['salt', 'table salt', 'sea salt', 'kosher salt', 'fine salt'] },
+  { id: 'black-pepper', name: 'Black pepper', category: 'spice', allowedUnits: ['g', 'tsp', 'pinch'], aliases: ['black pepper', 'ground black pepper', 'pepper', 'black peppercorns', 'black peppercorn'] },
+  { id: 'olive-oil', name: 'Olive oil', category: 'pantry', allowedUnits: ['ml', 'tbsp', 'tsp', 'cup'], aliases: ['olive oil', 'extra virgin olive oil', 'evoo'] },
+  { id: 'butter', name: 'Butter', category: 'dairy', allowedUnits: ['g', 'tbsp', 'cup'], aliases: ['butter', 'unsalted butter', 'salted butter'] },
+  { id: 'garlic', name: 'Garlic', category: 'produce', allowedUnits: ['clove', 'g', 'piece'], aliases: ['garlic', 'garlic clove', 'garlic cloves'] },
+  { id: 'onion', name: 'Onion', category: 'produce', allowedUnits: ['piece', 'g'], aliases: ['onion', 'onions', 'yellow onion', 'yellow onions', 'white onion', 'white onions', 'red onion', 'red onions'] },
+  { id: 'all-purpose-flour', name: 'All-purpose flour', category: 'baking', allowedUnits: ['g', 'kg', 'cup', 'tbsp'], aliases: ['all-purpose flour', 'all purpose flour', 'ap flour', 'flour', 'plain flour', 'white flour'] },
+  { id: 'granulated-sugar', name: 'Granulated sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp', 'tsp'], aliases: ['granulated sugar', 'white sugar', 'sugar'] },
+  { id: 'brown-sugar', name: 'Brown sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp'], aliases: ['brown sugar', 'light brown sugar', 'dark brown sugar'] },
+  { id: 'powdered-sugar', name: 'Powdered sugar', category: 'baking', allowedUnits: ['g', 'cup', 'tbsp'], aliases: ['powdered sugar', 'confectioners sugar', 'confectioner sugar', 'icing sugar'] },
+  { id: 'large-eggs', name: 'Eggs', category: 'dairy', allowedUnits: ['piece'], aliases: ['egg', 'eggs', 'whole egg', 'whole eggs', 'large egg', 'large eggs'] },
+  { id: 'egg-yolk', name: 'Egg yolk', category: 'dairy', allowedUnits: ['piece'], aliases: ['egg yolk', 'egg yolks', 'yolk', 'yolks'] },
+  { id: 'egg-white', name: 'Egg white', category: 'dairy', allowedUnits: ['piece'], aliases: ['egg white', 'egg whites', 'white', 'whites'] },
+  { id: 'whole-milk', name: 'Whole milk', category: 'dairy', allowedUnits: ['ml', 'l', 'cup', 'tbsp'], aliases: ['whole milk', 'milk', 'full cream milk'] },
+  { id: 'heavy-cream', name: 'Heavy cream', category: 'dairy', allowedUnits: ['ml', 'cup', 'tbsp'], aliases: ['heavy cream', 'heavy whipping cream', 'double cream', 'whipping cream'] },
+  { id: 'mascarpone', name: 'Mascarpone cheese', category: 'dairy', allowedUnits: ['g', 'cup'], aliases: ['mascarpone', 'mascarpone cheese'] },
+  { id: 'vanilla-extract', name: 'Vanilla extract', category: 'baking', allowedUnits: ['tsp', 'tbsp', 'ml'], aliases: ['vanilla extract', 'vanilla', 'pure vanilla extract'] },
+  { id: 'baking-powder', name: 'Baking powder', category: 'baking', allowedUnits: ['g', 'tsp', 'tbsp'], aliases: ['baking powder'] },
+  { id: 'baking-soda', name: 'Baking soda', category: 'baking', allowedUnits: ['g', 'tsp'], aliases: ['baking soda', 'bicarbonate of soda'] },
+  { id: 'cocoa-powder', name: 'Cocoa powder', category: 'baking', allowedUnits: ['g', 'tbsp', 'cup'], aliases: ['cocoa powder', 'unsweetened cocoa powder', 'cacao powder'] },
+  { id: 'espresso-coffee', name: 'Espresso coffee', category: 'liquid', allowedUnits: ['ml', 'cup', 'tbsp'], aliases: ['espresso', 'espresso coffee', 'brewed espresso', 'strong coffee', 'coffee'] },
+  { id: 'ladyfingers', name: 'Ladyfinger biscuits', category: 'pantry', allowedUnits: ['piece', 'g'], aliases: ['ladyfinger', 'ladyfingers', 'ladyfinger biscuits', 'savoiardi'] },
+  { id: 'lemon-juice', name: 'Lemon juice', category: 'produce', allowedUnits: ['ml', 'tbsp', 'tsp'], aliases: ['lemon juice', 'fresh lemon juice'] },
+  { id: 'soy-sauce', name: 'Soy sauce', category: 'pantry', allowedUnits: ['ml', 'tbsp', 'tsp'], aliases: ['soy sauce', 'light soy sauce', 'dark soy sauce'] },
+  { id: 'chicken-breast', name: 'Chicken breast', category: 'meat', allowedUnits: ['g', 'kg', 'piece'], aliases: ['chicken breast', 'chicken breasts', 'boneless skinless chicken breast'] },
+  { id: 'ground-beef', name: 'Ground beef', category: 'meat', allowedUnits: ['g', 'kg'], aliases: ['ground beef', 'minced beef', 'beef mince'] },
+  { id: 'parmesan-cheese', name: 'Parmesan cheese', category: 'dairy', allowedUnits: ['g', 'cup', 'tbsp'], aliases: ['parmesan', 'parmesan cheese', 'parmigiano', 'parmigiano reggiano'] }
 ]
 
 function buildStandardIngredients(): StandardIngredient[] {
   const map = new Map<string, StandardIngredient>()
   for (const base of BASE_INGREDIENTS) {
-    map.set(base.id, { ...base, allowedUnits: [...base.allowedUnits] })
+    map.set(base.id, {
+      ...base,
+      allowedUnits: [...base.allowedUnits],
+      aliases: base.aliases ? [...base.aliases] : []
+    })
   }
 
   const densityEntries = (densityTable.ingredients || []) as DensityIngredientSchema[]
@@ -88,6 +93,9 @@ function buildStandardIngredients(): StandardIngredient[] {
       if (entry.category) {
         existing.category = entry.category
       }
+      if (entry.aliases && Array.isArray(entry.aliases)) {
+        existing.aliases = Array.from(new Set([...(existing.aliases || []), ...entry.aliases]))
+      }
     } else {
       const category = entry.category || inferCategory(entry.id, entry.name)
       const allowedUnits = entry.allowedUnits || inferAllowedUnits(entry.id, entry.name)
@@ -95,7 +103,8 @@ function buildStandardIngredients(): StandardIngredient[] {
         id: entry.id,
         name: entry.name,
         category,
-        allowedUnits
+        allowedUnits,
+        aliases: entry.aliases ? [...entry.aliases] : []
       })
     }
   }
@@ -149,9 +158,38 @@ export const STANDARD_COOKWARE: StandardCookware[] = [
   { id: 'electric-mixer', name: 'Hand Mixer', type: 'tool', defaultSize: 'Normal' }
 ];
 
+function getInflectionVariants(str: string): string[] {
+  const variants = new Set<string>();
+  const trimmed = str.trim();
+  if (!trimmed) return [];
+
+  // If plural ending in -ies -> -y (e.g., berries -> berry)
+  if (trimmed.endsWith('ies') && trimmed.length > 4) {
+    variants.add(trimmed.slice(0, -3) + 'y');
+  }
+  // If plural ending in -es -> -e or strip -es (e.g., tomatoes -> tomato, cloves -> clove)
+  else if (trimmed.endsWith('es') && trimmed.length > 3) {
+    variants.add(trimmed.slice(0, -2));
+    variants.add(trimmed.slice(0, -1));
+  }
+  // If plural ending in -s -> strip -s (e.g., egg yolks -> egg yolk, eggs -> egg)
+  else if (trimmed.endsWith('s') && !trimmed.endsWith('ss') && trimmed.length > 2) {
+    variants.add(trimmed.slice(0, -1));
+  }
+
+  // Singular -> plural candidates
+  if (!trimmed.endsWith('s')) {
+    variants.add(trimmed + 's');
+    variants.add(trimmed + 'es');
+  }
+
+  return Array.from(variants);
+}
+
 /**
  * Resolves an ingredient name, slug, or alias to a StandardIngredient.
- * Case-insensitive, punctuation-resilient, and checks densityTable aliases.
+ * Case-insensitive, punctuation-resilient, handles singular/plural variants,
+ * and checks densityTable and built-in aliases.
  */
 export function resolveStandardIngredient(rawNameOrId?: string): StandardIngredient | null {
   if (!rawNameOrId) return null;
@@ -167,7 +205,13 @@ export function resolveStandardIngredient(rawNameOrId?: string): StandardIngredi
   );
   if (direct) return direct;
 
-  // 2. Check densityTable aliases
+  // 2. Direct match against STANDARD_INGREDIENTS aliases
+  const aliasMatch = STANDARD_INGREDIENTS.find(i =>
+    i.aliases?.some(a => a.toLowerCase().trim() === lower || a.toLowerCase().replace(/[_\s]+/g, '-') === slug)
+  );
+  if (aliasMatch) return aliasMatch;
+
+  // 3. Check densityTable aliases
   const densityEntries = (densityTable.ingredients || []) as DensityIngredientSchema[];
   for (const entry of densityEntries) {
     if (entry.id === clean || entry.id === slug || entry.name.toLowerCase() === lower) {
@@ -180,12 +224,12 @@ export function resolveStandardIngredient(rawNameOrId?: string): StandardIngredi
     }
   }
 
-  // 3. Normalized name match (stripping punctuation/parentheses)
+  // 4. Normalized name match (stripping punctuation/parentheses)
   const normalized = lower.replace(/\([^)]*\)/g, ' ').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
   if (normalized && normalized !== lower) {
     const normSlug = normalized.replace(/[_\s]+/g, '-');
     const normMatch = STANDARD_INGREDIENTS.find(
-      i => i.id === normSlug || i.name.toLowerCase() === normalized
+      i => i.id === normSlug || i.name.toLowerCase() === normalized || i.aliases?.some(a => a.toLowerCase().trim() === normalized)
     );
     if (normMatch) return normMatch;
 
@@ -193,6 +237,30 @@ export function resolveStandardIngredient(rawNameOrId?: string): StandardIngredi
       if (entry.aliases && Array.isArray(entry.aliases)) {
         if (entry.aliases.some(a => a.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim() === normalized)) {
           return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+        }
+      }
+    }
+  }
+
+  // 5. Singular / Plural inflection matching
+  const formsToTest = [lower, ...(normalized && normalized !== lower ? [normalized] : [])];
+  for (const form of formsToTest) {
+    const variants = getInflectionVariants(form);
+    for (const v of variants) {
+      const vSlug = v.replace(/[_\s]+/g, '-');
+      const vMatch = STANDARD_INGREDIENTS.find(
+        i => i.id === v || i.id === vSlug || i.name.toLowerCase() === v || i.aliases?.some(a => a.toLowerCase().trim() === v)
+      );
+      if (vMatch) return vMatch;
+
+      for (const entry of densityEntries) {
+        if (entry.id === v || entry.id === vSlug || entry.name.toLowerCase() === v) {
+          return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+        }
+        if (entry.aliases && Array.isArray(entry.aliases)) {
+          if (entry.aliases.some(a => a.toLowerCase().trim() === v)) {
+            return STANDARD_INGREDIENTS.find(i => i.id === entry.id) || null;
+          }
         }
       }
     }
@@ -212,9 +280,21 @@ export function resolveStandardCookware(rawNameOrId?: string): StandardCookware 
   const lower = clean.toLowerCase();
   const slug = lower.replace(/[_\s]+/g, '-');
 
-  return STANDARD_COOKWARE.find(
+  const direct = STANDARD_COOKWARE.find(
     c => c.id === clean || c.id === slug || c.name.toLowerCase() === lower
-  ) || null;
+  );
+  if (direct) return direct;
+
+  const variants = getInflectionVariants(lower);
+  for (const v of variants) {
+    const vSlug = v.replace(/[_\s]+/g, '-');
+    const vMatch = STANDARD_COOKWARE.find(
+      c => c.id === v || c.id === vSlug || c.name.toLowerCase() === v
+    );
+    if (vMatch) return vMatch;
+  }
+
+  return null;
 }
 
 export const VESSEL_SIZES: VesselSize[] = [

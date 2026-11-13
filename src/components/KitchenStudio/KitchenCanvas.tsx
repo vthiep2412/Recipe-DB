@@ -7,6 +7,7 @@ import type {
   CanvasSection
 } from '../../types/orchestration';
 import { exportStudioWorkspaceToRecipeGraph } from '../../parser/orchestrationParser';
+import { formatTemperature } from '../../utils/temperature';
 import { SectionNode } from './SectionNode';
 import { StepNode } from './StepNode';
 import { NodeInspector } from './NodeInspector';
@@ -2347,7 +2348,19 @@ export function KitchenCanvas({
                         return seg;
                       });
                       const updatedInstructionText = (updatedSegments.length > 0 ? updatedSegments : [{ type: 'text' as const, id: 'init', text: node.instructionText }])
-                        .map(s => (s.type === 'text' ? s.text : `[${s.mention.displayText}]`))
+                        .map(s => {
+                          if (s.type === 'text') return s.text;
+                          if (s.mention.type === 'temperature') {
+                            return formatTemperature({
+                              isRange: s.mention.data?.isRange,
+                              value: s.mention.data?.temperatureValue,
+                              rangeMin: s.mention.data?.rangeMin,
+                              rangeMax: s.mention.data?.rangeMax,
+                              unit: s.mention.data?.temperatureUnit || 'F'
+                            });
+                          }
+                          return `[${s.mention.displayText}]`;
+                        })
                         .join('');
                       handleUpdateStep(node.id, {
                         mentions: updatedMentions,

@@ -9,6 +9,7 @@ import {
   ChefHat,
   Clock,
   Sparkles,
+  Thermometer,
   Info,
   X,
   ArrowUp,
@@ -21,6 +22,7 @@ import type {
 } from '../../types/orchestration';
 import { formatFraction } from '../../parser/cooklangParser';
 import { MediaModal } from './MediaModal';
+import { formatTemperature, extractTemperatureTokensFromText } from '../../utils/temperature';
 
 import { useResolvedMediaUrl } from '../../utils/media';
 
@@ -151,6 +153,18 @@ function updateTokenContent(span: HTMLElement, mention: StepMentionToken, allNod
     const mins = Math.round((mention.data?.timerSec || 60) / 60);
     timerSpan.textContent = `⏱ ${mention.displayText || `${mins}m`}`;
     span.appendChild(timerSpan);
+  } else if (mention.type === 'temperature') {
+    const tempSpan = document.createElement('span');
+    tempSpan.className = 'cook-temp-btn';
+    const formatted = formatTemperature({
+      isRange: mention.data?.isRange,
+      value: mention.data?.temperatureValue,
+      rangeMin: mention.data?.rangeMin,
+      rangeMax: mention.data?.rangeMax,
+      unit: mention.data?.temperatureUnit || 'F'
+    });
+    tempSpan.textContent = `🌡️ ${formatted}`;
+    span.appendChild(tempSpan);
   }
 
   const removeBtn = document.createElement('button');
@@ -165,9 +179,17 @@ function createTokenElement(mention: StepMentionToken, isSelected: boolean, allN
   const span = document.createElement('span');
   span.contentEditable = 'false';
   span.dataset.mentionId = mention.id;
-  span.className = `step-inline-token cook-${
-    mention.type === 'ingredient' ? 'ig' : mention.type === 'cookware' ? 'cw' : 'timer'
-  } ${isSelected ? 'is-active-token' : ''}`;
+  const typeClass =
+    mention.type === 'ingredient'
+      ? 'ig'
+      : mention.type === 'cookware'
+      ? 'cw'
+      : mention.type === 'timer'
+      ? 'timer'
+      : mention.type === 'temperature'
+      ? 'temp'
+      : 'yield';
+  span.className = `step-inline-token cook-${typeClass} ${isSelected ? 'is-active-token' : ''}`;
   span.title = `Click to edit ${mention.type} in inspector`;
 
   updateTokenContent(span, mention, allNodes);
@@ -215,7 +237,17 @@ function parseEditorDom(
           mention
         });
         mentions.push(mention);
-        instructionText += `[${mention.displayText}]`;
+        if (mention.type === 'temperature') {
+          instructionText += formatTemperature({
+            isRange: mention.data?.isRange,
+            value: mention.data?.temperatureValue,
+            rangeMin: mention.data?.rangeMin,
+            rangeMax: mention.data?.rangeMax,
+            unit: mention.data?.temperatureUnit || 'F'
+          });
+        } else {
+          instructionText += `[${mention.displayText}]`;
+        }
       } else if (el.tagName === 'BR') {
         const lastSeg = segments[segments.length - 1];
         if (lastSeg && lastSeg.type === 'text') {
@@ -330,6 +362,13 @@ export function StepNode({
         ...node.mentions.map(m => ({ type: 'mention' as const, id: m.id, mention: m })),
         { type: 'text', id: `seg-text-end-${node.id}`, text: '' }
       ];
+    }
+    if (node.instructionText) {
+      const extracted = extractTemperatureTokensFromText(node.instructionText, node.id);
+      if (extracted.tokens.length > 0) {
+        extracted.tokens.forEach(tok => mentionsMap.current.set(tok.id, tok as any));
+        return extracted.segments as StepInstructionSegment[];
+      }
     }
     return [
       { type: 'text', id: `seg-text-init-${node.id}`, text: node.instructionText || '' }
@@ -536,10 +575,10 @@ export function StepNode({
     }
   };
 
-  const handleAddMentionInline = (type: 'ingredient' | 'cookware' | 'timer') => {
+  const handleAddMentionInline = (type: 'ingredient' | 'cookware' | 'timer' | 'temperature') => {
     const mentionId = `m-${Date.now()}`;
     let displayText = 'New Item';
-    let defaultData = {};
+    let defaultData: any = {};
 
     if (type === 'ingredient') {
       displayText = 'Ingredient';
@@ -550,6 +589,9 @@ export function StepNode({
     } else if (type === 'timer') {
       displayText = '5 mins';
       defaultData = { timerSec: 300 };
+    } else if (type === 'temperature') {
+      displayText = '350°F';
+      defaultData = { temperatureValue: 350, temperatureUnit: 'F', isRange: false };
     }
 
     const newMention: StepMentionToken = {
@@ -1056,6 +1098,18 @@ export function StepNode({
           >
             <span>+ Timer</span>
             <Clock size={14} className="step-btn-trailing-icon" />
+          </button>
+          <button
+            type="button"
+            className="step-action-btn"
+            onMouseDown={e => e.preventDefault()}
+            onClick={e => {
+              e.stopPropagation();
+              handleAddMentionInline('temperature');
+            }}
+          >
+            <span>+ Temp</span>
+            <Thermometer size={14} className="step-btn-trailing-icon" />
           </button>
           <button
             type="button"

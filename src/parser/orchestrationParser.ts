@@ -732,7 +732,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           const mention: StepMentionToken = {
             id: mId,
             type: 'ingredient',
-            displayText: name,
+            displayText: canonicalName,
             data: {
               ingredientId: inputSlug,
               amount: isHidden ? undefined : amount,
@@ -774,7 +774,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           const mention: StepMentionToken = {
             id: mId,
             type: 'cookware',
-            displayText: name,
+            displayText: canonicalCookwareName,
             data: {
               vesselId: vesselSlug,
               vesselSize: (size as any) || stdCookware?.defaultSize || 'Normal',
@@ -1723,7 +1723,7 @@ function extractMentionsFromStep(rawStepText: string, stepIndex: number): {
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'ingredient',
-        displayText: name,
+        displayText: std ? std.name : name,
         data: {
           ingredientId,
           amount,
@@ -1747,7 +1747,7 @@ function extractMentionsFromStep(rawStepText: string, stepIndex: number): {
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'cookware',
-        displayText: name,
+        displayText: stdCookware ? stdCookware.name : name,
         data: {
           vesselId,
           vesselSize: (stdCookware?.defaultSize as any) || 'Normal'

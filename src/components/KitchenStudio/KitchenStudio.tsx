@@ -13,6 +13,16 @@ interface KitchenStudioProps {
   onNavigate: (path: string) => void;
 }
 
+function toSlug(text?: string | null): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
   const [authState, setAuthState] = useState(authStore.getState());
   const [activeWorkspace, setActiveWorkspace] = useState<StudioWorkspace | null>(null);
@@ -36,7 +46,13 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
     WorkspaceStorageService.loadWorkspaces()
       .then((list) => {
           if (isCancelled) return;
-          const found = list.find((w) => w.id === activeWorkspaceId);
+          const targetSlug = toSlug(activeWorkspaceId);
+          const found = list.find((w) =>
+            w.id === activeWorkspaceId ||
+            w.graph?.id === activeWorkspaceId ||
+            (targetSlug && toSlug(w.graph?.id) === targetSlug) ||
+            (targetSlug && toSlug(w.title) === targetSlug)
+          );
           if (found) {
             setActiveWorkspace(found);
             return;
@@ -76,8 +92,15 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
                   customCookware: (cloudData.details.cookwareIndex as any[]) || baseWorkspace.customCookware,
                 };
 
+                const cloudSlug = cloudData.recipe.slug ? toSlug(cloudData.recipe.slug) : '';
                 const updatedList = [...list];
-                const idx = updatedList.findIndex((w) => w.id === recoveredWorkspace.id);
+                const idx = updatedList.findIndex((w) =>
+                  w.id === recoveredWorkspace.id ||
+                  w.id === activeWorkspaceId ||
+                  w.graph?.id === recoveredWorkspace.id ||
+                  (cloudSlug && toSlug(w.graph?.id) === cloudSlug) ||
+                  (cloudSlug && toSlug(w.title) === cloudSlug)
+                );
                 if (idx !== -1) {
                   updatedList[idx] = recoveredWorkspace;
                 } else {
@@ -117,10 +140,25 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
     };
     setActiveWorkspace(timestamped);
 
+    if (activeWorkspaceId && timestamped.id !== activeWorkspaceId) {
+      window.history.replaceState(null, '', `/kitchen-studio/making-recipe/${timestamped.id}`);
+    }
+
+    const findMatchIndex = (list: StudioWorkspace[]) => {
+      return list.findIndex((w) =>
+        w.id === timestamped.id ||
+        (activeWorkspaceId && w.id === activeWorkspaceId) ||
+        (timestamped.graph?.id && w.graph?.id === timestamped.graph.id) ||
+        (w.graph?.id && w.graph.id === timestamped.id) ||
+        (w.id && timestamped.graph?.id === w.id) ||
+        (timestamped.title && w.title && toSlug(w.title) === toSlug(timestamped.title) && !/^untitled/i.test(w.title))
+      );
+    };
+
     const cached = WorkspaceStorageService.getCachedWorkspaces();
     if (cached) {
       const updatedList = [...cached];
-      const idx = updatedList.findIndex((w) => w.id === timestamped.id);
+      const idx = findMatchIndex(updatedList);
       if (idx !== -1) {
         updatedList[idx] = timestamped;
       } else {
@@ -131,7 +169,7 @@ export function KitchenStudio({ currentPath, onNavigate }: KitchenStudioProps) {
       WorkspaceStorageService.loadWorkspaces()
         .then((list) => {
           const updatedList = [...list];
-          const idx = updatedList.findIndex((w) => w.id === timestamped.id);
+          const idx = findMatchIndex(updatedList);
           if (idx !== -1) {
             updatedList[idx] = timestamped;
           } else {

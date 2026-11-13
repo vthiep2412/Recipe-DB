@@ -61,7 +61,7 @@ export function RecipeHeroGallery({
                     tabIndex={0}
                     aria-label={`View all ${heroImages.length} images`}
                   >
-                    <span>+{heroImages.length}</span>
+                    <span>+{heroImages.length - 1}</span>
                   </div>
                 )}
               </div>
@@ -132,7 +132,7 @@ export function RecipeHeroGallery({
                 tabIndex={0}
                 aria-label={`View all ${heroImages.length} images`}
               >
-                <span>+{heroImages.length}</span>
+                <span>+{heroImages.length - 1}</span>
               </div>
             </div>
           </>

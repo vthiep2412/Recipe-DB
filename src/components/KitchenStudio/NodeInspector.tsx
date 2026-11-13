@@ -18,6 +18,7 @@ import {
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
 import { Dropdown } from '../ui/Dropdown';
 import { parseFraction } from '../../parser/cooklangParser';
+import { formatTemperature } from '../../utils/temperature';
 
 interface NodeInspectorProps {
   activeStep: CanvasStepNode;
@@ -601,6 +602,128 @@ export function NodeInspector({
               rows={3}
             />
           </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // 5. Render Temperature Mention Mode
+  if (activeMention.type === 'temperature') {
+    const isRange = Boolean(activeMention.data?.isRange);
+    const unit = activeMention.data?.temperatureUnit || 'F';
+    const singleVal = activeMention.data?.temperatureValue ?? 350;
+    const minVal = activeMention.data?.rangeMin ?? 350;
+    const maxVal = activeMention.data?.rangeMax ?? 375;
+
+    const handleUpdate = (updates: Partial<typeof activeMention.data>) => {
+      const mergedData = { ...activeMention.data, ...updates };
+      const formatted = formatTemperature({
+        isRange: mergedData.isRange,
+        value: mergedData.temperatureValue,
+        rangeMin: mergedData.rangeMin,
+        rangeMax: mergedData.rangeMax,
+        unit: mergedData.temperatureUnit || 'F'
+      });
+      onUpdateMention(activeMention.id, {
+        displayText: formatted,
+        data: mergedData
+      });
+    };
+
+    return (
+      <aside className="studio-inspector-card" aria-label="Temperature Inspector">
+        <div className="inspector-header">
+          <span className="inspector-title">Temperature Settings</span>
+          <button type="button" className="inspector-close-btn" onClick={onClose} aria-label="Close inspector">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="inspector-body">
+          {/* Mode Switch: Direct vs Range */}
+          <div className="inspector-field">
+            <label className="inspector-label">Type</label>
+            <div className="inspector-size-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <button
+                type="button"
+                className={`inspector-size-chip ${!isRange ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ isRange: false })}
+              >
+                Direct
+              </button>
+              <button
+                type="button"
+                className={`inspector-size-chip ${isRange ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ isRange: true, rangeMin: minVal, rangeMax: maxVal })}
+              >
+                Range
+              </button>
+            </div>
+          </div>
+
+          {/* Unit Switch: °F vs °C */}
+          <div className="inspector-field">
+            <label className="inspector-label">Unit</label>
+            <div className="inspector-size-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <button
+                type="button"
+                className={`inspector-size-chip ${unit === 'F' ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ temperatureUnit: 'F' })}
+              >
+                °F (Fahrenheit)
+              </button>
+              <button
+                type="button"
+                className={`inspector-size-chip ${unit === 'C' ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ temperatureUnit: 'C' })}
+              >
+                °C (Celsius)
+              </button>
+            </div>
+          </div>
+
+          {/* Temperature Numeric Inputs */}
+          {!isRange ? (
+            <div className="inspector-field">
+              <label className="inspector-label">Temperature ({unit === 'C' ? '°C' : '°F'})</label>
+              <input
+                type="number"
+                className="inspector-input"
+                value={singleVal}
+                onInput={e => {
+                  const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                  handleUpdate({ temperatureValue: num });
+                }}
+              />
+            </div>
+          ) : (
+            <div className="inspector-field">
+              <label className="inspector-label">Temperature Range ({unit === 'C' ? '°C' : '°F'})</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  className="inspector-input"
+                  placeholder="Min"
+                  value={minVal}
+                  onInput={e => {
+                    const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                    handleUpdate({ rangeMin: num });
+                  }}
+                />
+                <span style={{ color: 'var(--text-muted)' }}>–</span>
+                <input
+                  type="number"
+                  className="inspector-input"
+                  placeholder="Max"
+                  value={maxVal}
+                  onInput={e => {
+                    const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                    handleUpdate({ rangeMax: num });
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     );

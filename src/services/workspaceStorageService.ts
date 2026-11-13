@@ -12,11 +12,101 @@ import { WorkspaceCryptoService } from './workspaceCryptoService';
 
 export const LEGACY_WORKSPACES_STORAGE_KEY = 'recipedb_studio_workspaces_v1';
 
+function toSlug(text?: string | null): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export class WorkspaceStorageService {
   private static sessionKey: { userId: string; key: string } | null = null;
   private static isMigrating = false;
   private static cachedWorkspaces: StudioWorkspace[] | null = null;
   private static saveQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * Deduplicates a list of workspaces by ID, cloud recipe identity, and title.
+   * Prefers the entry with the latest updatedAt timestamp and retains cloud UUIDs.
+   */
+  static deduplicateWorkspaces(workspaces: StudioWorkspace[]): StudioWorkspace[] {
+    if (!Array.isArray(workspaces) || workspaces.length <= 1) {
+      return Array.isArray(workspaces) ? workspaces : [];
+    }
+
+    const isUuid = (str?: string | null): boolean =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim()));
+
+    const isUntitled = (title?: string | null): boolean =>
+      !title || /^untitled(-recipe)?(\s*\d+)?$/i.test(title.trim());
+
+    const result: StudioWorkspace[] = [];
+
+    for (const ws of workspaces) {
+      if (!ws || !ws.id) continue;
+
+      const wsTitleSlug = toSlug(ws.title || ws.graph?.title);
+      const wsGraphId = ws.graph?.id ? toSlug(ws.graph.id) : '';
+      const wsIsUuid = isUuid(ws.id);
+      const wsGraphIsUuid = isUuid(ws.graph?.id);
+
+      const matchIdx = result.findIndex((existing) => {
+        if (existing.id === ws.id) return true;
+        if (wsIsUuid && existing.graph?.id === ws.id) return true;
+        if (isUuid(existing.id) && ws.graph?.id === existing.id) return true;
+        if (wsGraphIsUuid && existing.graph?.id === ws.graph?.id) return true;
+
+        if (!isUntitled(ws.title) && !isUntitled(existing.title)) {
+          const existingTitleSlug = toSlug(existing.title || existing.graph?.title);
+          const existingGraphId = existing.graph?.id ? toSlug(existing.graph.id) : '';
+
+          if (wsTitleSlug && existingTitleSlug && wsTitleSlug === existingTitleSlug) {
+            return true;
+          }
+          if (wsGraphId && existingGraphId && wsGraphId === existingGraphId && !wsGraphId.startsWith('workspace-')) {
+            return true;
+          }
+          if (wsGraphId && existingTitleSlug && wsGraphId === existingTitleSlug && !wsGraphId.startsWith('workspace-')) {
+            return true;
+          }
+          if (existingGraphId && wsTitleSlug && existingGraphId === wsTitleSlug && !existingGraphId.startsWith('workspace-')) {
+            return true;
+          }
+        }
+
+        return false;
+      });
+
+      if (matchIdx === -1) {
+        result.push(ws);
+      } else {
+        const existing = result[matchIdx];
+        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        const newTime = ws.updatedAt ? new Date(ws.updatedAt).getTime() : 0;
+
+        const bestId = isUuid(existing.id)
+          ? existing.id
+          : isUuid(ws.id)
+          ? ws.id
+          : (existing.id.startsWith('workspace_') ? existing.id : ws.id);
+
+        const newer = newTime >= existingTime ? ws : existing;
+        result[matchIdx] = {
+          ...newer,
+          id: bestId,
+          graph: {
+            ...newer.graph,
+            id: newer.graph?.id || existing.graph?.id || ws.graph?.id || bestId
+          }
+        };
+      }
+    }
+
+    return result;
+  }
 
   /**
    * Retrieves the current synchronously cached workspaces in memory.
@@ -148,7 +238,7 @@ export class WorkspaceStorageService {
       try {
         const decryptedJson = await WorkspaceCryptoService.decryptData(raw, key);
         const parsed = JSON.parse(decryptedJson);
-        const result = Array.isArray(parsed) ? parsed : [];
+        const result = this.deduplicateWorkspaces(Array.isArray(parsed) ? parsed : []);
         this.cachedWorkspaces = result;
         return result;
       } catch {
@@ -159,7 +249,7 @@ export class WorkspaceStorageService {
     // Plaintext payload (guest mode or pre-encrypted local draft)
     try {
       const parsed = JSON.parse(raw);
-      const result = Array.isArray(parsed) ? parsed : [];
+      const result = this.deduplicateWorkspaces(Array.isArray(parsed) ? parsed : []);
       this.cachedWorkspaces = result;
       return result;
     } catch {
@@ -172,11 +262,12 @@ export class WorkspaceStorageService {
    * Serializes write operations through a queue to prevent async race conditions.
    */
   static async saveWorkspaces(workspaces: StudioWorkspace[]): Promise<void> {
-    this.cachedWorkspaces = workspaces;
+    const deduped = this.deduplicateWorkspaces(workspaces);
+    this.cachedWorkspaces = deduped;
 
     this.saveQueue = this.saveQueue
       .then(async () => {
-        await this.executeSave(this.cachedWorkspaces || workspaces);
+        await this.executeSave(this.cachedWorkspaces || deduped);
       })
       .catch(err => {
         console.error('[WorkspaceStorageService] Error in save queue:', err);

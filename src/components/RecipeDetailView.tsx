@@ -16,6 +16,7 @@ import {
 import { RecipeLightbox } from './RecipeDetail/RecipeLightbox';
 import { RecipeHeroGallery } from './RecipeDetail/RecipeHeroGallery';
 import { renderAppMarkdown } from '../utils/markdown';
+import { standardizeTemperaturesInText } from '../utils/temperature';
 import type { RecipeJSON, RecipeStep, StepToken } from '../types/recipe';
 import type { ActiveTimer } from '../types/timer';
 import { formatFraction, parseFraction } from '../parser/cooklangParser';
@@ -27,7 +28,7 @@ import { RecipeTimerDrawer } from './Timer/RecipeTimerDrawer';
 import { TimerAlarmModal } from './Timer/TimerAlarmModal';
 import { WindowsTimePickerModal } from './Timer/WindowsTimePickerModal';
 import { escapeHtmlAttr } from '../utils/html';
-import { getYouTubeEmbedUrl } from '../utils/media';
+import { getYouTubeEmbedUrl, useResolvedRecipeMedia } from '../utils/media';
 import { localMediaStore } from '../services/localMediaStore';
 import { getOptimizedImageUrl } from '../services/cloudinaryUpload';
 
@@ -35,7 +36,8 @@ export { escapeHtmlAttr };
 
 export function isSafeUrl(url?: string): boolean {
   if (!url) return false;
-  return /^https?:\/\/|^mailto:/i.test(url.trim());
+  const clean = url.trim();
+  return /^https?:\/\/|^mailto:/i.test(clean) || /^\/recipes\//i.test(clean) || /^recipes?:/i.test(clean);
 }
 
 
@@ -124,7 +126,9 @@ interface RecipeViewState {
   activeSectionId?: string;
 }
 
-export function RecipeDetailView({ recipe, onStartTimer }: Props) {
+export function RecipeDetailView({ recipe: rawRecipe, onStartTimer }: Props) {
+  const resolvedRecipe = useResolvedRecipeMedia(rawRecipe);
+  const recipe = resolvedRecipe || rawRecipe;
   const loadInitialState = (): RecipeViewState => {
     const cloudProgress = userDataSyncService.getRecipeProgress(recipe.id);
     if (cloudProgress) {
@@ -901,6 +905,32 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
     return qtyText
   }
 
+  const targetTempUnit = useMemo<'F' | 'C' | undefined>(() => {
+    if (settings.convertTemperatures === false || settings.standardUnit === 'off') {
+      return undefined;
+    }
+    if (settings.standardUnit === 'metric' || settings.standardUnit === 'australia') {
+      return 'C';
+    }
+    if (settings.standardUnit === 'us') {
+      return 'F';
+    }
+    return undefined;
+  }, [settings.convertTemperatures, settings.standardUnit]);
+
+  const renderStepTextWithTemperatures = (text: string) => {
+    if (!text) return text;
+    const standardized = standardizeTemperaturesInText(text, targetTempUnit);
+    const parts = standardized.split(/(\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?°[CF])/g);
+    if (parts.length <= 1) return standardized;
+    return parts.map((part, i) => {
+      if (/^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?°[CF]$/.test(part)) {
+        return <strong key={i} className="cook-temp-val">{part}</strong>;
+      }
+      return part;
+    });
+  };
+
   const listableIngredients = (recipe?.ingredients || []).filter(ing => !ing.isHidden);
 
   const cookwareNames = new Set<string>();
@@ -1237,7 +1267,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 <li className="cook-ing cook-yield-produced-item">
                   <div className="cook-yield-produced-badge">
                     <CookingPot size={13} />
-                    <span>Yield:</span>
+                    <span>Created:</span>
                     <span className="cook-yield-produced-name">{step.producesYield.name}</span>
                   </div>
                 </li>
@@ -1381,7 +1411,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                 loading="lazy"
               />
               <div className="cook-step-media-overlay-badge">
-                <span>+{images.length}</span>
+                <span>+{images.length - 1}</span>
               </div>
             </div>
           </div>
@@ -1668,7 +1698,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
                   loading="lazy"
                 />
                 <div className="cook-step-media-overlay-badge">
-                  <span>+{allStepImages.length}</span>
+                  <span>+{allStepImages.length - 1}</span>
                 </div>
               </div>
             </div>
@@ -1713,7 +1743,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
           <div className="cook-step-text">
             {step.tokens.map((token, idx) => {
               if (token.type === 'text') {
-                return <span key={idx}>{token.value}</span>;
+                return <span key={idx}>{renderStepTextWithTemperatures(token.value)}</span>;
               }
               if (token.type === 'ingredient') {
                 return (
@@ -1830,7 +1860,7 @@ export function RecipeDetailView({ recipe, onStartTimer }: Props) {
             <div className="cook-step-yield-banner">
               <span className="cook-yield-tag">
                 <CookingPot size={13} />
-                <span>Yield</span>
+                <span>Created</span>
               </span>
               <span className="cook-step-yield-name">{step.producesYield.name}</span>
             </div>

@@ -1,5 +1,6 @@
 import type { RecipeGraph, CanvasStepNode, StudioWorkspace } from '../types/orchestration';
 import { formatFraction } from './cooklangParser';
+import { formatTemperature } from '../utils/temperature';
 
 function formatSecondsToDuration(sec?: number): string {
   if (!sec || sec <= 0) return '0m';
@@ -304,6 +305,16 @@ export function generateFablang(
               return `~{${mins}%minutes}${noteStr}`;
             }
             return `~{${sec}%seconds}${noteStr}`;
+          }
+
+          if (m.type === 'temperature') {
+            return formatTemperature({
+              isRange: m.data?.isRange,
+              value: m.data?.temperatureValue,
+              rangeMin: m.data?.rangeMin,
+              rangeMax: m.data?.rangeMax,
+              unit: m.data?.temperatureUnit || 'F'
+            });
           }
 
           return `[${m.displayText}]`;

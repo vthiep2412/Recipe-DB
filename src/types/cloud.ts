@@ -78,6 +78,8 @@ export interface CloudinaryResult {
   secure_url: string;
   public_id: string;
   resource_type: CloudinaryAssetType;
+  width?: number;
+  height?: number;
 }
 
 export interface AuthStoreAPI {

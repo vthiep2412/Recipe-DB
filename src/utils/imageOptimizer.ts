@@ -48,8 +48,9 @@ export async function transcodeToAvifBlob(
     return source;
   }
 
-  // Do not process SVG or non-image assets
-  if (source.type === 'image/svg+xml' || source.type.startsWith('video/')) {
+  // Do not process SVG, GIF, or non-image assets
+  const isGif = source.type === 'image/gif' || (source instanceof File && /\.gif$/i.test(source.name));
+  if (source.type === 'image/svg+xml' || isGif || source.type.startsWith('video/')) {
     return source;
   }
 

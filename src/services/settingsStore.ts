@@ -8,6 +8,7 @@ export interface AppSettings {
   theme: ThemeMode
   standardUnit: StandardUnit
   convertVolumeUnits: boolean
+  convertTemperatures?: boolean
 }
 
 const STORAGE_KEY = 'recipedb_settings'
@@ -15,7 +16,8 @@ const STORAGE_KEY = 'recipedb_settings'
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   standardUnit: 'off',
-  convertVolumeUnits: false
+  convertVolumeUnits: false,
+  convertTemperatures: true
 }
 
 let currentSettings: AppSettings = loadSettings()
@@ -153,7 +155,8 @@ function loadSettings(): AppSettings {
     return {
       theme: parsed.theme === 'light' || parsed.theme === 'dark' || parsed.theme === 'system' ? parsed.theme : 'system',
       standardUnit: parsed.standardUnit === 'us' || parsed.standardUnit === 'metric' || parsed.standardUnit === 'australia' || parsed.standardUnit === 'off' ? parsed.standardUnit : 'off',
-      convertVolumeUnits: typeof parsed.convertVolumeUnits === 'boolean' ? parsed.convertVolumeUnits : false
+      convertVolumeUnits: typeof parsed.convertVolumeUnits === 'boolean' ? parsed.convertVolumeUnits : false,
+      convertTemperatures: typeof parsed.convertTemperatures === 'boolean' ? parsed.convertTemperatures : true
     }
   } catch {
     return DEFAULT_SETTINGS

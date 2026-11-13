@@ -32,7 +32,7 @@ function recipeStudioApiPlugin(): Plugin {
           try {
             const originHostname = new URL(origin).hostname;
             const trustedHosts = ['localhost', '127.0.0.1'];
-            const isAllowed = trustedHosts.includes(originHostname);
+            const isAllowed = trustedHosts.includes(originHostname) || originHostname.endsWith('.trycloudflare.com');
 
             if (!isAllowed) {
               res.statusCode = 403;
@@ -127,6 +127,7 @@ export default defineConfig({
   plugins: [preact(), recipeStudioApiPlugin()],
   server: {
     port: 5176,
-    host: '127.0.0.1'
+    host: '127.0.0.1',
+    allowedHosts: ['.trycloudflare.com']
   }
 });

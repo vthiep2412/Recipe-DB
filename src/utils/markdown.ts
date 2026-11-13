@@ -56,14 +56,30 @@ export function renderAppMarkdown(
     return `${prefix}${indent}1${marker}`;
   });
 
-  // 6. Marked renderer configuration
+  // 6. Auto-convert bare recipe:{slug-id} or recipes:{slug-id} tokens into markdown links
+  text = text.replace(/(?<!\]\(|<)(?:\b|(?<=[\s(]))recipes?:([a-zA-Z0-9_-]+)\b(?![\w-]*\))/gi, (_match, slug) => {
+    return `[${slug}](recipe:${slug})`;
+  });
+
+  // 7. Marked renderer configuration
   const renderer = new marked.Renderer();
 
   renderer.link = ({ href, title, text: linkText }) => {
-    const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
-    const safeHref = isSafe ? escapeHtmlAttr(href.trim()) : '#';
+    const trimmedHref = href.trim();
+    const recipeMatch = trimmedHref.match(/^recipes?:(?:\/\/)?([a-zA-Z0-9_-]+)$/i);
+    if (recipeMatch) {
+      const slugId = encodeURIComponent(recipeMatch[1]);
+      const path = `/recipes/${slugId}`;
+      const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
+      return `<a href="${path}"${titleAttr} class="recipe-internal-link" data-internal-recipe="${slugId}">${escapeHtmlAttr(linkText)}</a>`;
+    }
+
+    const isSafe = /^https?:\/\/|^mailto:/i.test(trimmedHref) || /^\/recipes\/[a-zA-Z0-9_-]+$/i.test(trimmedHref);
+    const safeHref = isSafe ? escapeHtmlAttr(trimmedHref) : '#';
     const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-    return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(linkText)}</a>`;
+    const isInternal = safeHref.startsWith('/recipes/');
+    const targetRel = isInternal ? ' class="recipe-internal-link"' : ' rel="noopener noreferrer" target="_blank"';
+    return `<a href="${safeHref}"${titleAttr}${targetRel}>${escapeHtmlAttr(linkText)}</a>`;
   };
 
   if (allowImages) {

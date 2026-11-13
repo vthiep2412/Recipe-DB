@@ -125,12 +125,27 @@ export function App() {
     };
     window.addEventListener('popstate', handlePopState);
 
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+        return;
+      }
+      const anchor = (e.target as HTMLElement | null)?.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (href && href.startsWith('/recipes/')) {
+        e.preventDefault();
+        navigate(href);
+      }
+    };
+    window.addEventListener('click', handleGlobalClick);
+
     const unsub = authStore.subscribe((state) => {
       setAuthState(state);
     });
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('click', handleGlobalClick);
       unsub();
     };
   }, []);

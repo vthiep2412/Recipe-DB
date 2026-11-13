@@ -15,8 +15,12 @@ import { authStore } from './authStore';
 import { localMediaStore } from './localMediaStore';
 import { uploadAsset, getStreamMasterUrl } from './cloudinaryUpload';
 import { WorkspaceStorageService } from './workspaceStorageService';
-import { transcodeToAvifBlob, computeImageDHash } from '../utils/imageOptimizer';
-import { findExistingCloudinaryAsset, registerUploadedAsset } from './mediaDeduplicationService';
+import { transcodeToAvifBlob } from '../utils/imageOptimizer';
+import {
+  findExistingCloudinaryAssetWithFingerprint,
+  registerUploadedAsset,
+  registerAssetFromCloudinaryUrl
+} from './mediaDeduplicationService';
 
 export function slugifyRecipeTitle(title: string): string {
   if (!title) return '';
@@ -153,16 +157,15 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
         const blob = (await localMediaStore.loadBlob(fullKey)) || (await localMediaStore.loadBlob(rawKey));
         if (blob) {
           const optimizedBlob = await transcodeToAvifBlob(blob);
-          const existing = await findExistingCloudinaryAsset(optimizedBlob);
+          const lookup = await findExistingCloudinaryAssetWithFingerprint(optimizedBlob);
 
-          if (existing?.url) {
-            replacementMap.set(fullKey, getStreamMasterUrl(existing.url));
+          if (lookup.existingUrl) {
+            replacementMap.set(fullKey, getStreamMasterUrl(lookup.existingUrl));
           } else {
             const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
             replacementMap.set(fullKey, getStreamMasterUrl(uploaded.secure_url));
-            const fingerprint = await computeImageDHash(optimizedBlob);
-            if (fingerprint) {
-              await registerUploadedAsset(fingerprint.phash, uploaded.secure_url, fingerprint.aspectRatio);
+            if (lookup.fingerprint) {
+              await registerUploadedAsset(lookup.fingerprint.phash, uploaded.secure_url, lookup.fingerprint.aspectRatio);
             }
           }
         }
@@ -180,16 +183,15 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
         const blob = await dataUrlToBlob(dataUrl);
         if (blob) {
           const optimizedBlob = await transcodeToAvifBlob(blob);
-          const existing = await findExistingCloudinaryAsset(optimizedBlob);
+          const lookup = await findExistingCloudinaryAssetWithFingerprint(optimizedBlob);
 
-          if (existing?.url) {
-            replacementMap.set(dataUrl, getStreamMasterUrl(existing.url));
+          if (lookup.existingUrl) {
+            replacementMap.set(dataUrl, getStreamMasterUrl(lookup.existingUrl));
           } else {
             const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
             replacementMap.set(dataUrl, getStreamMasterUrl(uploaded.secure_url));
-            const fingerprint = await computeImageDHash(optimizedBlob);
-            if (fingerprint) {
-              await registerUploadedAsset(fingerprint.phash, uploaded.secure_url, fingerprint.aspectRatio);
+            if (lookup.fingerprint) {
+              await registerUploadedAsset(lookup.fingerprint.phash, uploaded.secure_url, lookup.fingerprint.aspectRatio);
             }
           }
         }
@@ -203,8 +205,36 @@ async function uploadAllMediaInWorkspace(workspace: StudioWorkspace): Promise<St
   for (const extUrl of explicitUrls) {
     if (!replacementMap.has(extUrl)) {
       try {
-        const uploaded = await uploadAsset(extUrl, 'image', 'recipes/images');
-        replacementMap.set(extUrl, getStreamMasterUrl(uploaded.secure_url));
+        let candidateBlob: Blob | null = null;
+        try {
+          const res = await fetch(extUrl);
+          if (res.ok) {
+            candidateBlob = await res.blob();
+          }
+        } catch {
+          // CORS or network error, fallback to direct upload
+        }
+
+        if (candidateBlob) {
+          const optimizedBlob = await transcodeToAvifBlob(candidateBlob);
+          const lookup = await findExistingCloudinaryAssetWithFingerprint(optimizedBlob);
+
+          if (lookup.existingUrl) {
+            replacementMap.set(extUrl, getStreamMasterUrl(lookup.existingUrl));
+            continue;
+          }
+
+          const uploaded = await uploadAsset(optimizedBlob, 'image', 'recipes/images');
+          replacementMap.set(extUrl, getStreamMasterUrl(uploaded.secure_url));
+          if (lookup.fingerprint) {
+            await registerUploadedAsset(lookup.fingerprint.phash, uploaded.secure_url, lookup.fingerprint.aspectRatio);
+          }
+        } else {
+          // Direct upload fallback when client fetch is blocked by CORS
+          const uploaded = await uploadAsset(extUrl, 'image', 'recipes/images');
+          replacementMap.set(extUrl, getStreamMasterUrl(uploaded.secure_url));
+          await registerAssetFromCloudinaryUrl(uploaded.secure_url, uploaded.width, uploaded.height);
+        }
       } catch (err) {
         console.warn(`[recipeStorageService] Failed to upload external image to Cloudinary: ${extUrl}`, err);
       }
@@ -462,6 +492,9 @@ export class SupabaseRecipeStorageProvider
       const isExistingUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         workspace.id
       );
+      const isGraphUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        cleanWorkspace.graph?.id || ''
+      );
 
       let existingRecipe: { id: string; slug: string; owner_id: string } | null = null;
       if (isExistingUuid) {
@@ -470,15 +503,33 @@ export class SupabaseRecipeStorageProvider
           .select('id, slug, owner_id')
           .eq('id', workspace.id)
           .maybeSingle();
-        if (data) existingRecipe = data;
+        if (data && (authState.profile?.role === 'admin' || data.owner_id === authState.user.id)) {
+          existingRecipe = data;
+        }
+      }
+
+      if (!existingRecipe && isGraphUuid) {
+        const { data } = await supabase
+          .from('recipes')
+          .select('id, slug, owner_id')
+          .eq('id', cleanWorkspace.graph!.id)
+          .maybeSingle();
+        if (data && (authState.profile?.role === 'admin' || data.owner_id === authState.user.id)) {
+          existingRecipe = data;
+        }
       }
 
       let finalSlug = customSlug ? slugifyRecipeTitle(customSlug) : '';
 
-      // If not resolved by workspace UUID, also check if target slug or graph.id matches an existing recipe
+      // Check if graph.id or candidate slug or title matches an existing recipe owned by user/admin
       if (!existingRecipe) {
-        const candidateSlug = finalSlug || slugifyRecipeTitle(cleanWorkspace.graph?.id || cleanWorkspace.title || '');
-        if (candidateSlug) {
+        const graphSlug = cleanWorkspace.graph?.id && !cleanWorkspace.graph.id.startsWith('workspace-')
+          ? slugifyRecipeTitle(cleanWorkspace.graph.id)
+          : '';
+        const titleSlug = slugifyRecipeTitle(cleanWorkspace.title || cleanWorkspace.graph?.title || '');
+        const candidateSlug = finalSlug || graphSlug || titleSlug;
+
+        if (candidateSlug && !/^untitled/i.test(candidateSlug)) {
           const { data } = await supabase
             .from('recipes')
             .select('id, slug, owner_id')
@@ -489,6 +540,10 @@ export class SupabaseRecipeStorageProvider
             if (!finalSlug) finalSlug = data.slug;
           }
         }
+      }
+
+      if (!finalSlug && existingRecipe) {
+        finalSlug = existingRecipe.slug;
       }
 
       if (finalSlug) {

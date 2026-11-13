@@ -70,7 +70,7 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
     void WorkspaceStorageService.saveWorkspaces(updated);
   };
 
-  const handleCreateNew = (rawText = '') => {
+  const handleCreateNew = async (rawText = '') => {
     const newWs = parseTextToStudioWorkspace(rawText);
     if (!rawText.trim()) {
       const existingUntitled = workspaces
@@ -82,7 +82,8 @@ export function StudioHub({ onOpenWorkspace, onNavigate }: StudioHubProps) {
       }
     }
     const updated = [newWs, ...workspaces];
-    saveWorkspaces(updated);
+    setWorkspaces(updated);
+    await WorkspaceStorageService.saveWorkspaces(updated);
     setIsNewModalOpen(false);
     onOpenWorkspace(newWs.id);
   };

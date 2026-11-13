@@ -24,6 +24,21 @@ export function RecipeLightbox({
   const loadedUrlsRef = useRef<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement | null>(null);
 
+  // Check if a URL is already loaded/cached in browser memory
+  const isUrlLoaded = (url: string): boolean => {
+    if (!url) return false;
+    if (loadedUrlsRef.current.has(url)) return true;
+    if (typeof window !== 'undefined') {
+      const probe = new Image();
+      probe.src = url;
+      if (probe.complete && probe.naturalWidth > 0) {
+        loadedUrlsRef.current.add(url);
+        return true;
+      }
+    }
+    return false;
+  };
+
   // Determine optimal display URL (reuse hero on standard displays to leverage memory cache)
   const getDisplayUrl = (rawUrl?: string): string => {
     if (!rawUrl) return '';
@@ -31,8 +46,38 @@ export function RecipeLightbox({
     return getOptimizedImageUrl(rawUrl, isLargeScreen ? 'lightbox' : 'hero');
   };
 
+  // Generate candidate lower-resolution variants in descending resolution order
+  const getCandidateUrls = (rawUrl: string, displayUrl: string): string[] => {
+    if (!rawUrl) return [];
+    const list: string[] = [displayUrl];
+    if (rawUrl.includes('cloudinary.com') && rawUrl.includes('/upload/')) {
+      const hero = getOptimizedImageUrl(rawUrl, 'hero');
+      const step = getOptimizedImageUrl(rawUrl, 'step');
+      const card = getOptimizedImageUrl(rawUrl, 'card');
+      if (!list.includes(hero)) list.push(hero);
+      if (!list.includes(step)) list.push(step);
+      if (!list.includes(rawUrl)) list.push(rawUrl);
+      if (!list.includes(card)) list.push(card);
+    } else {
+      if (!list.includes(rawUrl)) list.push(rawUrl);
+    }
+    return list;
+  };
+
+  // Find the highest resolution candidate that is already loaded
+  const getHighestLoadedPlaceholder = (candidates: string[]): string => {
+    for (let i = 1; i < candidates.length; i++) {
+      if (isUrlLoaded(candidates[i])) {
+        return candidates[i];
+      }
+    }
+    return candidates[candidates.length - 1] || '';
+  };
+
   const currentRawUrl = images[currentIndex] || '';
   const currentDisplayUrl = getDisplayUrl(currentRawUrl);
+  const candidateUrls = getCandidateUrls(currentRawUrl, currentDisplayUrl);
+  const placeholderUrl = getHighestLoadedPlaceholder(candidateUrls);
 
   // Synchronize index when opened
   useEffect(() => {
@@ -40,7 +85,7 @@ export function RecipeLightbox({
       const safeIdx = Math.max(0, Math.min(initialIndex, images.length - 1));
       const targetUrl = getDisplayUrl(images[safeIdx]);
       setCurrentIndex(safeIdx);
-      if (loadedUrlsRef.current.has(targetUrl)) {
+      if (isUrlLoaded(targetUrl)) {
         setIsLoading(false);
       } else {
         setIsLoading(true);
@@ -51,7 +96,7 @@ export function RecipeLightbox({
   // Check if current image is already completed in cache
   useEffect(() => {
     if (!isOpen || !currentDisplayUrl) return;
-    if (loadedUrlsRef.current.has(currentDisplayUrl)) {
+    if (isUrlLoaded(currentDisplayUrl)) {
       setIsLoading(false);
       return;
     }
@@ -106,7 +151,7 @@ export function RecipeLightbox({
 
   const navigateTo = (targetIdx: number) => {
     const targetUrl = getDisplayUrl(images[targetIdx]);
-    if (loadedUrlsRef.current.has(targetUrl)) {
+    if (isUrlLoaded(targetUrl)) {
       setIsLoading(false);
     } else {
       setIsLoading(true);
@@ -198,11 +243,24 @@ export function RecipeLightbox({
 
       <div className="cook-lightbox-center-container" onClick={(e) => e.stopPropagation()}>
         <div className="cook-lightbox-img-wrap">
+          {/* Underlay: Highest loaded lower-resolution image */}
+          {isLoading && placeholderUrl && (
+            <img
+              src={placeholderUrl}
+              alt=""
+              aria-hidden="true"
+              className="cook-lightbox-placeholder-img"
+            />
+          )}
+
+          {/* Darkened overlay with spinner while main image is loading */}
           {isLoading && (
-            <div className="cook-lightbox-loader" aria-hidden="true">
+            <div className="cook-lightbox-loader-overlay" aria-hidden="true">
               <div className="cook-lightbox-spinner" />
             </div>
           )}
+
+          {/* Main high-resolution image */}
           <img
             ref={imgRef}
             src={currentDisplayUrl}

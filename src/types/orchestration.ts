@@ -169,7 +169,7 @@ export type RecipeToken =
   | { type: 'yield'; yieldId: string; sourceStepId: string; displayText: string; partition?: string }
   | { type: 'timer'; timerId: string; displayText: string };
 
-export type MentionType = 'ingredient' | 'cookware' | 'timer' | 'yield';
+export type MentionType = 'ingredient' | 'cookware' | 'timer' | 'yield' | 'temperature';
 
 export interface StepMentionToken {
   id: string;
@@ -191,6 +191,11 @@ export interface StepMentionToken {
     yieldPartition?: string;
     isRemention?: boolean;
     originalMentionId?: string;
+    temperatureValue?: number;
+    temperatureUnit?: 'F' | 'C';
+    isRange?: boolean;
+    rangeMin?: number;
+    rangeMax?: number;
   };
 }
 
