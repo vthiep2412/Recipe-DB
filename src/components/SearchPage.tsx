@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
 import { Search as SearchIcon, Clock, ChefHat, Tag, X } from 'lucide-preact';
 import type { RecipeJSON } from '../types/recipe';
 import { searchPlaceholders } from '../data/searchPlaceholders';
+import { getOptimizedImageUrl } from '../services/cloudinaryUpload';
 
 interface Props {
   recipes: RecipeJSON[];
+  isLoading?: boolean;
   onSelectRecipe: (id: string) => void;
 }
 
@@ -22,9 +24,18 @@ function fuzzyMatch(text: string, query: string): boolean {
   return false;
 }
 
-export function SearchPage({ recipes, onSelectRecipe }: Props) {
+export function SearchPage({ recipes, isLoading, onSelectRecipe }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // 150ms debounce for search input to prevent per-keystroke filter churn
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 150);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
   const [tagQuery, setTagQuery] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMenuClosing, setIsMenuClosing] = useState(false);
@@ -37,11 +48,13 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Gather unique tags across recipes with clean fallback
-  const fallbackTags = ['cookies', 'dessert', 'smores', 'crumbl', 'chocolate', 'baking'];
+  const allTags = useMemo(() => {
+    const fallbackTags = ['cookies', 'dessert', 'smores', 'crumbl', 'chocolate', 'baking'];
   const recipeTags = Array.from(
     new Set(recipes.flatMap(r => r.tags || []).map(t => t.toLowerCase()))
   );
-  const allTags = Array.from(new Set([...recipeTags, ...fallbackTags])).sort();
+    return Array.from(new Set([...recipeTags, ...fallbackTags])).sort();
+  }, [recipes]);
 
   // Typewriter effect
   useEffect(() => {
@@ -140,9 +153,9 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
   };
 
   // Filter recipes: match title query and ensure all active tags are present
-  const filteredRecipes = recipes.filter(r => {
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
+  const filteredRecipes = useMemo(() => recipes.filter(r => {
+    if (debouncedSearchTerm.trim()) {
+      const term = debouncedSearchTerm.toLowerCase();
       if (!r.title.toLowerCase().includes(term)) {
         return false;
       }
@@ -157,9 +170,9 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
     }
 
     return true;
-  });
+  }), [recipes, debouncedSearchTerm, selectedTags]);
 
-  const availableFilteredTags = allTags.filter(t => fuzzyMatch(t, tagQuery));
+  const availableFilteredTags = useMemo(() => allTags.filter(t => fuzzyMatch(t, tagQuery)), [allTags, tagQuery]);
 
   return (
     <div className="page-container">
@@ -294,7 +307,55 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
         <h2 className="section-label">Recommendation</h2>
 
         <div className="recipe-cards-grid">
-          {filteredRecipes.map(recipe => {
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="recipe-card"
+                style={{ opacity: 0.7, pointerEvents: 'none' }}
+                aria-hidden="true"
+              >
+                <div
+                  style={{
+                    height: '180px',
+                    background: 'var(--bg-muted, rgba(255,255,255,0.06))',
+                    borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
+                  }}
+                />
+                <div className="recipe-card-content" style={{ gap: '0.6rem' }}>
+                  <div
+                    style={{
+                      height: '16px',
+                      width: '30%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.08))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                  <div
+                    style={{
+                      height: '22px',
+                      width: '75%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.08))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                  <div
+                    style={{
+                      height: '14px',
+                      width: '50%',
+                      background: 'var(--bg-muted, rgba(255,255,255,0.05))',
+                      borderRadius: 'var(--radius-sm)'
+                    }}
+                  />
+                </div>
+              </div>
+            ))
+          ) : filteredRecipes.length === 0 ? (
+            <div style={{ padding: '3rem 1rem', textAlign: 'center', gridColumn: '1 / -1', color: 'var(--text-muted)' }}>
+              <p>No recipes found matching your search.</p>
+            </div>
+          ) : (
+            filteredRecipes.map(recipe => {
             const totalTime = recipe.times.total || recipe.times.cook || '20 min';
             const diff = recipe.difficulty || 'Medium';
             const diffClass = diff.toLowerCase().includes('easy')
@@ -316,12 +377,24 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
                 }}
               >
                 {recipe.image && (
-                  <img
-                    src={recipe.image}
-                    alt={recipe.title}
-                    className="recipe-card-img"
-                    loading="lazy"
-                  />
+                  <div
+                    className="recipe-card-media"
+                    style={{
+                      aspectRatio: '4 / 3',
+                      width: '100%',
+                      overflow: 'hidden',
+                      borderRadius: 'var(--radius-md) var(--radius-md) 0 0'
+                    }}
+                  >
+                    <img
+                      src={getOptimizedImageUrl(recipe.image, 'card')}
+                      alt={recipe.title}
+                      className="recipe-card-img"
+                      loading="lazy"
+                      decoding="async"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
                 )}
                 <div className="recipe-card-content">
                   <span className={`badge ${diffClass}`} style={{ alignSelf: 'flex-start' }}>
@@ -343,7 +416,7 @@ export function SearchPage({ recipes, onSelectRecipe }: Props) {
                 </div>
               </a>
             );
-          })}
+          }))}
         </div>
       </div>
     </div>

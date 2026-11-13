@@ -92,7 +92,7 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
         previousActiveElement.current.focus()
       }
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, shouldRender])
 
   const themeOptions: SegmentedOption<ThemeMode>[] = [
     {
@@ -160,13 +160,13 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
                 <div className="settings-row">
                   <div className="settings-info">
                     <span className="settings-label">Theme</span>
-                    <span className="settings-desc">Choose between light, dark, or system color scheme</span>
+                    <span className="settings-desc">Choose app appearance</span>
                   </div>
                   <div style={{ width: '20.5rem', maxWidth: '100%', flexShrink: 0 }}>
                     <SegmentedControl
                       options={themeOptions}
                       value={settings.theme}
-                      onChange={theme => updateSettings({ theme })}
+                      onChange={(theme, e) => updateSettings({ theme }, e ? { x: e.clientX, y: e.clientY } : undefined)}
                       ariaLabel="Theme selection"
                     />
                   </div>
@@ -203,6 +203,20 @@ export function AppSettingsModal({ isOpen, onClose }: Props) {
                         checked={settings.convertVolumeUnits}
                         onChange={convertVolumeUnits => updateSettings({ convertVolumeUnits })}
                         ariaLabel="Convert Cup, tsp, tbsp"
+                      />
+                    </div>
+
+                    <div className="settings-row" style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--background-modifier-border)' }}>
+                      <div className="settings-info">
+                        <span className="settings-label">Convert Oven Temperatures</span>
+                        <span className="settings-desc">
+                          Automatically convert and standardize oven temperatures to {settings.standardUnit === 'metric' || settings.standardUnit === 'australia' ? 'Celsius (°C)' : 'Fahrenheit (°F)'}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={settings.convertTemperatures !== false}
+                        onChange={convertTemperatures => updateSettings({ convertTemperatures })}
+                        ariaLabel="Convert Oven Temperatures"
                       />
                     </div>
                   </div>

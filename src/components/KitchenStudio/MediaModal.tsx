@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { Image, Video, RefreshCw, Trash2, Plus, X } from 'lucide-preact';
+import { Image, Video, RefreshCw, Trash2, X } from 'lucide-preact';
+import { localMediaStore } from '../../services/localMediaStore';
+import { getYouTubeEmbedUrl } from '../../utils/media';
+import { getOptimizedImageUrl } from '../../services/cloudinaryUpload';
+import { transcodeToAvifBlob } from '../../utils/imageOptimizer';
 
 export interface MediaModalProps {
   isOpen: boolean;
@@ -23,40 +27,107 @@ export function MediaModal({
   currentUrls,
   onClose,
   onSave,
-  onSaveGallery
+  onSaveGallery,
 }: MediaModalProps) {
-  const effectiveMode: 'single' | 'gallery' = mode || (currentUrls !== undefined || onSaveGallery !== undefined ? 'gallery' : 'single');
+  const effectiveMode: 'single' | 'gallery' =
+    mode || (currentUrls !== undefined || onSaveGallery !== undefined ? 'gallery' : 'single');
 
   const [urlInput, setUrlInput] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
+  const [actualRef, setActualRef] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [galleryList, setGalleryList] = useState<string[]>([]);
+  const [galleryPreviewMap, setGalleryPreviewMap] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const createdUrlsRef = useRef<Set<string>>(new Set());
+  const prevIsOpenRef = useRef(false);
+
+  // Resolve IDB blobs to preview URLs
+  const resolveRefToPreview = async (ref: string): Promise<string> => {
+    if (!ref) return '';
+    if (ref.startsWith('idb:')) {
+      try {
+        const blob = await localMediaStore.loadBlob(ref);
+        if (blob) {
+          const objectUrl = URL.createObjectURL(blob);
+          createdUrlsRef.current.add(objectUrl);
+          return objectUrl;
+        }
+      } catch {
+        // IDB fallback
+      }
+    }
+    return ref;
+  };
 
   useEffect(() => {
-    if (isOpen) {
+    return () => {
+      createdUrlsRef.current.forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // Cleanup fallback
+        }
+      });
+      createdUrlsRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
       setUrlInput(currentUrl);
-      setPreviewUrl(currentUrl);
-      setGalleryList(currentUrls ? [...currentUrls] : (currentUrl ? [currentUrl] : []));
+      setActualRef(currentUrl);
+
+      resolveRefToPreview(currentUrl).then((resolved) => {
+        setPreviewUrl(resolved);
+      });
+
+      const list = currentUrls ? [...currentUrls] : currentUrl ? [currentUrl] : [];
+      setGalleryList(list);
+
+      // Resolve gallery previews
+      const map: Record<string, string> = {};
+      Promise.all(
+        list.map(async (ref) => {
+          map[ref] = await resolveRefToPreview(ref);
+        })
+      ).then(() => {
+        setGalleryPreviewMap({ ...map });
+      });
     }
+    prevIsOpenRef.current = isOpen;
   }, [isOpen, currentUrl, currentUrls]);
 
   if (!isOpen) return null;
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      if (effectiveMode === 'single') {
-        setPreviewUrl(result);
-        setUrlInput(result);
-      } else {
-        setGalleryList(prev => [...prev, result]);
-        setUrlInput('');
-      }
-    };
-    reader.readAsDataURL(file);
+
+    // 1. Transcode raw photo to compressed AVIF (or WebP fallback) before storing
+    const optimizedFile = await transcodeToAvifBlob(file);
+
+    // 2. Instant object URL for zero-latency local preview
+    const objectUrl = URL.createObjectURL(optimizedFile);
+    createdUrlsRef.current.add(objectUrl);
+    const assetId = `idb:asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // 3. Persist optimized blob into IndexedDB (zero network or Supabase calls)
+    try {
+      await localMediaStore.saveBlob(assetId, optimizedFile);
+    } catch {
+      // Storage quota fallback
+    }
+
+    if (effectiveMode === 'single') {
+      setPreviewUrl(objectUrl);
+      setActualRef(assetId);
+      setUrlInput('');
+    } else {
+      setGalleryList((prev) => [...prev, assetId]);
+      setGalleryPreviewMap((prev) => ({ ...prev, [assetId]: objectUrl }));
+      setUrlInput('');
+    }
   };
 
   const handleFileInputChange = (e: Event) => {
@@ -81,7 +152,7 @@ export function MediaModal({
     setIsDragging(false);
   };
 
-  const handleDrop = (e: DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -89,16 +160,57 @@ export function MediaModal({
     const file = e.dataTransfer?.files?.[0];
     if (file) {
       processFile(file);
+      return;
+    }
+
+    // Dragged an image directly from another browser window / website
+    const textUri = e.dataTransfer?.getData('text/uri-list');
+    const textPlain = e.dataTransfer?.getData('text/plain');
+    const textHtml = e.dataTransfer?.getData('text/html');
+
+    let candidateUrl = (textUri || textPlain || '').trim();
+
+    if (!candidateUrl && textHtml) {
+      const match = textHtml.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (match && match[1]) {
+        candidateUrl = match[1].trim();
+      }
+    }
+
+    if (candidateUrl && /^https?:\/\//i.test(candidateUrl)) {
+      const resolved = await resolveRefToPreview(candidateUrl);
+      if (effectiveMode === 'single') {
+        setPreviewUrl(resolved);
+        setActualRef(candidateUrl);
+        setUrlInput('');
+      } else {
+        setGalleryList((prev) => [...prev, candidateUrl]);
+        setGalleryPreviewMap((prev) => ({ ...prev, [candidateUrl]: resolved }));
+        setUrlInput('');
+      }
     }
   };
 
-  const handleApplyUrl = () => {
+  const handleApplyUrl = async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
+
+    const isSafe = /^https?:\/\/|^blob:|^idb:/i.test(trimmed);
+    if (!isSafe) {
+      setUrlError('Only secure HTTP, HTTPS, or uploaded media references are allowed.');
+      return;
+    }
+    setUrlError(null);
+
     if (effectiveMode === 'single') {
-      setPreviewUrl(trimmed);
+      const resolved = await resolveRefToPreview(trimmed);
+      setPreviewUrl(resolved);
+      setActualRef(trimmed);
+      setUrlInput('');
     } else {
-      setGalleryList(prev => [...prev, trimmed]);
+      const resolved = await resolveRefToPreview(trimmed);
+      setGalleryList((prev) => [...prev, trimmed]);
+      setGalleryPreviewMap((prev) => ({ ...prev, [trimmed]: resolved }));
       setUrlInput('');
     }
   };
@@ -106,18 +218,19 @@ export function MediaModal({
   const handleClearSingleMedia = () => {
     setUrlInput('');
     setPreviewUrl('');
+    setActualRef('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   const handleRemoveGalleryItem = (index: number) => {
-    setGalleryList(prev => prev.filter((_, idx) => idx !== index));
+    setGalleryList((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleSave = () => {
     if (effectiveMode === 'single') {
-      onSave?.(previewUrl.trim());
+      onSave?.(actualRef || previewUrl.trim());
     } else {
       onSaveGallery?.(galleryList);
       if (onSave) {
@@ -127,17 +240,19 @@ export function MediaModal({
     onClose();
   };
 
-  const modalTitle = title || (
-    effectiveMode === 'gallery'
+  const modalTitle =
+    title ||
+    (effectiveMode === 'gallery'
       ? 'Recipe Image Gallery'
-      : (mediaType === 'video' ? 'Recipe Video Manager' : 'Recipe Image Manager')
-  );
+      : mediaType === 'video'
+      ? 'Recipe Video Manager'
+      : 'Recipe Image Manager');
 
   const modalElement = (
     <div className="studio-modal-overlay" onClick={onClose}>
       <div
         className="studio-modal-card"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="media-modal-title"
@@ -170,6 +285,15 @@ export function MediaModal({
                   <div className="studio-media-preview-box">
                     {mediaType === 'picture' ? (
                       <img src={previewUrl} alt="Preview" className="studio-preview-img" />
+                    ) : getYouTubeEmbedUrl(previewUrl) ? (
+                      <iframe
+                        src={getYouTubeEmbedUrl(previewUrl)!}
+                        title="YouTube preview"
+                        className="studio-preview-video"
+                        style={{ border: 'none', width: '100%', height: '100%', minHeight: '220px' }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
                     ) : (
                       <video src={previewUrl} controls className="studio-preview-video" />
                     )}
@@ -230,8 +354,11 @@ export function MediaModal({
                           : 'Or enter video URL...'
                       }
                       value={urlInput}
-                      onInput={e => setUrlInput((e.target as HTMLInputElement).value)}
-                      onKeyDown={e => {
+                      onInput={(e) => {
+                        setUrlInput((e.target as HTMLInputElement).value);
+                        if (urlError) setUrlError(null);
+                      }}
+                      onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           handleApplyUrl();
@@ -247,39 +374,17 @@ export function MediaModal({
                       Load
                     </button>
                   </div>
+                  {urlError && (
+                    <div style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.8rem', marginTop: '0.4rem', textAlign: 'left' }}>
+                      {urlError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ) : (
             <div className="studio-gallery-media-section">
-              {galleryList.length > 0 && (
-                <div className="studio-gallery-grid">
-                  {galleryList.map((url, idx) => (
-                    <div key={idx} className="studio-gallery-item-card">
-                      <img src={url} alt={`Gallery item ${idx + 1}`} className="studio-gallery-thumb" />
-                      <button
-                        type="button"
-                        className="studio-gallery-item-delete-btn"
-                        onClick={() => handleRemoveGalleryItem(idx)}
-                        title="Remove image"
-                        aria-label="Remove image"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                  <div
-                    className="studio-gallery-add-card"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Add image"
-                  >
-                    <Plus size={24} />
-                    <span>Add Image</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="studio-unified-dropzone-wrapper" style={{ marginTop: galleryList.length > 0 ? '1rem' : '0' }}>
+              <div className="studio-unified-dropzone-wrapper">
                 <div
                   className={`studio-custom-dropzone ${isDragging ? 'is-dragging' : ''}`}
                   onDragOver={handleDragOver}
@@ -288,7 +393,7 @@ export function MediaModal({
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <div className="dropzone-icon">
-                    <Image size={40} className="dropzone-lucide-icon" />
+                    <Image size={36} className="dropzone-lucide-icon" />
                   </div>
                   <div className="dropzone-primary-text">
                     Drag and drop images to add
@@ -307,8 +412,11 @@ export function MediaModal({
                     className="studio-input"
                     placeholder="Or enter image URL to add..."
                     value={urlInput}
-                    onInput={e => setUrlInput((e.target as HTMLInputElement).value)}
-                    onKeyDown={e => {
+                    onInput={(e) => {
+                      setUrlInput((e.target as HTMLInputElement).value);
+                      if (urlError) setUrlError(null);
+                    }}
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleApplyUrl();
@@ -324,7 +432,40 @@ export function MediaModal({
                     Add
                   </button>
                 </div>
+                {urlError && (
+                  <div style={{ color: 'var(--color-red, #ef4444)', fontSize: '0.8rem', marginTop: '0.4rem', textAlign: 'left' }}>
+                    {urlError}
+                  </div>
+                )}
               </div>
+
+              {galleryList.length > 0 && (
+                <div style={{ marginTop: '1.25rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Recipe Images ({galleryList.length})
+                  </div>
+                  <div className="studio-gallery-grid-2x2">
+                    {galleryList.map((ref, idx) => (
+                      <div key={idx} className="studio-gallery-item-card">
+                        <img
+                          src={getOptimizedImageUrl(galleryPreviewMap[ref] || ref)}
+                          alt={`Gallery item ${idx + 1}`}
+                          className="studio-gallery-thumb"
+                        />
+                        <button
+                          type="button"
+                          className="studio-gallery-item-delete-btn"
+                          onClick={() => handleRemoveGalleryItem(idx)}
+                          title="Remove image"
+                          aria-label="Remove image"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

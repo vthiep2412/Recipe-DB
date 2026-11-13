@@ -11,9 +11,42 @@ import type {
   StepInstructionSegment
 } from '../types/orchestration';
 import { parseFraction } from './cooklangParser';
-import { parseTimeStringToSeconds } from '../constants/standardKitchenData';
+import {
+  parseTimeStringToSeconds,
+  resolveStandardIngredient,
+  resolveStandardCookware
+} from '../constants/standardKitchenData';
 
-export type IngestFormat = 'fablang' | 'cooklang' | 'app_markdown' | 'plain_text';
+export type IngestFormat = 'fablang' | 'fablang_json' | 'cooklang' | 'app_markdown' | 'plain_text';
+
+export function isFablangJson(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false;
+  try {
+    const data = JSON.parse(trimmed);
+    return Boolean(
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      (data.schemaVersion === 1 || data.schemaVersion === 2) &&
+      (Array.isArray(data.components) || Array.isArray(data.inputs))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeTag(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9_-]/g, '')
+    .replace(/-+/g, '-');
+}
 
 export interface FablangSyntaxError {
   line: number;
@@ -27,7 +60,10 @@ export function isFablangDeclared(text: string): boolean {
   if (/^---\s*[\s\S]*?\n(isFabLang|isFablang|format|syntax)\s*:\s*(true|['"]?fablang['"]?)/i.test(trimmed)) {
     return true;
   }
-  if (/(?:^|\n)\s*!{1,3}=\s*[^=]+| - \[title:| -> \*[^*]+\*|\bclip:\s*\d+:\d+/i.test(trimmed)) {
+  if (/(?:^|\n)\s*!{1,3}=\s*[^=]+| - \[(?:title:|link|tools)| -> \*[^*]+\*|\bclip:\s*\d+:\d+|\bdesc:\s*/i.test(trimmed)) {
+    return true;
+  }
+  if (/^---\s*[\s\S]*?---\s*[\s\S]*?(?:^|\n)\s*[-+]\s+/m.test(trimmed) && /(?:^|\n)\s*!?=\s*[^=]+=/m.test(trimmed)) {
     return true;
   }
   return false;
@@ -57,7 +93,7 @@ export function validateFablang(rawText: string): FablangSyntaxError[] {
     if (!trimmed || trimmed.startsWith('--')) continue;
 
     // 1. Strict subsection depth rule: only depth 1 allowed
-    if (/^\s*!{2,}=/.test(line)) {
+    if (/^\s*!{2,}=|^\s*!={2,}/.test(line)) {
       errors.push({
         line: lineNum,
         message: 'Invalid subsection depth: only 1 depth level is allowed with !=',
@@ -110,12 +146,20 @@ export function validateFablang(rawText: string): FablangSyntaxError[] {
       }
     }
 
+    if (isUncounted && /\[link\]/i.test(line)) {
+      errors.push({
+        line: lineNum,
+        message: 'Invalid directive: uncounted note steps cannot have [link] directive',
+        rawLine: line
+      });
+    }
+
     // 5. Yield production directive validation
     if (line.includes('->')) {
-      if (!/->\s*\*([^*]+)\*\{#([^}]+)\}/.test(line)) {
+      if (!/->\s*\*([^*]+)\*(?:\{[^}]*\})?/.test(line)) {
         errors.push({
           line: lineNum,
-          message: 'Invalid yield production directive: syntax must be -> *name*{#vessel}',
+          message: 'Invalid yield production directive: syntax must be -> *name*{}',
           rawLine: line
         });
       }
@@ -166,7 +210,7 @@ ${errorLines}
    - Re-mention: @@name{quantity%unit}(notes)
    - Cookware: #cookware{size}(notes)
    - Yield Reference: *yield name*{quantity%#vessel}(notes)
-   - Yield Production: placed at the end of the step: -> *yield name*{#vessel}
+   - Yield Production: placed at the end of the step: -> *yield name*{}
    - Sensory Timer: ~{duration%unit%temp}(sensory cue)
 4. Multimedia Directives:
    - > image1: <url>
@@ -231,13 +275,14 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
   let pictureUrl = '';
   let videoUrl = '';
   const recipeGalleryUrls: string[] = [];
+  const parsedTags: string[] = [];
 
   const times: RecipeGraph['times'] = {};
 
   const lines = rawText.split('\n');
   let inFrontmatter = false;
   let bodyStartIndex = 0;
-  let currentFmSection: 'times' | 'media' | 'customTimes' | 'gallery' | null = null;
+  let currentFmSection: 'times' | 'media' | 'customTimes' | 'gallery' | 'tags' | null = null;
   let pendingCustomTime: { label?: string; duration?: number } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -254,6 +299,24 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         break;
       }
       if (!trimmed) continue;
+
+      if (currentFmSection === 'tags' && trimmed.startsWith('-')) {
+        const match = trimmed.match(/^-\s*(.*)/);
+        if (match) {
+          const norm = normalizeTag(parseRawYamlValue(match[1]));
+          if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+        }
+        continue;
+      }
+
+      if (currentFmSection === 'gallery' && trimmed.startsWith('-')) {
+        const match = trimmed.match(/^-\s*(.*)/);
+        if (match) {
+          const url = parseRawYamlValue(match[1]);
+          if (url) recipeGalleryUrls.push(url);
+        }
+        continue;
+      }
 
       const isIndented = /^\s+/.test(rawLine);
       if (!isIndented) {
@@ -276,8 +339,26 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           else if (key === 'video') videoUrl = val;
           else if (key === 'times') currentFmSection = 'times';
           else if (key === 'media') currentFmSection = 'media';
+          else if (key === 'tags' || key === 'tag') {
+            currentFmSection = 'tags';
+            if (rawVal) {
+              const cleaned = rawVal.replace(/^\[|\]$/g, '');
+              for (const piece of cleaned.split(',')) {
+                const norm = normalizeTag(piece);
+                if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+              }
+            }
+          }
         }
       } else {
+        if (currentFmSection === 'tags') {
+          const match = trimmed.match(/^-\s*(.*)/);
+          if (match) {
+            const norm = normalizeTag(parseRawYamlValue(match[1]));
+            if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+          }
+          continue;
+        }
         if (currentFmSection === 'times' || currentFmSection === 'customTimes') {
           if (/^custom:\s*$/i.test(trimmed)) {
             currentFmSection = 'customTimes';
@@ -352,6 +433,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
   const inputsMap = new Map<string, RecipeInput>();
   const vesselsMap = new Map<string, RecipeVessel>();
   const yieldProducerMap = new Map<string, string>();
+  const firstIngredientDeclarations = new Map<string, { mentionId: string; name: string }>();
 
   let currentRootSectionId = 'sec-main';
   let currentSectionId = 'sec-main';
@@ -380,8 +462,11 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     videoClip?: { startSec: number; endSec?: number };
   } = { galleryUrls: [] };
 
-  let countedStepCounter = 1;
   let previousStepId: string | null = null;
+  let lastCountedStepId: string | null = null;
+  let secMainStepCounter = 0;
+  let lastMainStepNum = '';
+  let secSubstepCounter = 0;
 
   for (let i = bodyStartIndex; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -409,6 +494,10 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         currentRootSectionId = secId;
         currentSectionId = secId;
         previousStepId = null;
+        lastCountedStepId = null;
+        secMainStepCounter = 0;
+        lastMainStepNum = '';
+        secSubstepCounter = 0;
       } else {
         ensureDefaultSection();
         const secId = `sec-sub-${sections.length + 1}`;
@@ -422,6 +511,10 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         sections.push(newSubSec);
         currentSectionId = secId;
         previousStepId = null;
+        lastCountedStepId = null;
+        secMainStepCounter = 0;
+        lastMainStepNum = '';
+        secSubstepCounter = 0;
       }
       continue;
     }
@@ -433,19 +526,29 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         const dirName = trimmed.slice(1, colonIdx).trim().toLowerCase();
         const dirVal = trimmed.slice(colonIdx + 1).trim();
 
-        if (dirName === 'image' && sections.length > 0) {
-          sections[sections.length - 1].description = sections[sections.length - 1].description
-            ? `${sections[sections.length - 1].description}\n[Banner: ${dirVal}]`
-            : `[Banner: ${dirVal}]`;
-        } else if (dirName === 'desc' && sections.length > 0) {
-          sections[sections.length - 1].description = dirVal;
+        const currentSec = sections.length > 0 ? sections[sections.length - 1] : undefined;
+        const isSectionScope = previousStepId === null && Boolean(currentSec);
+
+        if (dirName === 'desc' && currentSec) {
+          currentSec.description = dirVal;
         } else if (/^image\d*$/.test(dirName)) {
-          pendingStepDirectives.galleryUrls.push(dirVal);
+          if (isSectionScope && currentSec) {
+            currentSec.media = currentSec.media || {};
+            currentSec.media.galleryUrls = currentSec.media.galleryUrls || [];
+            currentSec.media.galleryUrls.push(dirVal);
+          } else {
+            pendingStepDirectives.galleryUrls.push(dirVal);
+          }
         } else if (dirName === 'clip') {
           const parts = dirVal.split(/\s+to\s+/i);
           const startSec = parseTimestampToSeconds(parts[0] || '0');
           const endSec = parts[1] ? parseTimestampToSeconds(parts[1]) : undefined;
-          pendingStepDirectives.videoClip = { startSec, endSec };
+          if (isSectionScope && currentSec) {
+            currentSec.media = currentSec.media || {};
+            currentSec.media.videoClip = { startSec, endSec };
+          } else {
+            pendingStepDirectives.videoClip = { startSec, endSec };
+          }
         }
       }
       continue;
@@ -471,7 +574,7 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
       }
 
       if (/\[link\]/i.test(prose)) {
-        isLinked = true;
+        isLinked = !isUncountedStep;
         prose = prose.replace(/\[link\]/gi, '').trim();
       }
 
@@ -483,22 +586,22 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
       const stepIdx = canvasNodes.length + 1;
       const stepId = `step-${stepIdx}`;
 
-      // Extract Yield production directive: -> *yieldName*{#vesselName}
-      let producesYield: { name: string; vesselId: string } | undefined;
-      const yieldProdMatch = prose.match(/->\s*\*([^*]+)\*\{#([^}]+)\}\s*$/);
+      // Extract Yield production directive: -> *yieldName*{} or legacy -> *yieldName*{#vesselName}
+      let producesYield: { name: string; vesselId?: string } | undefined;
+      const yieldProdMatch = prose.match(/->\s*\*([^*]+)\*(?:\{([^}]*)\})?\s*$/);
       if (yieldProdMatch) {
         const yieldName = yieldProdMatch[1].trim();
-        const vesselName = yieldProdMatch[2].trim();
-        const vesselSlug = vesselName.toLowerCase().replace(/\s+/g, '-');
+        const vesselRaw = (yieldProdMatch[2] || '').trim().replace(/^#/, '');
+        const vesselSlug = vesselRaw ? vesselRaw.toLowerCase().replace(/\s+/g, '-') : undefined;
         producesYield = {
           name: yieldName,
-          vesselId: vesselSlug
+          ...(vesselSlug ? { vesselId: vesselSlug } : {})
         };
         yieldProducerMap.set(yieldName.toLowerCase(), stepId);
-        if (!vesselsMap.has(vesselSlug)) {
+        if (vesselSlug && !vesselsMap.has(vesselSlug)) {
           vesselsMap.set(vesselSlug, {
             id: vesselSlug,
-            name: vesselName,
+            name: vesselRaw,
             type: 'bowl'
           });
         }
@@ -573,8 +676,8 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
           const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
           let name = working;
-          let amount: number | string = 1;
-          let unit = 'piece';
+          let amount: number | string | undefined = undefined;
+          let unit: string | undefined = undefined;
 
           if (braceMatch) {
             name = braceMatch[1].trim();
@@ -592,27 +695,51 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
             }
           }
 
-          const inputSlug = name.toLowerCase().replace(/\s+/g, '-');
-          if (!isHidden && !inputsMap.has(inputSlug)) {
-            inputsMap.set(inputSlug, {
-              id: inputSlug,
-              name,
-              amount,
-              unit,
-              notes: creatorNote
-            });
+          const std = resolveStandardIngredient(name);
+          const inputSlug = std ? std.id : name.toLowerCase().replace(/\s+/g, '-');
+          const canonicalName = std ? std.name : name;
+          let originalMentionId: string | undefined;
+
+          if (!isHidden) {
+            if (!firstIngredientDeclarations.has(inputSlug)) {
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name: canonicalName });
+            }
+            if (!inputsMap.has(inputSlug)) {
+              inputsMap.set(inputSlug, {
+                id: inputSlug,
+                name: canonicalName,
+                amount: amount ?? 1,
+                unit: unit ?? '',
+                notes: creatorNote
+              });
+            }
+          } else {
+            const firstDecl = firstIngredientDeclarations.get(inputSlug);
+            if (firstDecl) {
+              originalMentionId = firstDecl.mentionId;
+            } else if (!inputsMap.has(inputSlug)) {
+              inputsMap.set(inputSlug, {
+                id: inputSlug,
+                name: canonicalName,
+                amount: 1,
+                unit: '',
+                notes: creatorNote
+              });
+              firstIngredientDeclarations.set(inputSlug, { mentionId: mId, name: canonicalName });
+            }
           }
 
           const mention: StepMentionToken = {
             id: mId,
             type: 'ingredient',
-            displayText: name,
+            displayText: canonicalName,
             data: {
               ingredientId: inputSlug,
-              amount,
-              unit,
+              amount: isHidden ? undefined : amount,
+              unit: isHidden ? undefined : unit,
               creatorNote,
-              isRemention: isHidden
+              isRemention: isHidden,
+              originalMentionId
             }
           };
           mentions.push(mention);
@@ -631,23 +758,26 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
           const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
           const name = (braceMatch ? braceMatch[1] : working).trim();
           const size = braceMatch && braceMatch[2] ? braceMatch[2].trim() : undefined;
-          const vesselSlug = name.toLowerCase().replace(/\s+/g, '-');
+          const stdCookware = resolveStandardCookware(name);
+          const vesselSlug = stdCookware ? stdCookware.id : name.toLowerCase().replace(/\s+/g, '-');
+          const canonicalCookwareName = stdCookware ? stdCookware.name : name;
 
           if (!vesselsMap.has(vesselSlug)) {
             vesselsMap.set(vesselSlug, {
               id: vesselSlug,
-              name,
-              type: 'bowl'
+              name: canonicalCookwareName,
+              type: stdCookware?.type || 'bowl',
+              size: (size as any) || stdCookware?.defaultSize
             });
           }
 
           const mention: StepMentionToken = {
             id: mId,
             type: 'cookware',
-            displayText: name,
+            displayText: canonicalCookwareName,
             data: {
               vesselId: vesselSlug,
-              vesselSize: size === 'large' ? 'Large' : size === 'small' ? 'Small' : 'Normal',
+              vesselSize: (size as any) || stdCookware?.defaultSize || 'Normal',
               creatorNote
             }
           };
@@ -694,14 +824,32 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
         });
       }
 
-      const parentId = isLinked && previousStepId ? previousStepId : (previousStepId || currentSectionId);
+      let parentId: string;
+      if (isLinked) {
+        parentId = lastCountedStepId ? lastCountedStepId : (previousStepId || currentSectionId);
+      } else {
+        parentId = previousStepId ? previousStepId : currentSectionId;
+      }
       const activeSection = sections.find(s => s.id === currentSectionId);
+
+      let defaultTitle = 'Note';
+      if (isCountedStep) {
+        if (isLinked && lastMainStepNum) {
+          secSubstepCounter++;
+          defaultTitle = `Step ${lastMainStepNum}.${secSubstepCounter}`;
+        } else {
+          secMainStepCounter++;
+          lastMainStepNum = String(secMainStepCounter);
+          secSubstepCounter = 0;
+          defaultTitle = `Step ${lastMainStepNum}`;
+        }
+      }
 
       const stepNode: CanvasStepNode = {
         id: stepId,
         sectionId: currentSectionId,
         parentId,
-        title: stepTitle || (isCountedStep ? `Step ${countedStepCounter++}` : 'Note'),
+        title: stepTitle || defaultTitle,
         isCountedStep,
         isLinkedToPrevious: isLinked,
         instructionText: prose,
@@ -717,6 +865,9 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
       canvasNodes.push(stepNode);
       previousStepId = stepId;
+      if (isCountedStep) {
+        lastCountedStepId = stepId;
+      }
       pendingStepDirectives = { galleryUrls: [] };
     }
   }
@@ -751,6 +902,88 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
 
   ensureDefaultSection();
 
+  const knownSectionIds = new Set(sections.map(s => s.id));
+  const nodesById = new Map(canvasNodes.map(n => [n.id, n]));
+  const defaultSecId = sections[0].id;
+
+  const components = sections.map(sec => {
+    const secNodes = canvasNodes.filter(n => {
+      const sId = resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId);
+      return sId === sec.id;
+    });
+
+    const secSteps: RecipeStepNode[] = secNodes.map(n => {
+      const tokens: RecipeToken[] = [];
+      if (n.segments && n.segments.length > 0) {
+        for (const seg of n.segments) {
+          if (seg.type === 'text') {
+            if (seg.text) tokens.push({ type: 'text', text: seg.text });
+          } else if (seg.type === 'mention' && seg.mention) {
+            const m = seg.mention;
+            if (m.type === 'yield') {
+              tokens.push({
+                type: 'yield',
+                yieldId: m.data?.yieldId || m.id,
+                sourceStepId: m.data?.yieldId || m.id,
+                displayText: m.displayText,
+                partition: m.data?.yieldPartition
+              });
+            } else if (m.type === 'ingredient') {
+              tokens.push({
+                type: 'ingredient',
+                inputId: m.data?.ingredientId || m.id,
+                displayText: m.displayText,
+                amount: m.data?.amount,
+                unit: m.data?.unit,
+                note: m.data?.creatorNote,
+                isRemention: m.data?.isRemention
+              });
+            } else if (m.type === 'cookware') {
+              tokens.push({
+                type: 'cookware',
+                vesselId: m.data?.vesselId || m.id,
+                displayText: m.displayText
+              });
+            } else if (m.type === 'timer') {
+              tokens.push({
+                type: 'timer',
+                timerId: m.id,
+                displayText: m.displayText
+              });
+            }
+          }
+        }
+      } else {
+        tokens.push({ type: 'text', text: n.instructionText });
+      }
+
+      return {
+        id: n.id,
+        componentId: `component-${sec.id}`,
+        title: n.title,
+        isCountedStep: n.isCountedStep,
+        isLinkedToPrevious: n.isLinkedToPrevious,
+        instructionText: n.instructionText,
+        tokens,
+        media: n.media,
+        showInlineTools: n.showInlineTools,
+        producesYield: n.producesYield ? {
+          id: `yield-${n.id}`,
+          name: n.producesYield.name,
+          ...(n.producesYield.vesselId ? { vesselId: n.producesYield.vesselId } : {})
+        } : undefined
+      };
+    });
+
+    return {
+      id: `component-${sec.id}`,
+      name: sec.name,
+      description: sec.description,
+      media: sec.media,
+      steps: secSteps
+    };
+  });
+
   const finalGraph: RecipeGraph = {
     schemaVersion: 2,
     id: workspaceId,
@@ -770,12 +1003,9 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     times,
     inputs: Array.from(inputsMap.values()),
     vessels: Array.from(vesselsMap.values()),
-    components: sections.map(s => ({
-      id: `component-${s.id}`,
-      name: s.name,
-      steps: []
-    })),
-    sections
+    components,
+    sections,
+    tags: parsedTags.length > 0 ? parsedTags : undefined
   };
 
   const workspace: StudioWorkspace = {
@@ -786,8 +1016,20 @@ export function parseFablang(rawText: string, workspaceId: string = generateWork
     graph: finalGraph,
     sections,
     canvasNodes,
-    customIngredients: [],
-    customCookware: []
+    customIngredients: Array.from(inputsMap.values())
+      .filter(i => !resolveStandardIngredient(i.name) && !resolveStandardIngredient(i.id))
+      .map(i => ({
+        id: i.id,
+        name: i.name,
+        allowedUnits: i.unit ? [i.unit] : ['g', 'ml', 'piece']
+      })),
+    customCookware: Array.from(vesselsMap.values())
+      .filter(v => !resolveStandardCookware(v.name) && !resolveStandardCookware(v.id))
+      .map(v => ({
+        id: v.id,
+        name: v.name,
+        size: v.size
+      }))
   };
 
   return { workspace, errors };
@@ -797,6 +1039,7 @@ export function detectInputFormat(text: string): IngestFormat {
   const trimmed = text.trim();
   if (!trimmed) return 'plain_text';
 
+  if (isFablangJson(trimmed)) return 'fablang_json';
   if (isFablangDeclared(trimmed)) return 'fablang';
 
   // Cooklang token markers
@@ -814,12 +1057,367 @@ export function detectInputFormat(text: string): IngestFormat {
   return 'plain_text';
 }
 
+export const MAX_FABLANG_JSON_DEPTH = 10;
+export const MAX_FABLANG_COMPONENTS = 50;
+export const MAX_FABLANG_STEPS = 500;
+export const MAX_FABLANG_INPUTS = 1000;
+export const MAX_FABLANG_VESSELS = 200;
+export const MAX_FABLANG_TOKENS_PER_STEP = 200;
+
+export interface FablangJsonValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+export class FablangJsonValidationError extends Error {
+  public errors: string[];
+  constructor(message: string, errors: string[] = []) {
+    super(message);
+    this.name = 'FablangJsonValidationError';
+    this.errors = errors;
+  }
+}
+
+/**
+ * Recursively calculates structural object depth to enforce intentional depth limits
+ */
+export function calculateObjectDepth(obj: unknown, currentDepth = 0): number {
+  if (obj === null || typeof obj !== 'object') {
+    return currentDepth;
+  }
+  let maxChildDepth = currentDepth + 1;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const d = calculateObjectDepth(item, currentDepth + 1);
+      if (d > maxChildDepth) maxChildDepth = d;
+    }
+  } else {
+    for (const key of Object.keys(obj)) {
+      const d = calculateObjectDepth((obj as Record<string, unknown>)[key], currentDepth + 1);
+      if (d > maxChildDepth) maxChildDepth = d;
+    }
+  }
+  return maxChildDepth;
+}
+
+/**
+ * Validates Fablang JSON schema, bounds, and intentional depth rules
+ */
+export function validateFablangJson(raw: unknown): FablangJsonValidationResult {
+  const errors: string[] = [];
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { isValid: false, errors: ['Fablang JSON must be a non-null object at root.'] };
+  }
+
+  const depth = calculateObjectDepth(raw);
+  if (depth > MAX_FABLANG_JSON_DEPTH) {
+    errors.push(`Fablang JSON exceeds maximum allowed structure depth (${depth} > ${MAX_FABLANG_JSON_DEPTH}).`);
+  }
+
+  const data = raw as Record<string, any>;
+
+  if (data.schemaVersion !== undefined && typeof data.schemaVersion !== 'number') {
+    errors.push('Invalid schemaVersion: expected number.');
+  }
+
+  if (data.components !== undefined) {
+    if (!Array.isArray(data.components)) {
+      errors.push('Field "components" must be an array.');
+    } else {
+      if (data.components.length > MAX_FABLANG_COMPONENTS) {
+        errors.push(`Too many components (${data.components.length} > ${MAX_FABLANG_COMPONENTS}).`);
+      }
+      let totalSteps = 0;
+      for (let i = 0; i < data.components.length; i++) {
+        const c = data.components[i];
+        if (!c || typeof c !== 'object') {
+          errors.push(`Component at index ${i} must be an object.`);
+          continue;
+        }
+        if (c.steps !== undefined) {
+          if (!Array.isArray(c.steps)) {
+            errors.push(`Component "${c.name || i}" steps must be an array.`);
+          } else {
+            totalSteps += c.steps.length;
+            for (let j = 0; j < c.steps.length; j++) {
+              const step = c.steps[j];
+              if (!step || typeof step !== 'object') {
+                errors.push(`Step ${j} in component ${i} must be an object.`);
+                continue;
+              }
+              if (step.tokens && Array.isArray(step.tokens) && step.tokens.length > MAX_FABLANG_TOKENS_PER_STEP) {
+                errors.push(`Step ${j} exceeds token limit (${step.tokens.length} > ${MAX_FABLANG_TOKENS_PER_STEP}).`);
+              }
+            }
+          }
+        }
+      }
+      if (totalSteps > MAX_FABLANG_STEPS) {
+        errors.push(`Total steps in recipe exceeds limit (${totalSteps} > ${MAX_FABLANG_STEPS}).`);
+      }
+    }
+  }
+
+  if (data.inputs !== undefined) {
+    if (!Array.isArray(data.inputs)) {
+      errors.push('Field "inputs" must be an array.');
+    } else if (data.inputs.length > MAX_FABLANG_INPUTS) {
+      errors.push(`Total inputs exceeds limit (${data.inputs.length} > ${MAX_FABLANG_INPUTS}).`);
+    }
+  }
+
+  if (data.vessels !== undefined) {
+    if (!Array.isArray(data.vessels)) {
+      errors.push('Field "vessels" must be an array.');
+    } else if (data.vessels.length > MAX_FABLANG_VESSELS) {
+      errors.push(`Total vessels exceeds limit (${data.vessels.length} > ${MAX_FABLANG_VESSELS}).`);
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Parses a serialized Fablang RecipeGraph JSON into a full StudioWorkspace
+ */
+export function parseFablangJsonToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
+  let data: any;
+  try {
+    data = JSON.parse(rawText.trim());
+  } catch (err: any) {
+    throw new FablangJsonValidationError('Invalid JSON syntax: ' + (err?.message || 'Parse error'));
+  }
+
+  const validation = validateFablangJson(data);
+  if (!validation.isValid) {
+    throw new FablangJsonValidationError(
+      `Fablang JSON validation failed: ${validation.errors.join('; ')}`,
+      validation.errors
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // 1. Sections: use data.sections if provided; otherwise derive from components
+  const rawSections: any[] = Array.isArray(data.sections) && data.sections.length > 0
+    ? data.sections
+    : Array.isArray(data.components) && data.components.length > 0
+    ? data.components.map((c: any, idx: number) => ({
+        id: c.id ? c.id.replace(/^component-/, '') : `sec-${idx + 1}`,
+        name: c.name || `Section ${idx + 1}`,
+        order: idx,
+        colorIndex: idx % 6
+      }))
+    : [{ id: 'sec-main', name: 'Instructions', order: 0, colorIndex: 0 }];
+
+  const sections: CanvasSection[] = rawSections.map((s, idx) => ({
+    id: s.id || `sec-${idx + 1}`,
+    name: s.name || `Section ${idx + 1}`,
+    order: s.order ?? idx,
+    colorIndex: s.colorIndex ?? (idx % 6),
+    parentSectionId: s.parentSectionId,
+    showInlineTools: s.showInlineTools
+  }));
+
+  const defaultSectionId = sections[0].id;
+  const sectionIdSet = new Set(sections.map(s => s.id));
+
+  // 2. Build canvasNodes from components
+  const canvasNodes: CanvasStepNode[] = [];
+  const rawComponents: any[] = Array.isArray(data.components) ? data.components : [];
+
+  for (const comp of rawComponents) {
+    const rawCompSectionId = comp.id ? comp.id.replace(/^component-/, '') : defaultSectionId;
+    const targetSectionId = sectionIdSet.has(rawCompSectionId)
+      ? rawCompSectionId
+      : (sectionIdSet.has(comp.id) ? comp.id : defaultSectionId);
+
+    const steps: any[] = Array.isArray(comp.steps) ? comp.steps : [];
+    let prevCompStepId: string | null = null;
+    for (const step of steps) {
+      const stepId = step.id || `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const instructionText = step.instructionText || '';
+
+      const segments: StepInstructionSegment[] = [];
+      const mentions: StepMentionToken[] = [];
+
+      if (Array.isArray(step.tokens) && step.tokens.length > 0) {
+        step.tokens.forEach((token: any, tIdx: number) => {
+          const segId = `seg-${stepId}-${tIdx}`;
+          if (token.type === 'text') {
+            segments.push({ type: 'text', id: segId, text: token.text || '' });
+          } else if (token.type === 'ingredient') {
+            const mId = token.inputId || `ing-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'ingredient',
+              displayText: token.displayText || token.name || '',
+              data: {
+                ingredientId: token.inputId,
+                amount: token.amount,
+                unit: token.unit,
+                creatorNote: token.note,
+                isRemention: Boolean(token.isRemention)
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'cookware') {
+            const mId = token.vesselId || `vessel-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'cookware',
+              displayText: token.displayText || '',
+              data: {
+                vesselId: token.vesselId
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'yield') {
+            const mId = token.yieldId || `yield-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'yield',
+              displayText: token.displayText || '',
+              data: {
+                yieldId: token.yieldId,
+                yieldPartition: token.partition
+              }
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          } else if (token.type === 'timer') {
+            const mId = token.timerId || `timer-${tIdx}`;
+            const mention: StepMentionToken = {
+              id: mId,
+              type: 'timer',
+              displayText: token.displayText || '',
+              data: {}
+            };
+            segments.push({ type: 'mention', id: segId, mention });
+            mentions.push(mention);
+          }
+        });
+      } else {
+        segments.push({
+          type: 'text',
+          id: `seg-${stepId}-0`,
+          text: instructionText
+        });
+      }
+
+      let producesYield: { name: string; vesselId?: string } | undefined;
+      if (step.producesYield) {
+        producesYield = {
+          name: step.producesYield.name || '',
+          ...(step.producesYield.vesselId ? { vesselId: step.producesYield.vesselId } : {})
+        };
+      }
+
+      const parentId = step.parentId && step.parentId !== 'root' && step.parentId !== targetSectionId
+        ? step.parentId
+        : (prevCompStepId ? prevCompStepId : targetSectionId);
+      prevCompStepId = stepId;
+
+      canvasNodes.push({
+        id: stepId,
+        sectionId: targetSectionId,
+        parentId,
+        title: step.title || '',
+        isCountedStep: step.isCountedStep !== false,
+        isLinkedToPrevious: Boolean(step.isLinkedToPrevious),
+        instructionText,
+        segments,
+        mentions,
+        media: step.media || {},
+        showInlineTools: step.showInlineTools,
+        producesYield
+      });
+    }
+  }
+
+  const customIngredients = Array.isArray(data.inputs)
+    ? data.inputs
+        .filter((inp: any) => !resolveStandardIngredient(inp.name) && !resolveStandardIngredient(inp.id))
+        .map((inp: any) => ({
+          id: inp.id,
+          name: inp.name || inp.id,
+          allowedUnits: inp.unit ? [inp.unit] : undefined
+        }))
+    : [];
+
+  const customCookware = Array.isArray(data.vessels)
+    ? data.vessels
+        .filter((v: any) => !resolveStandardCookware(v.name) && !resolveStandardCookware(v.id))
+        .map((v: any) => ({
+          id: v.id,
+          name: v.name || v.id,
+          size: v.size
+        }))
+    : [];
+
+  const graph: RecipeGraph = {
+    schemaVersion: 2,
+    id: data.id || `recipe-${Date.now()}`,
+    title: data.title || 'Untitled Recipe',
+    servings: data.servings || 4,
+    difficulty: data.difficulty || 'medium',
+    description: data.description || '',
+    tips: data.tips || '',
+    importantNotes: data.importantNotes || '',
+    leadTimeSummary: data.leadTimeSummary || '',
+    author: data.author ? { name: data.author.name || 'anonymous' } : undefined,
+    source: data.source?.url ? { url: data.source.url } : undefined,
+    media: {
+      pictureUrl: data.media?.pictureUrl || '',
+      videoUrl: data.media?.videoUrl || '',
+      galleryUrls: Array.isArray(data.media?.galleryUrls) ? data.media.galleryUrls : []
+    },
+    times: {
+      prepSec: data.times?.prepSec || 0,
+      cookSec: data.times?.cookSec || 0,
+      bakeSec: data.times?.bakeSec || 0,
+      restSec: data.times?.restSec || 0,
+      totalSec: data.times?.totalSec || 0,
+      custom: Array.isArray(data.times?.custom) ? data.times.custom : []
+    },
+    inputs: Array.isArray(data.inputs) ? data.inputs : [],
+    vessels: Array.isArray(data.vessels) ? data.vessels : [],
+    components: rawComponents,
+    sections,
+    tags: Array.isArray(data.tags)
+      ? data.tags.map((t: any) => normalizeTag(String(t))).filter(Boolean)
+      : undefined
+  };
+
+  return {
+    id: workspaceId || data.id || `ws-${Date.now()}`,
+    title: data.title || graph.title,
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+    graph,
+    sections,
+    canvasNodes,
+    customIngredients,
+    customCookware
+  };
+}
+
 /**
  * Parses raw text into a StudioWorkspace with auto-connected canvas nodes
  */
 export function parseTextToStudioWorkspace(rawText: string, workspaceId: string = generateWorkspaceId()): StudioWorkspace {
   const trimmed = rawText.trim();
   const format = detectInputFormat(trimmed);
+
+  if (format === 'fablang_json') {
+    return parseFablangJsonToStudioWorkspace(trimmed, workspaceId);
+  }
 
   if (format === 'fablang') {
     return parseFablang(trimmed, workspaceId).workspace;
@@ -833,6 +1431,7 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
   let sourceUrl = '';
   let servings = 4;
   let difficulty: 'easy' | 'medium' | 'hard' = 'medium';
+  const parsedTags: string[] = [];
 
   const rawStepTexts: string[] = [];
 
@@ -844,17 +1443,39 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
       if (endIdx !== -1) {
         const fm = trimmed.slice(3, endIdx);
         body = trimmed.slice(endIdx + 4).trim();
+        let inFmTags = false;
         for (const line of fm.split('\n')) {
+          const trimmedLine = line.trim();
+          if (inFmTags && trimmedLine.startsWith('-')) {
+            const match = trimmedLine.match(/^-\s*(.*)/);
+            if (match) {
+              const norm = normalizeTag(parseRawYamlValue(match[1]));
+              if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+            }
+            continue;
+          }
+          inFmTags = false;
           const colon = line.indexOf(':');
           if (colon !== -1) {
             const key = line.slice(0, colon).trim().toLowerCase();
-            const val = line.slice(colon + 1).trim().replace(/^["']|["']$/g, '');
+            const rawVal = line.slice(colon + 1).trim();
+            const val = rawVal.replace(/^["']|["']$/g, '');
             if (key === 'title') title = val;
             if (key === 'author') author = val;
             if (key === 'source' || key === 'url' || key === 'origin') sourceUrl = val;
             if (key === 'servings') servings = parseInt(val, 10) || 4;
             if (key === 'description') description = val;
             if (key === 'tips' || key === 'notes') tips = val;
+            if (key === 'tags' || key === 'tag') {
+              inFmTags = true;
+              if (rawVal) {
+                const cleaned = rawVal.replace(/^\[|\]$/g, '');
+                for (const piece of cleaned.split(',')) {
+                  const norm = normalizeTag(piece);
+                  if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+                }
+              }
+            }
             if (key === 'difficulty' && (val === 'easy' || val === 'medium' || val === 'hard')) {
               difficulty = val;
             }
@@ -882,6 +1503,12 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
           if (key === 'servings') servings = parseInt(val, 10) || 4;
           if (key === 'description') description = val;
           if (key === 'tips' || key === 'notes') tips = val;
+          if (key === 'tags' || key === 'tag') {
+            for (const piece of val.split(',')) {
+              const norm = normalizeTag(piece);
+              if (norm && !parsedTags.includes(norm)) parsedTags.push(norm);
+            }
+          }
         }
         continue;
       }
@@ -927,7 +1554,7 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
   for (let i = 0; i < rawStepTexts.length; i++) {
     const stepId = `step-${i + 1}`;
     const rawStep = rawStepTexts[i];
-    const { cleanText, mentions, segments } = extractMentionsFromStep(rawStep, i + 1);
+    const { cleanText, mentions, segments, producesYield } = extractMentionsFromStep(rawStep, i + 1);
 
     canvasNodes.push({
       id: stepId,
@@ -938,7 +1565,8 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
       isLinkedToPrevious: false,
       instructionText: cleanText,
       segments,
-      mentions
+      mentions,
+      producesYield
     });
 
     prevNodeId = stepId;
@@ -963,8 +1591,40 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
     },
     inputs: [],
     vessels: [],
-    components: []
+    components: [],
+    tags: parsedTags.length > 0 ? parsedTags : undefined
   };
+
+  const customIngredientsMap = new Map<string, { id: string; name: string; allowedUnits?: string[] }>();
+  const customCookwareMap = new Map<string, { id: string; name: string; size?: any }>();
+
+  for (const node of canvasNodes) {
+    for (const m of node.mentions) {
+      if (m.type === 'ingredient') {
+        const std = resolveStandardIngredient(m.displayText) || resolveStandardIngredient(m.data?.ingredientId);
+        if (!std && m.data?.ingredientId) {
+          if (!customIngredientsMap.has(m.data.ingredientId)) {
+            customIngredientsMap.set(m.data.ingredientId, {
+              id: m.data.ingredientId,
+              name: m.displayText,
+              allowedUnits: m.data.unit ? [m.data.unit] : ['g', 'ml', 'piece']
+            });
+          }
+        }
+      } else if (m.type === 'cookware') {
+        const std = resolveStandardCookware(m.displayText) || resolveStandardCookware(m.data?.vesselId);
+        if (!std && m.data?.vesselId) {
+          if (!customCookwareMap.has(m.data.vesselId)) {
+            customCookwareMap.set(m.data.vesselId, {
+              id: m.data.vesselId,
+              name: m.displayText,
+              size: m.data.vesselSize || 'Normal'
+            });
+          }
+        }
+      }
+    }
+  }
 
   return {
     id: workspaceId,
@@ -974,19 +1634,34 @@ export function parseTextToStudioWorkspace(rawText: string, workspaceId: string 
     graph: initialGraph,
     sections: [{ id: 'sec-main', name: 'Main', order: 0, showInlineTools: false }],
     canvasNodes,
-    customIngredients: [],
-    customCookware: []
+    customIngredients: Array.from(customIngredientsMap.values()),
+    customCookware: Array.from(customCookwareMap.values())
   };
 }
 
 /**
  * Extracts mentions from Cooklang syntax like @ingredient{quantity%unit} or #cookware or ~{time}
  */
-function extractMentionsFromStep(stepText: string, stepIndex: number): {
+function extractMentionsFromStep(rawStepText: string, stepIndex: number): {
   cleanText: string;
   mentions: StepMentionToken[];
   segments: StepInstructionSegment[];
+  producesYield?: { name: string; vesselId?: string };
 } {
+  let stepText = rawStepText;
+  let producesYield: { name: string; vesselId?: string } | undefined;
+  const yieldMatch = stepText.match(/->\s*\*([^*]+)\*(?:\{([^}]*)\})?\s*$/);
+  if (yieldMatch) {
+    const yieldName = yieldMatch[1].trim();
+    const vesselRaw = (yieldMatch[2] || '').trim().replace(/^#/, '');
+    const vesselSlug = vesselRaw ? vesselRaw.toLowerCase().replace(/\s+/g, '-') : undefined;
+    producesYield = {
+      name: yieldName,
+      ...(vesselSlug ? { vesselId: vesselSlug } : {})
+    };
+    stepText = stepText.slice(0, yieldMatch.index).trim();
+  }
+
   const segments: StepInstructionSegment[] = [];
   const mentions: StepMentionToken[] = [];
   let tokenCounter = 1;
@@ -1023,8 +1698,8 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
 
       const braceMatch = working.match(/^([^{]+)(?:\{([^}]*)\})?$/);
       let name = working;
-      let amount: number | string = 1;
-      let unit = 'piece';
+      let amount: number | string | undefined = undefined;
+      let unit: string | undefined = undefined;
 
       if (braceMatch) {
         name = braceMatch[1].trim();
@@ -1033,21 +1708,24 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
           if (details.includes('%')) {
             const [q, u] = details.split('%');
             const trimmedQ = q.trim();
-            amount = trimmedQ.includes('/') ? trimmedQ : (parseFloat(trimmedQ) || parseFraction(trimmedQ) || 1);
-            unit = u.trim();
+            amount = trimmedQ.includes('/') ? trimmedQ : (parseFloat(trimmedQ) || parseFraction(trimmedQ) || undefined);
+            unit = u.trim() || undefined;
           } else {
             const trimmedD = details.trim();
-            amount = trimmedD.includes('/') ? trimmedD : (parseFloat(trimmedD) || parseFraction(trimmedD) || 1);
+            amount = trimmedD.includes('/') ? trimmedD : (parseFloat(trimmedD) || parseFraction(trimmedD) || undefined);
           }
         }
       }
 
+      const std = resolveStandardIngredient(name);
+      const ingredientId = std ? std.id : name.toLowerCase().replace(/\s+/g, '-');
+
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'ingredient',
-        displayText: name,
+        displayText: std ? std.name : name,
         data: {
-          ingredientId: name.toLowerCase().replace(/\s+/g, '-'),
+          ingredientId,
           amount,
           unit,
           creatorNote
@@ -1063,14 +1741,16 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
       const tokenContent = fullMatch.slice(1);
       const braceMatch = tokenContent.match(/^([^{]+)(?:\{[^}]*\})?$/);
       const name = (braceMatch ? braceMatch[1] : tokenContent).trim();
+      const stdCookware = resolveStandardCookware(name);
+      const vesselId = stdCookware ? stdCookware.id : name.toLowerCase().replace(/\s+/g, '-');
 
       const mention: StepMentionToken = {
         id: mentionId,
         type: 'cookware',
-        displayText: name,
+        displayText: stdCookware ? stdCookware.name : name,
         data: {
-          vesselId: name.toLowerCase().replace(/\s+/g, '-'),
-          vesselSize: 'Normal'
+          vesselId,
+          vesselSize: (stdCookware?.defaultSize as any) || 'Normal'
         }
       };
       mentions.push(mention);
@@ -1126,7 +1806,7 @@ function extractMentionsFromStep(stepText: string, stepIndex: number): {
     .map(s => (s.type === 'text' ? s.text : s.mention.displayText))
     .join('');
 
-  return { cleanText, mentions, segments };
+  return { cleanText, mentions, segments, producesYield };
 }
 
 function resolveNodeSectionId(
@@ -1233,19 +1913,19 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
         if (!inputsMap.has(inputId)) {
           const rawAmount = mention.data.amount;
           const finalAmount =
-            typeof rawAmount === 'string' && rawAmount.includes('/')
+            rawAmount === undefined || rawAmount === null || rawAmount === ''
+              ? undefined
+              : typeof rawAmount === 'string' && rawAmount.includes('/')
               ? rawAmount
               : typeof rawAmount === 'number'
               ? rawAmount
-              : rawAmount
-              ? parseFraction(rawAmount) || rawAmount || 1
-              : 1;
+              : parseFraction(rawAmount) || rawAmount || undefined;
 
           inputsMap.set(inputId, {
             id: inputId,
             name: mention.displayText,
             amount: finalAmount,
-            unit: mention.data.unit || 'piece',
+            unit: mention.data.unit || undefined,
             notes: mention.data.creatorNote
           });
         }
@@ -1283,7 +1963,7 @@ export function exportStudioWorkspaceToRecipeGraph(workspace: StudioWorkspace): 
       stepNode.producesYield = {
         id: `yield-${node.id}`,
         name: node.producesYield.name,
-        vesselId: node.producesYield.vesselId
+        ...(node.producesYield.vesselId ? { vesselId: node.producesYield.vesselId } : {})
       };
     }
 

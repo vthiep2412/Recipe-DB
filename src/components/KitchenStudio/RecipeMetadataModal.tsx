@@ -1,11 +1,18 @@
-import { useState, useEffect, useRef, useMemo } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
-import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play } from 'lucide-preact';
-import { marked } from 'marked';
+import { X, Plus, Minus, Trash2, Edit3, BookOpen, Play, Tag, Info } from 'lucide-preact';
+import { toast } from 'sonner';
 import type { RecipeGraph } from '../../types/orchestration';
 import { formatSecondsToDisplay } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
+import { ConfirmModal } from '../ConfirmModal';
 import { MediaModal } from './MediaModal';
+import { Tooltip } from '../Tooltip';
+import { ObsidianSourceEditor } from './ObsidianSourceEditor';
+import { renderAppMarkdown } from '../../utils/markdown';
+import { TagManagerModal } from './TagManagerModal';
+import { getYouTubeEmbedUrl, useResolvedMediaUrl } from '../../utils/media';
+
 
 interface RecipeMetadataModalProps {
   isOpen: boolean;
@@ -36,422 +43,6 @@ const AVAILABLE_PHASE_OPTIONS = [
   'Freeze Time'
 ];
 
-interface ObsidianSourceEditorProps {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}
-
-function tokenizeInlineText(parentEl: HTMLElement, text: string) {
-  const tokenRegex = /(\[\[[^\n\]]+\]\]|\*\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*\*|\*\*[^\s*](?:[\s\S]*?[^\s*])?\*\*|\*[^\s*](?:[^*\n]*?[^\s*])?\*|`[^`\n]+`)/g;
-  let lastIdx = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tokenRegex.exec(text)) !== null) {
-    if (match.index > lastIdx) {
-      parentEl.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
-    }
-    const tokenStr = match[0];
-    if (tokenStr.startsWith('[[') && tokenStr.endsWith(']]')) {
-      const inner = tokenStr.slice(2, -2);
-      const openSpan = document.createElement('span');
-      openSpan.className = 'obsidian-syntax-dim';
-      openSpan.textContent = '[[';
-      parentEl.appendChild(openSpan);
-
-      const linkSpan = document.createElement('span');
-      linkSpan.className = 'obsidian-token-wiki-link';
-      linkSpan.textContent = inner;
-      parentEl.appendChild(linkSpan);
-
-      const closeSpan = document.createElement('span');
-      closeSpan.className = 'obsidian-syntax-dim';
-      closeSpan.textContent = ']]';
-      parentEl.appendChild(closeSpan);
-    } else if (tokenStr.startsWith('***') && tokenStr.endsWith('***')) {
-      const inner = tokenStr.slice(3, -3);
-      const openSpan = document.createElement('span');
-      openSpan.className = 'obsidian-syntax-dim';
-      openSpan.textContent = '***';
-      parentEl.appendChild(openSpan);
-
-      const biSpan = document.createElement('span');
-      biSpan.className = 'obsidian-token-bold-italic';
-      biSpan.textContent = inner;
-      parentEl.appendChild(biSpan);
-
-      const closeSpan = document.createElement('span');
-      closeSpan.className = 'obsidian-syntax-dim';
-      closeSpan.textContent = '***';
-      parentEl.appendChild(closeSpan);
-    } else if (tokenStr.startsWith('**') && tokenStr.endsWith('**')) {
-      const inner = tokenStr.slice(2, -2);
-      const openSpan = document.createElement('span');
-      openSpan.className = 'obsidian-syntax-dim';
-      openSpan.textContent = '**';
-      parentEl.appendChild(openSpan);
-
-      const boldSpan = document.createElement('span');
-      boldSpan.className = 'obsidian-token-bold';
-      boldSpan.textContent = inner;
-      parentEl.appendChild(boldSpan);
-
-      const closeSpan = document.createElement('span');
-      closeSpan.className = 'obsidian-syntax-dim';
-      closeSpan.textContent = '**';
-      parentEl.appendChild(closeSpan);
-    } else if (tokenStr.startsWith('*') && tokenStr.endsWith('*')) {
-      const inner = tokenStr.slice(1, -1);
-      const openSpan = document.createElement('span');
-      openSpan.className = 'obsidian-syntax-dim';
-      openSpan.textContent = '*';
-      parentEl.appendChild(openSpan);
-
-      const italicSpan = document.createElement('span');
-      italicSpan.className = 'obsidian-token-italic';
-      italicSpan.textContent = inner;
-      parentEl.appendChild(italicSpan);
-
-      const closeSpan = document.createElement('span');
-      closeSpan.className = 'obsidian-syntax-dim';
-      closeSpan.textContent = '*';
-      parentEl.appendChild(closeSpan);
-    } else if (tokenStr.startsWith('`') && tokenStr.endsWith('`')) {
-      const inner = tokenStr.slice(1, -1);
-      const openSpan = document.createElement('span');
-      openSpan.className = 'obsidian-syntax-dim';
-      openSpan.textContent = '`';
-      parentEl.appendChild(openSpan);
-
-      const codeSpan = document.createElement('span');
-      codeSpan.className = 'obsidian-token-code';
-      codeSpan.textContent = inner;
-      parentEl.appendChild(codeSpan);
-
-      const closeSpan = document.createElement('span');
-      closeSpan.className = 'obsidian-syntax-dim';
-      closeSpan.textContent = '`';
-      parentEl.appendChild(closeSpan);
-    }
-    lastIdx = match.index + tokenStr.length;
-  }
-
-  if (lastIdx < text.length) {
-    parentEl.appendChild(document.createTextNode(text.slice(lastIdx)));
-  }
-}
-
-function renderObsidianLine(lineText: string, lineIndex: number): HTMLDivElement {
-  const lineDiv = document.createElement('div');
-  lineDiv.className = 'obsidian-editor-line';
-  lineDiv.dataset.lineIndex = String(lineIndex);
-
-  if (!lineText) {
-    lineDiv.classList.add('is-empty');
-    lineDiv.appendChild(document.createElement('br'));
-    return lineDiv;
-  }
-
-  const headingMatch = lineText.match(/^(#{1,6})\s(.*)$/);
-  if (headingMatch) {
-    const level = headingMatch[1].length;
-    lineDiv.classList.add(`is-h${level}`, 'is-heading');
-
-    const hashSpan = document.createElement('span');
-    hashSpan.className = 'obsidian-syntax-dim';
-    hashSpan.textContent = `${headingMatch[1]} `;
-    lineDiv.appendChild(hashSpan);
-
-    const textSpan = document.createElement('span');
-    textSpan.className = 'obsidian-heading-text';
-    tokenizeInlineText(textSpan, headingMatch[2]);
-    lineDiv.appendChild(textSpan);
-    return lineDiv;
-  }
-
-  if (/^(\s*---|\s*\*\*\*|\s*___)\s*$/.test(lineText)) {
-    lineDiv.classList.add('is-hr');
-    const hrSpan = document.createElement('span');
-    hrSpan.className = 'obsidian-syntax-dim';
-    hrSpan.textContent = lineText;
-    lineDiv.appendChild(hrSpan);
-    return lineDiv;
-  }
-
-  const listMatch = lineText.match(/^(\s*[-*+]\s|\s*\d+\.\s)(.*)$/);
-  if (listMatch) {
-    lineDiv.classList.add('is-list');
-    const bulletSpan = document.createElement('span');
-    bulletSpan.className = 'obsidian-syntax-dim';
-    bulletSpan.textContent = listMatch[1];
-    lineDiv.appendChild(bulletSpan);
-
-    tokenizeInlineText(lineDiv, listMatch[2]);
-    return lineDiv;
-  }
-
-  const quoteMatch = lineText.match(/^(\s*>\s*)(.*)$/);
-  if (quoteMatch) {
-    lineDiv.classList.add('is-blockquote');
-    const quoteSpan = document.createElement('span');
-    quoteSpan.className = 'obsidian-syntax-dim';
-    quoteSpan.textContent = quoteMatch[1];
-    lineDiv.appendChild(quoteSpan);
-
-    tokenizeInlineText(lineDiv, quoteMatch[2]);
-    return lineDiv;
-  }
-
-  tokenizeInlineText(lineDiv, lineText);
-  return lineDiv;
-}
-
-function renderObsidianDocument(container: HTMLElement, docText: string) {
-  const lines = docText.split('\n');
-  container.innerHTML = '';
-  for (let i = 0; i < lines.length; i++) {
-    const lineEl = renderObsidianLine(lines[i], i);
-    container.appendChild(lineEl);
-  }
-}
-
-function extractTextFromEditor(container: HTMLElement): string {
-  const lines: string[] = [];
-  for (let i = 0; i < container.childNodes.length; i++) {
-    const node = container.childNodes[i];
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement;
-      if (el.childNodes.length === 1 && el.childNodes[0].nodeName === 'BR') {
-        lines.push('');
-      } else {
-        lines.push(el.textContent || '');
-      }
-    } else if (node.nodeType === Node.TEXT_NODE) {
-      const t = node.textContent || '';
-      if (t) lines.push(t);
-    }
-  }
-  return lines.join('\n');
-}
-
-function getCaretLineAndCol(container: HTMLElement): { lineIndex: number; col: number } | null {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  const range = sel.getRangeAt(0);
-  if (!container.contains(range.startContainer)) return null;
-
-  let node: Node | null = range.startContainer;
-  while (node && node.parentNode !== container) {
-    node = node.parentNode;
-  }
-  if (!node) return null;
-
-  const lineEl = node as HTMLElement;
-  const lineIndex = Array.from(container.children).indexOf(lineEl);
-  if (lineIndex === -1) return null;
-
-  const preRange = document.createRange();
-  preRange.selectNodeContents(lineEl);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  const col = preRange.toString().length;
-
-  return { lineIndex, col };
-}
-
-function setCaretLineAndCol(container: HTMLElement, lineIndex: number, col: number) {
-  const sel = window.getSelection();
-  if (!sel) return;
-
-  const lines = container.children;
-  if (lines.length === 0) return;
-
-  const clampedLineIdx = Math.max(0, Math.min(lines.length - 1, lineIndex));
-  const lineEl = lines[clampedLineIdx] as HTMLElement;
-  if (!lineEl) return;
-
-  if (lineEl.classList.contains('is-empty') || lineEl.textContent === '') {
-    const range = document.createRange();
-    range.selectNodeContents(lineEl);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    return;
-  }
-
-  let remaining = col;
-  let targetNode: Node = lineEl;
-  let targetOffset = 0;
-  let found = false;
-
-  const walker = document.createTreeWalker(lineEl, NodeFilter.SHOW_TEXT, null);
-  let textNode = walker.nextNode();
-
-  while (textNode) {
-    const len = textNode.textContent?.length || 0;
-    if (remaining <= len) {
-      targetNode = textNode;
-      targetOffset = remaining;
-      found = true;
-      break;
-    }
-    remaining -= len;
-    targetNode = textNode;
-    targetOffset = len;
-    textNode = walker.nextNode();
-  }
-
-  const range = document.createRange();
-  if (found) {
-    range.setStart(targetNode, targetOffset);
-    range.collapse(true);
-  } else {
-    range.selectNodeContents(lineEl);
-    range.collapse(false);
-  }
-
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
-
-function ObsidianSourceEditor({ value, onChange, placeholder }: ObsidianSourceEditorProps) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const isComposingRef = useRef(false);
-  const lastValueRef = useRef(value);
-
-  const syncDocument = (text: string) => {
-    if (!editorRef.current) return;
-    renderObsidianDocument(editorRef.current, text);
-  };
-
-  useEffect(() => {
-    if (editorRef.current && value !== lastValueRef.current) {
-      lastValueRef.current = value;
-      syncDocument(value);
-    }
-  }, [value]);
-
-  useEffect(() => {
-    if (editorRef.current) {
-      syncDocument(value);
-    }
-  }, []);
-
-  const handleInput = () => {
-    if (!editorRef.current || isComposingRef.current) return;
-    const caret = getCaretLineAndCol(editorRef.current);
-    const newText = extractTextFromEditor(editorRef.current);
-    lastValueRef.current = newText;
-    onChange(newText);
-    renderObsidianDocument(editorRef.current, newText);
-    if (caret) {
-      setCaretLineAndCol(editorRef.current, caret.lineIndex, caret.col);
-    }
-  };
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      document.execCommand('insertText', false, '  ');
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      if (!editorRef.current) return;
-      const caret = getCaretLineAndCol(editorRef.current);
-      if (!caret) return;
-
-      const lines = editorRef.current.children;
-      const currentLineEl = lines[caret.lineIndex] as HTMLElement;
-      if (!currentLineEl) return;
-
-      const currentText = currentLineEl.textContent || '';
-      const emptyBulletMatch = currentText.match(/^(\s*[-*+]\s*)$/);
-      if (emptyBulletMatch && caret.col <= currentText.length) {
-        e.preventDefault();
-        const docText = extractTextFromEditor(editorRef.current);
-        const allLines = docText.split('\n');
-        allLines[caret.lineIndex] = '';
-        const nextDoc = allLines.join('\n');
-        lastValueRef.current = nextDoc;
-        onChange(nextDoc);
-        renderObsidianDocument(editorRef.current, nextDoc);
-        setCaretLineAndCol(editorRef.current, caret.lineIndex, 0);
-        return;
-      }
-
-      const activeBulletMatch = currentText.match(/^(\s*[-*+]\s+)/);
-      if (activeBulletMatch && caret.col >= activeBulletMatch[1].length) {
-        e.preventDefault();
-        const bulletPrefix = activeBulletMatch[1];
-        const docText = extractTextFromEditor(editorRef.current);
-        const allLines = docText.split('\n');
-        const beforeCaret = currentText.slice(0, caret.col);
-        const afterCaret = currentText.slice(caret.col);
-        allLines[caret.lineIndex] = beforeCaret;
-        allLines.splice(caret.lineIndex + 1, 0, bulletPrefix + afterCaret);
-        const nextDoc = allLines.join('\n');
-        lastValueRef.current = nextDoc;
-        onChange(nextDoc);
-        renderObsidianDocument(editorRef.current, nextDoc);
-        setCaretLineAndCol(editorRef.current, caret.lineIndex + 1, bulletPrefix.length);
-        return;
-      }
-    }
-  };
-
-  const handlePaste = (e: ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData?.getData('text/plain') || '';
-    if (!text) return;
-    document.execCommand('insertText', false, text);
-  };
-
-  const handleClick = (e: MouseEvent) => {
-    if (e.target === editorRef.current && editorRef.current) {
-      const lines = editorRef.current.children;
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1] as HTMLElement;
-        const sel = window.getSelection();
-        if (sel) {
-          const range = document.createRange();
-          range.selectNodeContents(lastLine);
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      }
-    }
-  };
-
-  return (
-    <div
-      ref={editorRef}
-      className="obsidian-source-editor"
-      contentEditable
-      spellcheck={false}
-      onInput={handleInput}
-      onKeyDown={handleKeyDown}
-      onPaste={handlePaste}
-      onClick={handleClick}
-      onCompositionStart={() => { isComposingRef.current = true; }}
-      onCompositionEnd={() => {
-        isComposingRef.current = false;
-        handleInput();
-      }}
-      data-placeholder={placeholder}
-    />
-  );
-}
-
-function escapeHtmlAttr(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 export function RecipeMetadataModal({
   isOpen,
   graph,
@@ -464,11 +55,19 @@ export function RecipeMetadataModal({
   const [authorName, setAuthorName] = useState(graph.author?.name || 'anonymous');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>(graph.difficulty || 'medium');
   const [servings, setServings] = useState(graph.servings || 4);
+  const [tags, setTags] = useState<string[]>(() => Array.isArray(graph.tags) ? [...graph.tags] : []);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
 
   // Picture and video media
   const [pictureUrl, setPictureUrl] = useState(graph.media?.pictureUrl || '');
   const [videoUrl, setVideoUrl] = useState(graph.media?.videoUrl || '');
   const [galleryUrls, setGalleryUrls] = useState<string[]>(graph.media?.galleryUrls || []);
+
+  const allImages = useMemo(() => {
+    return [pictureUrl, ...galleryUrls].filter(Boolean);
+  }, [pictureUrl, galleryUrls]);
+
+  const heroImagePreviewUrl = useResolvedMediaUrl(allImages[0], 'card');
 
   // Active media modal state
   const [activeMediaModal, setActiveMediaModal] = useState<{
@@ -485,25 +84,27 @@ export function RecipeMetadataModal({
   const [timePhases, setTimePhases] = useState<TimePhase[]>(() => {
     const phases: TimePhase[] = [];
 
-    const prepSec = graph.times?.prepSec || 0;
-    phases.push({
-      id: 'prep',
-      label: 'Prep Time',
-      hours: Math.floor(prepSec / 3600),
-      minutes: Math.floor((prepSec % 3600) / 60),
-      isStandard: true
-    });
+    if (graph.times?.prepSec && graph.times.prepSec > 0) {
+      phases.push({
+        id: 'prep',
+        label: 'Prep Time',
+        hours: Math.floor(graph.times.prepSec / 3600),
+        minutes: Math.floor((graph.times.prepSec % 3600) / 60),
+        isStandard: true
+      });
+    }
 
-    const cookSec = graph.times?.cookSec || 0;
-    phases.push({
-      id: 'cook',
-      label: 'Cook Time',
-      hours: Math.floor(cookSec / 3600),
-      minutes: Math.floor((cookSec % 3600) / 60),
-      isStandard: true
-    });
+    if (graph.times?.cookSec && graph.times.cookSec > 0) {
+      phases.push({
+        id: 'cook',
+        label: 'Cook Time',
+        hours: Math.floor(graph.times.cookSec / 3600),
+        minutes: Math.floor((graph.times.cookSec % 3600) / 60),
+        isStandard: true
+      });
+    }
 
-    if (graph.times?.bakeSec) {
+    if (graph.times?.bakeSec && graph.times.bakeSec > 0) {
       phases.push({
         id: 'bake',
         label: 'Bake Time',
@@ -513,7 +114,7 @@ export function RecipeMetadataModal({
       });
     }
 
-    if (graph.times?.restSec) {
+    if (graph.times?.restSec && graph.times.restSec > 0) {
       phases.push({
         id: 'rest',
         label: 'Rest Time',
@@ -540,12 +141,15 @@ export function RecipeMetadataModal({
     return phases;
   });
 
-  const [selectedPhaseOption, setSelectedPhaseOption] = useState('Bake Time');
+  const phaseTouchBackupRef = useRef<{ id: string; hours: number; minutes: number } | null>(null);
+  const [zeroConfirmPhase, setZeroConfirmPhase] = useState<{ id: string; label: string; prevHours: number; prevMinutes: number } | null>(null);
+
+  const [isExitConfirmOpen, setIsExitConfirmOpen] = useState(false);
   const [customPhaseLabels, setCustomPhaseLabels] = useState<string[]>([]);
   const [isAddingCustomPhaseName, setIsAddingCustomPhaseName] = useState(false);
   const [customPhaseNameInput, setCustomPhaseNameInput] = useState('');
 
-  // Keep media synchronized if graph changes
+  // Keep media and tags synchronized if graph changes
   useEffect(() => {
     if (graph.media?.pictureUrl !== undefined) {
       setPictureUrl(graph.media.pictureUrl);
@@ -553,7 +157,10 @@ export function RecipeMetadataModal({
     if (graph.media?.videoUrl !== undefined) {
       setVideoUrl(graph.media.videoUrl);
     }
-  }, [graph.media?.pictureUrl, graph.media?.videoUrl]);
+    if (graph.tags !== undefined) {
+      setTags(Array.isArray(graph.tags) ? [...graph.tags] : []);
+    }
+  }, [graph.media?.pictureUrl, graph.media?.videoUrl, graph.tags]);
 
   // Calculate total seconds across all phases
   const totalSeconds = timePhases.reduce(
@@ -561,12 +168,52 @@ export function RecipeMetadataModal({
     0
   );
 
+  const handleUpdatePhaseLabel = (id: string, label: string) => {
+    setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, label } : p)));
+  };
+
   const handleUpdatePhaseHours = (id: string, hours: number) => {
     setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, hours: Math.max(0, hours) } : p)));
   };
 
   const handleUpdatePhaseMinutes = (id: string, minutes: number) => {
     setTimePhases(prev => prev.map(p => (p.id === id ? { ...p, minutes: Math.max(0, Math.min(59, minutes)) } : p)));
+  };
+
+  const handlePhaseFocus = (phase: TimePhase) => {
+    phaseTouchBackupRef.current = { id: phase.id, hours: phase.hours, minutes: phase.minutes };
+  };
+
+  const handlePhaseBlur = (phase: TimePhase) => {
+    const backup = phaseTouchBackupRef.current;
+    if (phase.hours === 0 && phase.minutes === 0) {
+      if (backup && backup.id === phase.id && (backup.hours > 0 || backup.minutes > 0)) {
+        setZeroConfirmPhase({
+          id: phase.id,
+          label: phase.label,
+          prevHours: backup.hours,
+          prevMinutes: backup.minutes
+        });
+      }
+    }
+  };
+
+  const handleConfirmZeroRemove = () => {
+    if (zeroConfirmPhase) {
+      setTimePhases(prev => prev.filter(p => p.id !== zeroConfirmPhase.id));
+      setZeroConfirmPhase(null);
+    }
+  };
+
+  const handleCancelZeroRemove = () => {
+    if (zeroConfirmPhase) {
+      setTimePhases(prev => prev.map(p => 
+        p.id === zeroConfirmPhase.id 
+          ? { ...p, hours: zeroConfirmPhase.prevHours, minutes: zeroConfirmPhase.prevMinutes } 
+          : p
+      ));
+      setZeroConfirmPhase(null);
+    }
   };
 
   const handleRemovePhase = (id: string) => {
@@ -612,26 +259,106 @@ export function RecipeMetadataModal({
     }))
   ];
 
+  const initialPhasesSignature = useMemo(() => {
+    return JSON.stringify({
+      prep: graph.times?.prepSec,
+      cook: graph.times?.cookSec,
+      bake: graph.times?.bakeSec,
+      rest: graph.times?.restSec,
+      custom: graph.times?.custom || []
+    });
+  }, [graph.times]);
+
+  const currentPhasesSignature = useMemo(() => {
+    let prepSec: number | undefined = undefined;
+    let cookSec: number | undefined = undefined;
+    let bakeSec: number | undefined = undefined;
+    let restSec: number | undefined = undefined;
+    const custom: { label: string; seconds: number }[] = [];
+
+    for (const phase of timePhases) {
+      const sec = Math.max(0, phase.hours) * 3600 + Math.max(0, phase.minutes) * 60;
+      if (phase.label === 'Prep Time') prepSec = sec;
+      else if (phase.label === 'Cook Time') cookSec = sec;
+      else if (phase.label === 'Bake Time') bakeSec = sec;
+      else if (phase.label === 'Rest Time') restSec = sec;
+      else custom.push({ label: phase.label, seconds: sec });
+    }
+    return JSON.stringify({ prep: prepSec, cook: cookSec, bake: bakeSec, rest: restSec, custom });
+  }, [timePhases]);
+
+  const isDirty = useMemo(() => {
+    return (
+      title !== (graph.title || 'Untitled Recipe') ||
+      originUrl !== (graph.source?.url || '') ||
+      authorName !== (graph.author?.name || 'anonymous') ||
+      difficulty !== (graph.difficulty || 'medium') ||
+      servings !== (graph.servings || 4) ||
+      pictureUrl !== (graph.media?.pictureUrl || '') ||
+      videoUrl !== (graph.media?.videoUrl || '') ||
+      JSON.stringify(galleryUrls) !== JSON.stringify(graph.media?.galleryUrls || []) ||
+      description !== (graph.description || '') ||
+      importantNotes !== (graph.importantNotes || graph.tips || '') ||
+      initialPhasesSignature !== currentPhasesSignature
+    );
+  }, [
+    title,
+    originUrl,
+    authorName,
+    difficulty,
+    servings,
+    pictureUrl,
+    videoUrl,
+    galleryUrls,
+    description,
+    importantNotes,
+    initialPhasesSignature,
+    currentPhasesSignature,
+    graph
+  ]);
+
+  const handleAttemptClose = () => {
+    if (isDirty) {
+      setIsExitConfirmOpen(true);
+    } else {
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !activeMediaModal && !isExitConfirmOpen) {
+        e.preventDefault();
+        handleAttemptClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isDirty, activeMediaModal, isExitConfirmOpen]);
+
   const handleSaveAndClose = () => {
-    let prepSec = 0;
-    let cookSec = 0;
-    let bakeSec = 0;
-    let restSec = 0;
+    let prepSec: number | undefined = undefined;
+    let cookSec: number | undefined = undefined;
+    let bakeSec: number | undefined = undefined;
+    let restSec: number | undefined = undefined;
     const customList: { label: string; seconds: number }[] = [];
 
     for (const phase of timePhases) {
       const durationSec = Math.max(0, phase.hours) * 3600 + Math.max(0, phase.minutes) * 60;
+      if (durationSec === 0) continue;
       if (phase.label === 'Prep Time') prepSec = durationSec;
       else if (phase.label === 'Cook Time') cookSec = durationSec;
       else if (phase.label === 'Bake Time') bakeSec = durationSec;
       else if (phase.label === 'Rest Time') restSec = durationSec;
-      else if (durationSec > 0) customList.push({ label: phase.label, seconds: durationSec });
+      else customList.push({ label: phase.label, seconds: durationSec });
     }
 
     onSave({
       title: title.trim() || 'Untitled Recipe',
       difficulty,
       servings: Math.max(1, servings),
+      tags,
       description,
       tips: importantNotes.trim(),
       importantNotes: importantNotes.trim(),
@@ -645,60 +372,91 @@ export function RecipeMetadataModal({
         videoUrl: videoUrl.trim() || undefined
       },
       times: {
-        prepSec: prepSec || undefined,
-        cookSec: cookSec || undefined,
-        bakeSec: bakeSec || undefined,
-        restSec: restSec || undefined,
+        prepSec,
+        cookSec,
+        bakeSec,
+        restSec,
         totalSec: totalSeconds,
         custom: customList
       }
     });
+    toast.success('Recipe settings saved');
     onClose();
   };
 
   const renderedMarkdownHtml = useMemo(() => {
-    if (!isReadingMode) return '';
-    const raw = description || '*No description entered yet. Switch to Source Mode to write.*';
-    const escaped = raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const processed = escaped.replace(/\[\[(.*?)\]\]/g, (_, linkText) => {
-      return `<span class="obsidian-reading-link">${escapeHtmlAttr(linkText)}</span>`;
+    return renderAppMarkdown(description, {
+      fallbackText: '*No description entered yet. Switch to Source Mode to write.*',
+      profile: 'recipe'
     });
-    const renderer = new marked.Renderer();
-    renderer.link = ({ href, title, text }) => {
-      const isSafe = /^https?:\/\/|^mailto:/i.test(href.trim());
-      const safeHref = isSafe ? escapeHtmlAttr(href.trim()) : '#';
-      const titleAttr = title ? ` title="${escapeHtmlAttr(title)}"` : '';
-      return `<a href="${safeHref}"${titleAttr} rel="noopener noreferrer" target="_blank">${escapeHtmlAttr(text)}</a>`;
-    };
-    return marked.parse(processed, { renderer, async: false }) as string;
-  }, [description, isReadingMode]);
+  }, [description]);
+
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
+  const previewWrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleMode = (targetReadingMode: boolean) => {
+    if (targetReadingMode === isReadingMode) return;
+
+    if (targetReadingMode) {
+      const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+      let ratio = 0;
+      if (editorEl) {
+        const maxScroll = editorEl.scrollHeight - editorEl.clientHeight;
+        ratio = maxScroll > 0 ? editorEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(true);
+      requestAnimationFrame(() => {
+        const previewEl = previewWrapperRef.current;
+        if (previewEl) {
+          const previewMax = previewEl.scrollHeight - previewEl.clientHeight;
+          previewEl.scrollTop = ratio * previewMax;
+        }
+      });
+    } else {
+      const previewEl = previewWrapperRef.current;
+      let ratio = 0;
+      if (previewEl) {
+        const maxScroll = previewEl.scrollHeight - previewEl.clientHeight;
+        ratio = maxScroll > 0 ? previewEl.scrollTop / maxScroll : 0;
+      }
+      setIsReadingMode(false);
+      requestAnimationFrame(() => {
+        const editorEl = editorWrapperRef.current?.querySelector('.obsidian-source-editor') as HTMLElement | null;
+        if (editorEl) {
+          const editorMax = editorEl.scrollHeight - editorEl.clientHeight;
+          editorEl.scrollTop = ratio * editorMax;
+        }
+      });
+    }
+  };
 
   if (!isOpen) return null;
 
   const modalElement = (
-    <div className="studio-modal-backdrop" onClick={onClose}>
-      <div
-        className="studio-metadata-modal-card"
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="recipe-metadata-title"
-      >
-        {/* Header */}
-        <header className="metadata-modal-header">
-          <div className="metadata-modal-header-left">
-            <h2 id="recipe-metadata-title" className="metadata-modal-heading">Recipe Settings</h2>
-            <span className="metadata-modal-subheading">Configure master recipe details, timing, and story</span>
-          </div>
-          <button
-            type="button"
-            className="metadata-modal-close-btn"
-            onClick={onClose}
-            aria-label="Close settings"
-          >
-            <X size={20} />
-          </button>
-        </header>
+    <>
+      <div className="studio-modal-backdrop" onClick={handleAttemptClose}>
+        <div
+          className="studio-metadata-modal-card"
+          onClick={e => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recipe-metadata-title"
+        >
+          {/* Header */}
+          <header className="metadata-modal-header">
+            <div className="metadata-modal-header-left">
+              <h2 id="recipe-metadata-title" className="metadata-modal-heading">Recipe Settings</h2>
+              <span className="metadata-modal-subheading">Configure master recipe details, timing, and story</span>
+            </div>
+            <button
+              type="button"
+              className="metadata-modal-close-btn"
+              onClick={handleAttemptClose}
+              aria-label="Close settings"
+            >
+              <X size={20} />
+            </button>
+          </header>
 
         {/* Modal Body matching MS Paint Sketch: Left structured boxes and Right huge description */}
         <div className="metadata-modal-body">
@@ -718,10 +476,15 @@ export function RecipeMetadataModal({
                   tabIndex={0}
                   aria-label="Add or edit picture"
                 >
-                  {pictureUrl ? (
+                  {allImages.length > 0 ? (
                     <div className="root-media-filled">
-                      <img src={pictureUrl} alt="Recipe picture" />
-                      <div className="root-media-overlay">Change Picture</div>
+                      <img src={heroImagePreviewUrl || ''} alt="Recipe picture" />
+                      {allImages.length > 1 && (
+                        <div className="studio-media-counter-badge">
+                          ×{allImages.length}
+                        </div>
+                      )}
+                      <div className="root-media-overlay">Manage Images</div>
                     </div>
                   ) : (
                     <div className="root-media-empty">
@@ -743,7 +506,7 @@ export function RecipeMetadataModal({
                     <div className="root-media-filled">
                       <div className="root-video-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                         <Play size={12} fill="currentColor" />
-                        <span>Video Loaded</span>
+                        <span>{getYouTubeEmbedUrl(videoUrl) ? 'YouTube Video' : 'Video Loaded'}</span>
                       </div>
                       <div className="root-media-overlay">Change Video</div>
                     </div>
@@ -755,69 +518,6 @@ export function RecipeMetadataModal({
                   )}
                 </div>
               </div>
-
-              {/* Extra images gallery if any */}
-              {galleryUrls.length > 0 && (
-                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
-                  {galleryUrls.map((url, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        position: 'relative',
-                        width: '3.6rem',
-                        height: '2.5rem',
-                        borderRadius: '0.35rem',
-                        overflow: 'hidden',
-                        border: '1px solid rgba(255, 255, 255, 0.15)'
-                      }}
-                    >
-                      <img src={url} alt={`Extra ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <button
-                        type="button"
-                        style={{
-                          position: 'absolute',
-                          top: '0.1rem',
-                          right: '0.1rem',
-                          background: 'rgba(0, 0, 0, 0.75)',
-                          border: 'none',
-                          color: '#ffffff',
-                          borderRadius: '50%',
-                          width: '1rem',
-                          height: '1rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => setGalleryUrls(prev => prev.filter((_, i) => i !== idx))}
-                        title="Remove image"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    style={{
-                      width: '3.6rem',
-                      height: '2.5rem',
-                      borderRadius: '0.35rem',
-                      border: '1px dashed rgba(255, 255, 255, 0.2)',
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      color: '#9ca3af',
-                      fontSize: '0.75rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => setActiveMediaModal({ type: 'picture', galleryIndex: galleryUrls.length })}
-                    title="Add another image"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Box 2: Recipe Title */}
@@ -898,6 +598,35 @@ export function RecipeMetadataModal({
               </div>
             </div>
 
+            {/* Tags Section */}
+            <div className="metadata-field-group">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <label className="metadata-field-label" style={{ margin: 0 }}>Recipe Tags ({tags.length})</label>
+                <button
+                  type="button"
+                  className="metadata-tag-manage-btn"
+                  onClick={() => setIsTagModalOpen(true)}
+                >
+                  <Tag size={13} />
+                  <span>Manage Tags</span>
+                </button>
+              </div>
+
+              {tags.length > 0 ? (
+                <div className="metadata-tags-preview">
+                  {tags.map(t => (
+                    <span key={t} className="metadata-tag-chip">
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="metadata-tags-empty-hint">
+                  No tags added yet. Click &quot;Manage Tags&quot; to assign categories.
+                </div>
+              )}
+            </div>
+
             {/* Timing and Phases */}
             <div className="metadata-field-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -910,7 +639,14 @@ export function RecipeMetadataModal({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.2rem' }}>
                 {timePhases.map(phase => (
                   <div key={phase.id} className="metadata-time-card">
-                    <span className="metadata-time-label">{phase.label}</span>
+                    <input
+                      type="text"
+                      className="metadata-time-label-input"
+                      value={phase.label}
+                      onInput={e => handleUpdatePhaseLabel(phase.id, (e.target as HTMLInputElement).value)}
+                      placeholder="Phase name..."
+                      title="Click to edit phase label"
+                    />
                     <div className="metadata-time-durations">
                       <div className="metadata-time-unit-box">
                         <input
@@ -918,6 +654,8 @@ export function RecipeMetadataModal({
                           min="0"
                           className="metadata-time-num-input"
                           value={phase.hours}
+                          onFocus={() => handlePhaseFocus(phase)}
+                          onBlur={() => handlePhaseBlur(phase)}
                           onInput={e => handleUpdatePhaseHours(phase.id, parseInt((e.target as HTMLInputElement).value || '0', 10))}
                         />
                         <span>hr</span>
@@ -929,20 +667,20 @@ export function RecipeMetadataModal({
                           max="59"
                           className="metadata-time-num-input"
                           value={phase.minutes}
+                          onFocus={() => handlePhaseFocus(phase)}
+                          onBlur={() => handlePhaseBlur(phase)}
                           onInput={e => handleUpdatePhaseMinutes(phase.id, parseInt((e.target as HTMLInputElement).value || '0', 10))}
                         />
                         <span>min</span>
                       </div>
-                      {!phase.isStandard && (
-                        <button
-                          type="button"
-                          className="metadata-time-remove-btn"
-                          onClick={() => handleRemovePhase(phase.id)}
-                          title="Remove phase"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="metadata-time-remove-btn"
+                        onClick={() => handleRemovePhase(phase.id)}
+                        title={`Remove ${phase.label}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -954,9 +692,8 @@ export function RecipeMetadataModal({
                   <div style={{ flex: 1 }}>
                     <UniversalDropdown
                       items={phaseDropdownItems}
-                      selectedId={selectedPhaseOption}
+                      placeholder="+ New Time"
                       onSelect={id => {
-                        setSelectedPhaseOption(id);
                         handleAddPhase(id);
                       }}
                       onAddNew={() => setIsAddingCustomPhaseName(true)}
@@ -1003,9 +740,14 @@ export function RecipeMetadataModal({
               )}
             </div>
 
-            {/* Box 4: Important Notes (No Markdown) */}
+            {/* Box 4: Important Notes */}
             <div className="metadata-field-group">
-              <label className="metadata-field-label">Important Notes (No Markdown)</label>
+              <label className="metadata-field-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                Important Notes
+                <Tooltip content="Markdown is supported in recipe view, but live preview is not available in this modal.">
+                  <Info size={14} className="metadata-info-icon" style={{ cursor: 'help', color: 'var(--text-muted)' }} />
+                </Tooltip>
+              </label>
               <textarea
                 className="metadata-textarea"
                 rows={3}
@@ -1028,7 +770,7 @@ export function RecipeMetadataModal({
                 <button
                   type="button"
                   className={`metadata-segment-btn ${!isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(false)}
+                  onClick={() => handleToggleMode(false)}
                   title="Source Mode (Markdown)"
                 >
                   <Edit3 size={13} />
@@ -1037,7 +779,7 @@ export function RecipeMetadataModal({
                 <button
                   type="button"
                   className={`metadata-segment-btn ${isReadingMode ? 'is-active' : ''}`}
-                  onClick={() => setIsReadingMode(true)}
+                  onClick={() => handleToggleMode(true)}
                   title="Reading View (Rendered Preview)"
                 >
                   <BookOpen size={13} />
@@ -1047,18 +789,22 @@ export function RecipeMetadataModal({
             </div>
 
             <div className="metadata-editor-wrapper">
-              {!isReadingMode ? (
+              <div
+                ref={editorWrapperRef}
+                style={{ display: isReadingMode ? 'none' : 'flex', width: '100%', height: '100%', minHeight: 0 }}
+              >
                 <ObsidianSourceEditor
                   value={description}
                   onChange={setDescription}
                   placeholder="Write description in Markdown..."
                 />
-              ) : (
-                <div
-                  className="metadata-markdown-preview"
-                  dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
-                />
-              )}
+              </div>
+              <div
+                ref={previewWrapperRef}
+                className="metadata-markdown-preview"
+                style={{ display: isReadingMode ? 'block' : 'none' }}
+                dangerouslySetInnerHTML={{ __html: renderedMarkdownHtml }}
+              />
             </div>
           </div>
         </div>
@@ -1087,35 +833,67 @@ export function RecipeMetadataModal({
         <MediaModal
           isOpen={true}
           mediaType={activeMediaModal.type}
-          currentUrl={
-            activeMediaModal.type === 'video'
-              ? videoUrl
-              : (activeMediaModal.galleryIndex !== undefined ? galleryUrls[activeMediaModal.galleryIndex] : pictureUrl)
-          }
+          mode={activeMediaModal.type === 'picture' ? 'gallery' : 'single'}
+          currentUrl={activeMediaModal.type === 'video' ? videoUrl : (allImages[0] || '')}
+          currentUrls={activeMediaModal.type === 'picture' ? allImages : undefined}
           onClose={() => setActiveMediaModal(null)}
           onSave={url => {
             if (activeMediaModal.type === 'video') {
               setVideoUrl(url);
             } else {
-              if (activeMediaModal.galleryIndex !== undefined) {
-                setGalleryUrls(prev => {
-                  const next = [...prev];
-                  if (activeMediaModal.galleryIndex! < next.length) {
-                    next[activeMediaModal.galleryIndex!] = url;
-                  } else {
-                    next.push(url);
-                  }
-                  return next;
-                });
-              } else {
-                setPictureUrl(url);
-              }
+              setPictureUrl(url);
+            }
+            setActiveMediaModal(null);
+          }}
+          onSaveGallery={urls => {
+            if (activeMediaModal.type === 'picture') {
+              setPictureUrl(urls[0] || '');
+              setGalleryUrls(urls.slice(1));
             }
             setActiveMediaModal(null);
           }}
         />
       )}
     </div>
+
+    <TagManagerModal
+      isOpen={isTagModalOpen}
+      tags={tags}
+      onClose={() => setIsTagModalOpen(false)}
+      onSave={updatedTags => setTags(updatedTags)}
+    />
+
+    <ConfirmModal
+      isOpen={isExitConfirmOpen}
+      title="Unsaved Changes"
+      message="You have unsaved changes. Do you want to save them before closing?"
+      confirmLabel="Save"
+      discardLabel="Don't Save"
+      cancelLabel="Cancel"
+      onConfirm={() => {
+        setIsExitConfirmOpen(false);
+        handleSaveAndClose();
+      }}
+      onDiscard={() => {
+        setIsExitConfirmOpen(false);
+        onClose();
+      }}
+      onCancel={() => {
+        setIsExitConfirmOpen(false);
+      }}
+    />
+
+    <ConfirmModal
+      isOpen={Boolean(zeroConfirmPhase)}
+      title="Remove Time Phase?"
+      message={`Setting "${zeroConfirmPhase?.label || 'this phase'}" to 0 will remove it from the recipe. Do you want to remove it?`}
+      confirmLabel="Remove"
+      confirmVariant="danger"
+      cancelLabel="Cancel"
+      onConfirm={handleConfirmZeroRemove}
+      onCancel={handleCancelZeroRemove}
+    />
+  </>
   );
 
   return typeof document !== 'undefined'

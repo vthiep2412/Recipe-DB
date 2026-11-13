@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { X, FolderTree } from 'lucide-preact';
 import type { CanvasSection } from '../../types/orchestration';
-import { CompactDropdown } from './CompactDropdown';
+import { Dropdown } from '../ui/Dropdown';
 
 interface ReparentSectionModalProps {
   isOpen: boolean;
@@ -87,7 +87,7 @@ export function ReparentSectionModal({
                 Cannot nest under another section because this section already contains subsections
               </div>
             ) : (
-              <CompactDropdown
+              <Dropdown
                 options={dropdownOptions}
                 value={selectedParentId}
                 onChange={val => setSelectedParentId(val)}

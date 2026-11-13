@@ -35,6 +35,13 @@ export interface CanvasSection {
   colorIndex?: number;
   parentSectionId?: string;
   showInlineTools?: boolean;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
 }
 
 export interface RecipeGraph {
@@ -71,14 +78,15 @@ export interface RecipeGraph {
   vessels: RecipeVessel[];
   components: RecipeComponent[];
   sections?: CanvasSection[];
+  tags?: string[];
   meta?: Record<string, unknown>;
 }
 
 export interface RecipeInput {
   id: string;
   name: string;
-  amount: number | string;
-  unit: string;
+  amount?: number | string;
+  unit?: string;
   prepState?: string;
   leadTimeSec?: number;
   notes?: string;
@@ -98,6 +106,14 @@ export interface RecipeVessel {
 export interface RecipeComponent {
   id: string;
   name: string;
+  description?: string;
+  media?: {
+    galleryUrls?: string[];
+    videoClip?: {
+      startSec: number;
+      endSec?: number;
+    };
+  };
   steps: RecipeStepNode[];
 }
 
@@ -118,7 +134,7 @@ export interface RecipeStepNode {
   producesYield?: {
     id: string;
     name: string;
-    vesselId: string;
+    vesselId?: string;
     description?: string;
   };
   timer?: StepTimer;
@@ -153,7 +169,7 @@ export type RecipeToken =
   | { type: 'yield'; yieldId: string; sourceStepId: string; displayText: string; partition?: string }
   | { type: 'timer'; timerId: string; displayText: string };
 
-export type MentionType = 'ingredient' | 'cookware' | 'timer' | 'yield';
+export type MentionType = 'ingredient' | 'cookware' | 'timer' | 'yield' | 'temperature';
 
 export interface StepMentionToken {
   id: string;
@@ -175,6 +191,11 @@ export interface StepMentionToken {
     yieldPartition?: string;
     isRemention?: boolean;
     originalMentionId?: string;
+    temperatureValue?: number;
+    temperatureUnit?: 'F' | 'C';
+    isRange?: boolean;
+    rangeMin?: number;
+    rangeMax?: number;
   };
 }
 
@@ -202,7 +223,7 @@ export interface CanvasStepNode {
   showInlineTools?: boolean;
   producesYield?: {
     name: string;
-    vesselId: string;
+    vesselId?: string;
   };
 }
 

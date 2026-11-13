@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef, useEffect, useMemo } from 'preact/hooks'
 import { ChevronDown, Check } from 'lucide-preact'
 
 export interface DropdownOption {
@@ -15,6 +15,7 @@ export interface DropdownProps {
   placeholder?: string
   disabled?: boolean
   ariaLabel?: string
+  placement?: 'bottom' | 'top' | 'auto'
 }
 
 export function Dropdown({
@@ -24,40 +25,125 @@ export function Dropdown({
   className = '',
   placeholder = 'Select...',
   disabled = false,
-  ariaLabel
+  ariaLabel,
+  placement = 'auto'
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isClosing, setIsClosing] = useState(false)
+  const [isDropup, setIsDropup] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const closeTimeoutRef = useRef<number | null>(null)
+  const isKeyboardNavRef = useRef(false)
 
-  const normalizedOptions: DropdownOption[] = options.map(opt =>
-    typeof opt === 'string' ? { value: opt, label: opt } : opt
+  const normalizedOptions: DropdownOption[] = useMemo(
+    () => options.map(opt => (typeof opt === 'string' ? { value: opt, label: opt } : opt)),
+    [options]
   )
 
   const selectedItem = normalizedOptions.find(opt => opt.value === value)
   const displayLabel = selectedItem ? selectedItem.label : value || placeholder
 
-  useEffect(() => {
-    if (!isOpen) return
+  const closeDropdown = () => {
+    if (isOpen && !isClosing) {
+      setIsClosing(true)
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current)
+      }
+      closeTimeoutRef.current = window.setTimeout(() => {
+        setIsOpen(false)
+        setIsClosing(false)
+        closeTimeoutRef.current = null
+      }, 140)
+    }
+  }
 
-    const selectedIdx = normalizedOptions.findIndex(opt => opt.value === value)
-    setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0)
+  const openDropdown = () => {
+    if (disabled) return
+    if (closeTimeoutRef.current !== null) {
+      clearTimeout(closeTimeoutRef.current)
+      closeTimeoutRef.current = null
+    }
+
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const shouldDropup =
+        placement === 'top' ||
+        (placement !== 'bottom' && spaceBelow < 220 && spaceAbove > spaceBelow)
+      setIsDropup(shouldDropup)
+    }
+
+    setIsClosing(false)
+    setIsOpen(true)
+  }
+
+  const toggleDropdown = () => {
+    if (disabled) return
+    if (isOpen && !isClosing) {
+      closeDropdown()
+    } else {
+      openDropdown()
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current !== null) {
+        clearTimeout(closeTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen && !isClosing) {
+      const selectedIdx = normalizedOptions.findIndex(opt => opt.value === value)
+      const initialIdx = selectedIdx >= 0 ? selectedIdx : 0
+      setHighlightedIndex(initialIdx)
+      requestAnimationFrame(() => {
+        if (menuRef.current) {
+          const items = menuRef.current.querySelectorAll<HTMLElement>('.ui-dropdown-item')
+          if (items[initialIdx]) {
+            items[initialIdx].scrollIntoView({ block: 'nearest' })
+          }
+        }
+      })
+    }
+  }, [isOpen, isClosing])
+
+  useEffect(() => {
+    if (!isOpen || isClosing) return
 
     const handleOutsideClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
+        closeDropdown()
       }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsOpen(false)
+        closeDropdown()
+        return
+      }
+
+      const activeEl = document.activeElement
+      const isWithinDropdown = Boolean(
+        containerRef.current && (
+          containerRef.current.contains(activeEl) ||
+          e.target === containerRef.current ||
+          (e.target instanceof Node && containerRef.current.contains(e.target))
+        )
+      )
+
+      if (!isWithinDropdown) {
         return
       }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
+        isKeyboardNavRef.current = true
         setHighlightedIndex(prev => {
           let next = prev + 1
           while (next < normalizedOptions.length && normalizedOptions[next].disabled) {
@@ -67,6 +153,7 @@ export function Dropdown({
         })
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
+        isKeyboardNavRef.current = true
         setHighlightedIndex(prev => {
           let next = prev - 1
           while (next >= 0 && normalizedOptions[next].disabled) {
@@ -80,7 +167,7 @@ export function Dropdown({
           const target = normalizedOptions[current]
           if (target && !target.disabled) {
             onChange(target.value)
-            setIsOpen(false)
+            closeDropdown()
           }
           return current
         })
@@ -94,21 +181,17 @@ export function Dropdown({
       document.removeEventListener('mousedown', handleOutsideClick)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, value, normalizedOptions])
+  }, [isOpen, isClosing, normalizedOptions, onChange])
 
   useEffect(() => {
-    if (isOpen && menuRef.current && highlightedIndex >= 0) {
+    if (isKeyboardNavRef.current && isOpen && !isClosing && menuRef.current && highlightedIndex >= 0) {
+      isKeyboardNavRef.current = false
       const items = menuRef.current.querySelectorAll<HTMLElement>('.ui-dropdown-item')
       if (items[highlightedIndex]) {
         items[highlightedIndex].scrollIntoView({ block: 'nearest' })
       }
     }
-  }, [highlightedIndex, isOpen])
-
-  const toggleDropdown = () => {
-    if (disabled) return
-    setIsOpen(!isOpen)
-  }
+  }, [highlightedIndex, isOpen, isClosing])
 
   return (
     <div
@@ -117,23 +200,23 @@ export function Dropdown({
     >
       <button
         type="button"
-        className={`ui-dropdown-trigger ${isOpen ? 'is-open' : ''}`}
+        className={`ui-dropdown-trigger ${isOpen && !isClosing ? 'is-open' : ''}`}
         onClick={toggleDropdown}
         disabled={disabled}
         aria-haspopup="listbox"
-        aria-expanded={isOpen}
+        aria-expanded={isOpen && !isClosing}
         aria-label={ariaLabel || displayLabel}
       >
         <span className="ui-dropdown-label">{displayLabel}</span>
         <ChevronDown
           size={16}
-          className={`ui-dropdown-arrow ${isOpen ? 'is-rotated' : ''}`}
+          className={`ui-dropdown-arrow ${isOpen && !isClosing ? (isDropup ? 'is-dropup-rotated' : 'is-rotated') : ''}`}
         />
       </button>
 
       {isOpen && (
         <div
-          className="ui-dropdown-menu"
+          className={`ui-dropdown-menu ${isDropup ? 'is-dropup' : 'is-dropdown'} ${isClosing ? 'anim-exit' : 'anim-enter'}`}
           ref={menuRef}
           role="listbox"
           aria-label={ariaLabel || displayLabel}
@@ -153,9 +236,12 @@ export function Dropdown({
                 onClick={() => {
                   if (opt.disabled) return
                   onChange(opt.value)
-                  setIsOpen(false)
+                  closeDropdown()
                 }}
-                onMouseEnter={() => setHighlightedIndex(idx)}
+                onMouseEnter={() => {
+                  isKeyboardNavRef.current = false
+                  setHighlightedIndex(idx)
+                }}
               >
                 <span className="ui-dropdown-item-label">{opt.label}</span>
                 {isSelected && (

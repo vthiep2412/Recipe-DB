@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import { X, Sparkles, AlertTriangle } from 'lucide-preact';
+import { toast } from 'sonner';
+import { ConfirmModal } from '../ConfirmModal';
 import {
   detectInputFormat,
   isFablangDeclared,
@@ -21,33 +24,17 @@ export function NewRecipeModal({
   onGoStraight
 }: NewRecipeModalProps) {
   const [text, setText] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isSyntaxModalOpen, setIsSyntaxModalOpen] = useState(false);
+  const [isLoadAnywayConfirmOpen, setIsLoadAnywayConfirmOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const toastTimerRef = useRef<number | null>(null);
-
-  const showToast = (msg: string, duration = 3500) => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-    setToastMessage(msg);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMessage(null);
-      toastTimerRef.current = null;
-    }, duration);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current !== null) {
-        window.clearTimeout(toastTimerRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setText('');
-      setToastMessage(null);
+      setIsAiModalOpen(false);
+      setIsSyntaxModalOpen(false);
+      setIsLoadAnywayConfirmOpen(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen]);
@@ -55,12 +42,23 @@ export function NewRecipeModal({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
-        onClose();
+        if (isLoadAnywayConfirmOpen) {
+          e.stopPropagation();
+          setIsLoadAnywayConfirmOpen(false);
+        } else if (isSyntaxModalOpen) {
+          e.stopPropagation();
+          setIsSyntaxModalOpen(false);
+        } else if (isAiModalOpen) {
+          e.stopPropagation();
+          setIsAiModalOpen(false);
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isAiModalOpen, isSyntaxModalOpen, isLoadAnywayConfirmOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -73,16 +71,9 @@ export function NewRecipeModal({
   const handleFixWithAi = () => {
     const prompt = generateAiRepairPrompt(text, syntaxErrors);
     if (!navigator.clipboard?.writeText) {
-      showToast('Clipboard access unavailable to copy prompt', 3500);
       return;
     }
-    navigator.clipboard.writeText(prompt)
-      .then(() => {
-        showToast('AI not implemented =(, but you can use the prompt =D, Copied', 4000);
-      })
-      .catch(() => {
-        showToast('Failed to copy repair prompt to clipboard', 3500);
-      });
+    navigator.clipboard.writeText(prompt).catch(() => {});
   };
 
   const handleAction = () => {
@@ -92,12 +83,12 @@ export function NewRecipeModal({
     }
 
     if (syntaxErrors.length > 0) {
-      showToast('Please resolve the F&Blang syntax errors above or click "Fix With AI"', 3500);
+      setIsSyntaxModalOpen(true);
       return;
     }
 
     if (format === 'plain_text') {
-      showToast('NO AI yet "big sad" :(', 3500);
+      setIsAiModalOpen(true);
       return;
     }
 
@@ -127,69 +118,17 @@ export function NewRecipeModal({
 
         <div className="studio-modal-body">
           <p className="studio-modal-desc">
-            Paste your recipe in standard Cooklang or RecipeDB markdown format below.
+            Paste your recipe in Cooklang, F&amp;Blang, or F&amp;Blang JSON format below.
           </p>
 
           <textarea
             ref={textareaRef}
             className="studio-modal-textarea"
-            placeholder="Paste Cooklang or recipe markdown here..."
+            placeholder="Paste Cooklang, F&Blang, or F&Blang JSON here..."
             value={text}
             onInput={e => setText((e.target as HTMLTextAreaElement).value)}
             rows={10}
           />
-
-          {syntaxErrors.length > 0 && (
-            <div
-              className="fablang-error-banner"
-              style={{
-                marginTop: '0.75rem',
-                padding: '0.75rem 1rem',
-                borderRadius: '0.5rem',
-                backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                color: '#fca5a5'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                  <AlertTriangle size={15} />
-                  <span>F&Blang Syntax Issues Detected ({syntaxErrors.length})</span>
-                </div>
-                <button
-                  type="button"
-                  className="studio-btn"
-                  style={{
-                    padding: '0.25rem 0.6rem',
-                    fontSize: '0.75rem',
-                    backgroundColor: '#8b5cf6',
-                    color: '#ffffff',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.35rem'
-                  }}
-                  onClick={handleFixWithAi}
-                  title="Copy structured AI repair prompt with grammar rules and code"
-                >
-                  <Sparkles size={13} />
-                  <span>Fix With AI</span>
-                </button>
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.8rem', lineHeight: 1.4 }}>
-                {syntaxErrors.map((err, idx) => (
-                  <li key={idx}>
-                    Line {err.line}: {err.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {toastMessage && (
-            <div className="studio-toast-banner" role="alert">
-              {toastMessage}
-            </div>
-          )}
         </div>
 
         <div className="studio-modal-footer">
@@ -210,6 +149,134 @@ export function NewRecipeModal({
           </button>
         </div>
       </div>
+
+      {isSyntaxModalOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          className="confirm-modal-overlay"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.target === e.currentTarget) {
+              setIsSyntaxModalOpen(false);
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="confirm-modal-card"
+            style={{ maxWidth: '34rem' }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="syntax-issues-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <AlertTriangle size={18} style={{ color: 'var(--color-red)' }} />
+              <h3 id="syntax-issues-title" className="confirm-modal-title" style={{ margin: 0 }}>
+                F&Blang Syntax Issues ({syntaxErrors.length})
+              </h3>
+            </div>
+
+            <div className="confirm-modal-body" style={{ maxHeight: '16rem', overflowY: 'auto' }}>
+              <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                The recipe text contains syntax issues that prevent standard compilation:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.82rem', lineHeight: 1.5, color: '#fca5a5' }}>
+                {syntaxErrors.map((err, idx) => (
+                  <li key={idx}>
+                    Line {err.line}: {err.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="confirm-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="confirm-modal-btn btn-cancel"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSyntaxModalOpen(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-modal-btn"
+                style={{
+                  backgroundColor: 'var(--background-modifier-hover)',
+                  color: 'var(--text-normal)',
+                  border: '1px solid var(--background-modifier-border)'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSyntaxModalOpen(false);
+                  setIsLoadAnywayConfirmOpen(true);
+                }}
+              >
+                Load Anyway
+              </button>
+              <button
+                type="button"
+                className="confirm-modal-btn btn-primary"
+                style={{
+                  backgroundColor: 'var(--interactive-accent)',
+                  color: '#ffffff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSyntaxModalOpen(false);
+                  setIsAiModalOpen(true);
+                }}
+              >
+                <Sparkles size={14} />
+                <span>Fix With AI</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      <ConfirmModal
+        isOpen={isLoadAnywayConfirmOpen}
+        title="Load Recipe With Issues"
+        message="Invalid syntax elements will be removed or skipped during conversion. Continue to load into Kitchen Studio?"
+        confirmLabel="Load Anyway"
+        cancelLabel="Cancel"
+        confirmVariant="primary"
+        onConfirm={() => {
+          setIsLoadAnywayConfirmOpen(false);
+          onConvert(text);
+        }}
+        onCancel={() => {
+          setIsLoadAnywayConfirmOpen(false);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={isAiModalOpen}
+        title="AI Recipe Conversion"
+        message={syntaxErrors.length > 0
+          ? 'Are you sure you want to use AI to fix this recipe?'
+          : 'Unrecognized recipe syntax. Would you like to use AI to convert this recipe into Kitchen Studio format?'}
+        confirmLabel="Yes"
+        cancelLabel="No"
+        confirmVariant="primary"
+        onConfirm={() => {
+          setIsAiModalOpen(false);
+          if (syntaxErrors.length > 0) {
+            handleFixWithAi();
+          }
+          toast.error('NO AI yet "big sad" :(');
+        }}
+        onCancel={() => {
+          setIsAiModalOpen(false);
+        }}
+      />
     </div>
   );
 }

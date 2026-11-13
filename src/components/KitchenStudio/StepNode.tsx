@@ -9,8 +9,11 @@ import {
   ChefHat,
   Clock,
   Sparkles,
+  Thermometer,
   Info,
-  X
+  X,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-preact';
 import type {
   CanvasStepNode,
@@ -19,10 +22,20 @@ import type {
 } from '../../types/orchestration';
 import { formatFraction } from '../../parser/cooklangParser';
 import { MediaModal } from './MediaModal';
+import { formatTemperature, extractTemperatureTokensFromText } from '../../utils/temperature';
+
+import { useResolvedMediaUrl } from '../../utils/media';
+
+const EMPTY_URLS: string[] = [];
+
+function computeMentionsSignature(mentions?: StepMentionToken[]): string {
+  if (!mentions || mentions.length === 0) return '';
+  return mentions.map(m => m.id).join(',');
+}
 
 interface StepNodeProps {
   node: CanvasStepNode;
-  stepNumber: number;
+  stepNumber: number | string;
   allNodes?: CanvasStepNode[];
   isSelected: boolean;
   isJumpHighlighted?: boolean;
@@ -33,6 +46,12 @@ interface StepNodeProps {
   onSelectMention: (mention: StepMentionToken) => void;
   onJumpToStep?: (targetStepId: string) => void;
   onToggleYield: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  moveUpTooltip?: string;
+  moveDownTooltip?: string;
 }
 
 function formatSecToMMSS(sec: number): string {
@@ -103,7 +122,7 @@ function updateTokenContent(span: HTMLElement, mention: StepMentionToken, allNod
     if (!mention.data?.isRemention && mention.data?.amount !== undefined && mention.data?.amount !== '') {
       const amtSpan = document.createElement('span');
       amtSpan.className = 'cook-amt';
-      const unitText = mention.data.unit ? ` ${mention.data.unit}` : '';
+      const unitText = mention.data.unit && mention.data.unit !== '(No Unit)' ? ` ${mention.data.unit}` : '';
       const displayAmt = typeof mention.data.amount === 'number'
         ? formatFraction(mention.data.amount)
         : mention.data.amount;
@@ -134,6 +153,18 @@ function updateTokenContent(span: HTMLElement, mention: StepMentionToken, allNod
     const mins = Math.round((mention.data?.timerSec || 60) / 60);
     timerSpan.textContent = `⏱ ${mention.displayText || `${mins}m`}`;
     span.appendChild(timerSpan);
+  } else if (mention.type === 'temperature') {
+    const tempSpan = document.createElement('span');
+    tempSpan.className = 'cook-temp-btn';
+    const formatted = formatTemperature({
+      isRange: mention.data?.isRange,
+      value: mention.data?.temperatureValue,
+      rangeMin: mention.data?.rangeMin,
+      rangeMax: mention.data?.rangeMax,
+      unit: mention.data?.temperatureUnit || 'F'
+    });
+    tempSpan.textContent = `🌡️ ${formatted}`;
+    span.appendChild(tempSpan);
   }
 
   const removeBtn = document.createElement('button');
@@ -148,9 +179,17 @@ function createTokenElement(mention: StepMentionToken, isSelected: boolean, allN
   const span = document.createElement('span');
   span.contentEditable = 'false';
   span.dataset.mentionId = mention.id;
-  span.className = `step-inline-token cook-${
-    mention.type === 'ingredient' ? 'ig' : mention.type === 'cookware' ? 'cw' : 'timer'
-  } ${isSelected ? 'is-active-token' : ''}`;
+  const typeClass =
+    mention.type === 'ingredient'
+      ? 'ig'
+      : mention.type === 'cookware'
+      ? 'cw'
+      : mention.type === 'timer'
+      ? 'timer'
+      : mention.type === 'temperature'
+      ? 'temp'
+      : 'yield';
+  span.className = `step-inline-token cook-${typeClass} ${isSelected ? 'is-active-token' : ''}`;
   span.title = `Click to edit ${mention.type} in inspector`;
 
   updateTokenContent(span, mention, allNodes);
@@ -198,7 +237,17 @@ function parseEditorDom(
           mention
         });
         mentions.push(mention);
-        instructionText += `[${mention.displayText}]`;
+        if (mention.type === 'temperature') {
+          instructionText += formatTemperature({
+            isRange: mention.data?.isRange,
+            value: mention.data?.temperatureValue,
+            rangeMin: mention.data?.rangeMin,
+            rangeMax: mention.data?.rangeMax,
+            unit: mention.data?.temperatureUnit || 'F'
+          });
+        } else {
+          instructionText += `[${mention.displayText}]`;
+        }
       } else if (el.tagName === 'BR') {
         const lastSeg = segments[segments.length - 1];
         if (lastSeg && lastSeg.type === 'text') {
@@ -272,11 +321,18 @@ export function StepNode({
   onChange,
   onSelectMention,
   onJumpToStep,
-  onToggleYield
+  onToggleYield,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = false,
+  canMoveDown = false,
+  moveUpTooltip,
+  moveDownTooltip
 }: StepNodeProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isMediaModalOpen, setIsMediaModalOpen] = useState(false);
+  const stepThumbnailUrl = useResolvedMediaUrl(node.media?.galleryUrls?.[0], 'step');
   const [showOrphanedConfirmModal, setShowOrphanedConfirmModal] = useState(false);
   const [showInlineToolsTooltip, setShowInlineToolsTooltip] = useState(false);
   const [showOrphanedTooltip, setShowOrphanedTooltip] = useState(false);
@@ -284,6 +340,9 @@ export function StepNode({
   const editorRef = useRef<HTMLDivElement>(null);
   const mentionsMap = useRef<Map<string, StepMentionToken>>(new Map());
   const lastRenderedNodeId = useRef<string | null>(null);
+  const lastInstructionText = useRef<string | undefined>(node.instructionText);
+  const mentionsSignature = useMemo(() => computeMentionsSignature(node.mentions), [node.mentions]);
+  const lastMentionsSignature = useRef<string>(mentionsSignature);
 
   useEffect(() => {
     if (isEditingTitle) {
@@ -304,6 +363,13 @@ export function StepNode({
         { type: 'text', id: `seg-text-end-${node.id}`, text: '' }
       ];
     }
+    if (node.instructionText) {
+      const extracted = extractTemperatureTokensFromText(node.instructionText, node.id);
+      if (extracted.tokens.length > 0) {
+        extracted.tokens.forEach(tok => mentionsMap.current.set(tok.id, tok as any));
+        return extracted.segments as StepInstructionSegment[];
+      }
+    }
     return [
       { type: 'text', id: `seg-text-init-${node.id}`, text: node.instructionText || '' }
     ];
@@ -323,11 +389,17 @@ export function StepNode({
     }
   }, [node.mentions, node.segments]);
 
-  // Initial populate or switch to another step node
+  // Initial populate, switch to another step node, or external update (Undo/Redo)
   useEffect(() => {
     if (!editorRef.current) return;
-    if (lastRenderedNodeId.current !== node.id) {
+    const isNewNode = lastRenderedNodeId.current !== node.id;
+    const isExternalTextChange = node.instructionText !== lastInstructionText.current;
+    const isExternalMentionsChange = mentionsSignature !== lastMentionsSignature.current;
+
+    if (isNewNode || isExternalTextChange || isExternalMentionsChange) {
       lastRenderedNodeId.current = node.id;
+      lastInstructionText.current = node.instructionText;
+      lastMentionsSignature.current = mentionsSignature;
       if (node.mentions) {
         node.mentions.forEach(m => mentionsMap.current.set(m.id, m));
       }
@@ -340,7 +412,7 @@ export function StepNode({
       }
       populateEditor(editorRef.current, segments, selectedMentionId, allNodes);
     }
-  }, [node.id, segments, selectedMentionId, allNodes]);
+  }, [node.id, node.instructionText, mentionsSignature, segments, selectedMentionId, allNodes]);
 
   // Update token contents and selection highlight in place when inspector edits occur
   useEffect(() => {
@@ -372,6 +444,8 @@ export function StepNode({
   const syncDomToState = () => {
     if (!editorRef.current) return;
     const parsed = parseEditorDom(editorRef.current, mentionsMap.current);
+    lastInstructionText.current = parsed.instructionText;
+    lastMentionsSignature.current = computeMentionsSignature(parsed.mentions);
     onChange({
       segments: parsed.segments,
       mentions: parsed.mentions,
@@ -381,6 +455,15 @@ export function StepNode({
 
   const handleEditorInput = () => {
     syncDomToState();
+  };
+
+  const handleEditorPaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (text) {
+      document.execCommand('insertText', false, text);
+      syncDomToState();
+    }
   };
 
   const handleEditorKeyDown = (e: KeyboardEvent) => {
@@ -492,10 +575,10 @@ export function StepNode({
     }
   };
 
-  const handleAddMentionInline = (type: 'ingredient' | 'cookware' | 'timer') => {
+  const handleAddMentionInline = (type: 'ingredient' | 'cookware' | 'timer' | 'temperature') => {
     const mentionId = `m-${Date.now()}`;
     let displayText = 'New Item';
-    let defaultData = {};
+    let defaultData: any = {};
 
     if (type === 'ingredient') {
       displayText = 'Ingredient';
@@ -506,6 +589,9 @@ export function StepNode({
     } else if (type === 'timer') {
       displayText = '5 mins';
       defaultData = { timerSec: 300 };
+    } else if (type === 'temperature') {
+      displayText = '350°F';
+      defaultData = { temperatureValue: 350, temperatureUnit: 'F', isRange: false };
     }
 
     const newMention: StepMentionToken = {
@@ -585,6 +671,33 @@ export function StepNode({
         className="studio-node-port studio-node-port-in"
       />
 
+      {/* Floating Left Reorder Toolbar */}
+      {(onMoveUp || onMoveDown) && (
+        <div className="step-left-reorder-toolbar" onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`step-reorder-btn ${!canMoveUp ? 'is-disabled' : ''}`}
+            onClick={canMoveUp ? onMoveUp : undefined}
+            disabled={!canMoveUp}
+            title={moveUpTooltip || (canMoveUp ? 'Move step up' : 'Cannot move up')}
+            aria-label="Move step up"
+          >
+            <ArrowUp size={16} />
+          </button>
+
+          <button
+            type="button"
+            className={`step-reorder-btn ${!canMoveDown ? 'is-disabled' : ''}`}
+            onClick={canMoveDown ? onMoveDown : undefined}
+            disabled={!canMoveDown}
+            title={moveDownTooltip || (canMoveDown ? 'Move step down' : 'Cannot move down')}
+            aria-label="Move step down"
+          >
+            <ArrowDown size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Step Header with Title and Checkboxes */}
       <div className="step-node-header">
         <div className="step-node-title-wrap">
@@ -594,6 +707,7 @@ export function StepNode({
               type="text"
               className="step-title-input"
               value={node.title}
+              placeholder={!node.isCountedStep ? '(note)' : `Step ${stepNumber}`}
               onInput={e => onChange({ title: (e.target as HTMLInputElement).value })}
               onBlur={() => setIsEditingTitle(false)}
               onKeyDown={e => {
@@ -614,10 +728,16 @@ export function StepNode({
               }}
               title={isSelected ? 'Click to rename step' : 'Click to select step'}
             >
-              <span className="step-number-badge">
+              <span className={`step-number-badge ${!node.isCountedStep ? 'is-note' : ''}`}>
                 {node.isCountedStep ? `${stepNumber}` : 'Note'}
               </span>
-              <span className="step-title-text">{node.title || `Step ${stepNumber}`}</span>
+              <span className={`step-title-text ${!node.isCountedStep && (!node.title || node.title.trim().toLowerCase() === 'note' || node.title.trim().toLowerCase() === 'step note') ? 'is-note-placeholder' : ''}`}>
+                {!node.isCountedStep && (!node.title || node.title.trim().toLowerCase() === 'note' || node.title.trim().toLowerCase() === 'step note') ? (
+                  <i>(note)</i>
+                ) : (
+                  node.title || `Step ${stepNumber}`
+                )}
+              </span>
               <button
                 type="button"
                 className="step-title-pencil-btn"
@@ -642,20 +762,31 @@ export function StepNode({
             <input
               type="checkbox"
               checked={node.isCountedStep}
-              onChange={e =>
-                onChange({ isCountedStep: (e.target as HTMLInputElement).checked })
-              }
+              onChange={e => {
+                const checked = (e.target as HTMLInputElement).checked;
+                const updates: Partial<CanvasStepNode> = {
+                  isCountedStep: checked,
+                  ...(!checked ? { isLinkedToPrevious: false } : {})
+                };
+                if (!checked && (node.title === `Step ${stepNumber}` || node.title === 'Step Note' || node.title === 'Note')) {
+                  updates.title = '';
+                } else if (checked && (!node.title || node.title === 'Note' || node.title === 'Step Note')) {
+                  updates.title = `Step ${stepNumber}`;
+                }
+                onChange(updates);
+              }}
             />
             <span>Count?</span>
           </label>
 
           <label
-            className="step-checkbox-label"
-            title="Link and indent directly under the previous step"
+            className={`step-checkbox-label ${!node.isCountedStep ? 'disabled' : ''}`}
+            title={!node.isCountedStep ? 'Uncounted notes cannot be linked to previous step' : 'Link and indent directly under the previous step'}
           >
             <input
               type="checkbox"
-              checked={node.isLinkedToPrevious}
+              disabled={!node.isCountedStep}
+              checked={node.isCountedStep ? node.isLinkedToPrevious : false}
               onChange={e =>
                 onChange({ isLinkedToPrevious: (e.target as HTMLInputElement).checked })
               }
@@ -696,29 +827,28 @@ export function StepNode({
       {/* Top Media Zone: Placed directly below header checkboxes and above instruction text */}
       <div className="step-top-media-zone" onClick={e => e.stopPropagation()}>
         {/* Step Image Section */}
-        {node.media?.galleryUrls?.[0] ? (
+        {node.media?.galleryUrls && node.media.galleryUrls.length > 0 ? (
           <div className="step-image-row-populated">
-            <div className="step-image-preview-wrap">
-              <img src={node.media.galleryUrls[0]} alt={`Step ${stepNumber}`} />
-              <button
-                type="button"
-                className="step-image-delete-btn"
-                title="Remove step image"
-                onClick={() => {
-                  const nextMedia = { ...node.media };
-                  delete nextMedia.galleryUrls;
-                  onChange({ media: nextMedia });
-                }}
-              >
-                <Trash2 size={13} />
-              </button>
+            <div
+              className="step-image-preview-wrap is-clickable"
+              onClick={() => setIsMediaModalOpen(true)}
+              role="button"
+              tabIndex={0}
+              title="Manage step pictures"
+            >
+              <img src={stepThumbnailUrl || ''} alt={`Step ${stepNumber}`} />
+              {node.media.galleryUrls.length > 1 && (
+                <div className="studio-media-counter-badge">
+                  ×{node.media.galleryUrls.length}
+                </div>
+              )}
             </div>
             <div
               className="step-image-add-card"
               onClick={() => setIsMediaModalOpen(true)}
               role="button"
               tabIndex={0}
-              title="Add or change picture"
+              title="Add or manage pictures"
             >
               <Plus size={20} />
               <span className="step-image-add-card-label">Add picture</span>
@@ -897,6 +1027,7 @@ export function StepNode({
           className="step-inline-editor"
           data-placeholder="Write step instruction prose here..."
           onInput={handleEditorInput}
+          onPaste={handleEditorPaste}
           onKeyDown={handleEditorKeyDown}
           onMouseDown={handleEditorMouseDown}
           onClick={handleEditorClick}
@@ -967,6 +1098,18 @@ export function StepNode({
           >
             <span>+ Timer</span>
             <Clock size={14} className="step-btn-trailing-icon" />
+          </button>
+          <button
+            type="button"
+            className="step-action-btn"
+            onMouseDown={e => e.preventDefault()}
+            onClick={e => {
+              e.stopPropagation();
+              handleAddMentionInline('temperature');
+            }}
+          >
+            <span>+ Temp</span>
+            <Thermometer size={14} className="step-btn-trailing-icon" />
           </button>
           <button
             type="button"
@@ -1047,14 +1190,14 @@ export function StepNode({
         <MediaModal
           isOpen={true}
           mediaType="picture"
-          mode="single"
-          title={`Step ${node.isCountedStep ? stepNumber : 'Note'} Picture`}
-          currentUrl={node.media?.galleryUrls?.[0] || ''}
+          mode="gallery"
+          title={`Step ${node.isCountedStep ? stepNumber : 'Note'} Images`}
+          currentUrls={node.media?.galleryUrls || EMPTY_URLS}
           onClose={() => setIsMediaModalOpen(false)}
-          onSave={url => {
+          onSaveGallery={urls => {
             const nextMedia = { ...node.media };
-            if (url) {
-              nextMedia.galleryUrls = [url];
+            if (urls && urls.length > 0) {
+              nextMedia.galleryUrls = urls;
             } else {
               delete nextMedia.galleryUrls;
             }

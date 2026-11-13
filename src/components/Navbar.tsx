@@ -4,9 +4,11 @@ import { AvatarDropdown } from './AvatarDropdown';
 interface Props {
   onNavigate: (path: string) => void;
   onOpenSettings: () => void;
+  currentPath?: string;
 }
 
-export function Navbar({ onNavigate, onOpenSettings }: Props) {
+export function Navbar({ onNavigate, onOpenSettings, currentPath }: Props) {
+
   return (
     <header className="nav-bar">
       <a
@@ -17,11 +19,13 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
           onNavigate('/');
         }}
       >
-        recipedb
+        RecipeDB
       </a>
 
       <div className="nav-right">
+
         <button
+          type="button"
           className="nav-btn"
           aria-label="Search"
           onClick={() => onNavigate('/search')}
@@ -30,14 +34,20 @@ export function Navbar({ onNavigate, onOpenSettings }: Props) {
         </button>
 
         <button
+          type="button"
           className="nav-btn"
           aria-label="Bookmarks"
-          onClick={() => alert('Bookmarks feature coming soon with database')}
+          title="Bookmarks"
+          onClick={() => onNavigate('/')}
         >
           <Bookmark size={20} />
         </button>
 
-        <AvatarDropdown onOpenSettings={onOpenSettings} />
+        <AvatarDropdown
+          onOpenSettings={onOpenSettings}
+          onNavigate={onNavigate}
+          currentPath={currentPath}
+        />
       </div>
     </header>
   );

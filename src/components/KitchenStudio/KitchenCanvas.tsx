@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from 'preact/hooks';
-import { ArrowLeft, Settings } from 'lucide-preact';
+import { ArrowLeft, Settings, Undo2, Redo2 } from 'lucide-preact';
+import { toast } from 'sonner';
 import type {
   StudioWorkspace,
   CanvasStepNode,
   CanvasSection
 } from '../../types/orchestration';
 import { exportStudioWorkspaceToRecipeGraph } from '../../parser/orchestrationParser';
+import { formatTemperature } from '../../utils/temperature';
 import { SectionNode } from './SectionNode';
 import { StepNode } from './StepNode';
 import { NodeInspector } from './NodeInspector';
@@ -14,9 +16,10 @@ import { PreviewDrawer } from './PreviewDrawer';
 import { MediaModal } from './MediaModal';
 import { CustomItemModal } from './CustomItemModal';
 import { RecipeMetadataModal } from './RecipeMetadataModal';
-import { CascadeDeleteModal } from './CascadeDeleteModal';
-import { ExportRecipeModal } from './ExportRecipeModal';
+import { ConfirmModal } from '../ConfirmModal';
+import { RequestPublishModal } from './RequestPublishModal';
 import { ReparentSectionModal } from './ReparentSectionModal';
+import { authStore } from '../../services/authStore';
 
 interface KitchenCanvasProps {
   workspace: StudioWorkspace;
@@ -115,6 +118,116 @@ function clusterSectionsHierarchically(sections: CanvasSection[]): CanvasSection
   return result.map((s, idx) => ({ ...s, order: idx }));
 }
 
+function checkBundleConsumesYieldFrom(
+  consumerBundle: CanvasStepNode[],
+  producerBundle: CanvasStepNode[]
+): string | null {
+  const producedYields = new Map<string, string>();
+  for (const p of producerBundle) {
+    if (p.producesYield && p.producesYield.name) {
+      const name = p.producesYield.name.trim();
+      const lower = name.toLowerCase();
+      producedYields.set(p.id, name);
+      producedYields.set(`yield-${p.id}`, name);
+      producedYields.set(lower, name);
+    }
+  }
+
+  if (producedYields.size === 0) return null;
+
+  for (const c of consumerBundle) {
+    for (const m of (c.mentions || [])) {
+      if (m.type === 'ingredient' || m.type === 'yield') {
+        const yId = m.data?.yieldId;
+        if (yId && producedYields.has(yId)) {
+          return producedYields.get(yId)!;
+        }
+        const ingId = m.data?.ingredientId;
+        if (ingId && producedYields.has(ingId)) {
+          return producedYields.get(ingId)!;
+        }
+        const yName = m.data?.yieldName?.toLowerCase().trim();
+        if (yName && producedYields.has(yName)) {
+          return producedYields.get(yName)!;
+        }
+        const text = m.displayText?.toLowerCase().trim();
+        if (text && (m.type === 'yield' || m.data?.yieldId || ingId?.startsWith('yield-')) && producedYields.has(text)) {
+          return producedYields.get(text)!;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function partitionSectionIntoBundles(sectionNodes: CanvasStepNode[]): CanvasStepNode[][] {
+  const bundles: CanvasStepNode[][] = [];
+  let currentBundle: CanvasStepNode[] = [];
+  for (const n of sectionNodes) {
+    if (!n.isLinkedToPrevious || (bundles.length === 0 && currentBundle.length === 0)) {
+      if (currentBundle.length > 0) {
+        bundles.push(currentBundle);
+      }
+      currentBundle = [n];
+    } else {
+      currentBundle.push(n);
+    }
+  }
+  if (currentBundle.length > 0) {
+    bundles.push(currentBundle);
+  }
+  return bundles;
+}
+
+export function computeCanvasStepNumbers(
+  sections: CanvasSection[],
+  canvasNodes: CanvasStepNode[]
+): Map<string, string> {
+  const stepNumberMap = new Map<string, string>();
+  const safeNodes = Array.isArray(canvasNodes) ? canvasNodes : [];
+  const safeSections = Array.isArray(sections) ? sections : [];
+  const nodesById = new Map(safeNodes.map(n => [n.id, n]));
+  const knownSectionIds = new Set(safeSections.map(s => s.id));
+  const defaultSecId = safeSections[0]?.id || 'sec-main';
+
+  const nodesBySection: Record<string, CanvasStepNode[]> = {};
+  for (const s of safeSections) {
+    nodesBySection[s.id] = [];
+  }
+
+  for (const node of safeNodes) {
+    const sId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+    if (!nodesBySection[sId]) nodesBySection[sId] = [];
+    nodesBySection[sId].push(node);
+  }
+
+  for (const s of safeSections) {
+    const sNodes = nodesBySection[s.id] || [];
+    let secCount = 0;
+    let lastMainNum = '';
+    let subCount = 0;
+
+    for (const node of sNodes) {
+      if (!node.isCountedStep) {
+        stepNumberMap.set(node.id, 'Note');
+        continue;
+      }
+      if (node.isLinkedToPrevious && lastMainNum) {
+        subCount++;
+        stepNumberMap.set(node.id, `${lastMainNum}.${subCount}`);
+      } else {
+        secCount++;
+        lastMainNum = String(secCount);
+        subCount = 0;
+        stepNumberMap.set(node.id, lastMainNum);
+      }
+    }
+  }
+
+  return stepNumberMap;
+}
+
 function reorderSectionsAndNodes(
   newSections: CanvasSection[],
   currentNodes: CanvasStepNode[]
@@ -148,12 +261,17 @@ function reorderSectionsAndNodes(
     }
   }
 
-  let countedStepIdx = 1;
+  const stepNumberMap = computeCanvasStepNumbers(clusteredSections, nextNodes);
   const resequencedNodes = nextNodes.map(n => {
-    if (!n.isCountedStep) return n;
-    const currentNum = countedStepIdx++;
-    if (!n.title || /^step\s*\d+$/i.test(n.title.trim())) {
-      return { ...n, title: `Step ${currentNum}` };
+    if (!n.isCountedStep) {
+      if (n.isLinkedToPrevious) {
+        return { ...n, isLinkedToPrevious: false };
+      }
+      return n;
+    }
+    const currentNumStr = stepNumberMap.get(n.id) || '';
+    if (!n.title || /^step\s*[\d.]+$/i.test(n.title.trim())) {
+      return { ...n, title: `Step ${currentNumStr}` };
     }
     return n;
   });
@@ -178,7 +296,9 @@ export function KitchenCanvas({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !(e.target as HTMLElement).matches('input, textarea')) {
+      const target = e.target as HTMLElement;
+      const isEditable = target?.matches?.('input, textarea') || target?.isContentEditable || Boolean(target?.closest?.('[contenteditable="true"]'));
+      if (e.code === 'Space' && !isEditable) {
         setIsSpacePressed(true);
       }
     };
@@ -239,14 +359,6 @@ export function KitchenCanvas({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isReparentModalOpen, setIsReparentModalOpen] = useState(false);
   const [reorderAnimatingDeltas, setReorderAnimatingDeltas] = useState<Record<string, number>>({});
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(prev => (prev === msg ? null : prev));
-    }, 3500);
-  };
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const transformLayerRef = useRef<HTMLDivElement>(null);
@@ -254,7 +366,41 @@ export function KitchenCanvas({
   // Auto save state
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
 
-  const updateWorkspaceState = (updated: StudioWorkspace) => {
+  // 50-action Undo / Redo History Stack
+  const MAX_HISTORY = 50;
+  const [past, setPast] = useState<StudioWorkspace[]>([]);
+  const [future, setFuture] = useState<StudioWorkspace[]>([]);
+  const isUndoRedoAction = useRef(false);
+  const lastTextEditTime = useRef<number>(0);
+  const pendingTypingWorkspace = useRef<StudioWorkspace | null>(null);
+
+  const updateWorkspaceState = (
+    updated: StudioWorkspace,
+    recordHistory = true,
+    actionType: 'structural' | 'typing' = 'structural'
+  ) => {
+    if (recordHistory && !isUndoRedoAction.current) {
+      const now = Date.now();
+      if (actionType === 'typing') {
+        if (!pendingTypingWorkspace.current) {
+          pendingTypingWorkspace.current = workspace;
+        }
+        if (now - lastTextEditTime.current > 600) {
+          const snapshotToRecord = pendingTypingWorkspace.current || workspace;
+          setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), snapshotToRecord]);
+          setFuture([]);
+          pendingTypingWorkspace.current = workspace;
+        }
+        lastTextEditTime.current = now;
+      } else {
+        const snapshotToRecord = pendingTypingWorkspace.current || workspace;
+        setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), snapshotToRecord]);
+        setFuture([]);
+        pendingTypingWorkspace.current = null;
+        lastTextEditTime.current = 0;
+      }
+    }
+
     setSaveStatus('saving');
     const result = onUpdateWorkspace(updated);
     if (result === false) {
@@ -263,6 +409,91 @@ export function KitchenCanvas({
       setTimeout(() => setSaveStatus('saved'), 300);
     }
   };
+
+  const handleUndo = () => {
+    if (past.length === 0) return;
+    isUndoRedoAction.current = true;
+    const previous = past[past.length - 1];
+    setPast(prev => prev.slice(0, -1));
+    setFuture(prev => [workspace, ...prev.slice(0, MAX_HISTORY - 1)]);
+    pendingTypingWorkspace.current = null;
+    updateWorkspaceState(previous, false);
+    toast.info('Undone');
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 50);
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) return;
+    isUndoRedoAction.current = true;
+    const next = future[0];
+    setFuture(prev => prev.slice(1));
+    setPast(prev => [...prev.slice(-(MAX_HISTORY - 1)), workspace]);
+    pendingTypingWorkspace.current = null;
+    updateWorkspaceState(next, false);
+    toast.info('Redone');
+    setTimeout(() => {
+      isUndoRedoAction.current = false;
+    }, 50);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not trigger canvas undo/redo while any modal is open
+      if (
+        isMetadataModalOpen ||
+        isExportModalOpen ||
+        isReparentModalOpen ||
+        Boolean(deleteModalState?.isOpen) ||
+        Boolean(mediaModalType) ||
+        Boolean(customItemModalType)
+      ) {
+        return;
+      }
+
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        const target = e.target as HTMLElement | null;
+        const isNativeInput = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+        );
+        if (isNativeInput) return;
+
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if (key === 'y') {
+        const target = e.target as HTMLElement | null;
+        const isNativeInput = Boolean(
+          target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+        );
+        if (isNativeInput) return;
+
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    past,
+    future,
+    workspace,
+    isMetadataModalOpen,
+    isExportModalOpen,
+    isReparentModalOpen,
+    deleteModalState,
+    mediaModalType,
+    customItemModalType
+  ]);
 
   // Backfill explicit sectionId on any unassigned canvas nodes
   useEffect(() => {
@@ -281,7 +512,7 @@ export function KitchenCanvas({
       return node;
     });
     if (needsUpdate) {
-      updateWorkspaceState({ ...workspace, canvasNodes: nextNodes });
+      updateWorkspaceState({ ...workspace, canvasNodes: nextNodes }, false);
     }
   }, [workspace.canvasNodes, currentSections]);
 
@@ -326,27 +557,47 @@ export function KitchenCanvas({
     }
   };
 
+  const panRafRef = useRef<number | null>(null);
+  const pendingPanRef = useRef<{ x: number; y: number } | null>(null);
+
   const handleMouseMove = (e: MouseEvent) => {
     if (!isPanning) return;
-    setPan({
+    pendingPanRef.current = {
       x: e.clientX - startPan.x,
       y: e.clientY - startPan.y
-    });
+    };
+    if (panRafRef.current === null) {
+      panRafRef.current = requestAnimationFrame(() => {
+        panRafRef.current = null;
+        if (pendingPanRef.current) {
+          setPan(pendingPanRef.current);
+          panRef.current = pendingPanRef.current;
+        }
+      });
+    }
   };
 
   const handleMouseUp = () => {
+    if (panRafRef.current !== null) {
+      cancelAnimationFrame(panRafRef.current);
+      panRafRef.current = null;
+    }
+    if (pendingPanRef.current) {
+      setPan(pendingPanRef.current);
+      panRef.current = pendingPanRef.current;
+      pendingPanRef.current = null;
+    }
     setIsPanning(false);
   };
 
   const handleWheel = (e: WheelEvent) => {
     const target = e.target as HTMLElement;
     if (
-      target.closest('.json-drawer-content') ||
       target.closest('.studio-preview-drawer') ||
       target.closest('.universal-dropdown-list') ||
       target.closest('.universal-dropdown-container') ||
-      target.closest('.compact-dropdown-menu') ||
-      target.closest('.compact-dropdown-container') ||
+      target.closest('.ui-dropdown-menu') ||
+      target.closest('.ui-dropdown-container') ||
       target.closest('.studio-inspector-card') ||
       target.closest('.studio-modal-card') ||
       target.closest('.metadata-modal-dialog')
@@ -395,59 +646,106 @@ export function KitchenCanvas({
   }
 
   const [nodeSizes, setNodeSizes] = useState<Record<string, NodeSize>>({});
-  const observerMapRef = useRef<Map<string, ResizeObserver>>(new Map());
+  const sharedObserverRef = useRef<ResizeObserver | null>(null);
+  const observedNodesRef = useRef<Map<string, HTMLElement>>(new Map());
+  const pendingNodeSizesRef = useRef<Record<string, NodeSize>>({});
+  const sizeRafRef = useRef<number | null>(null);
   const restingLayoutRef = useRef<{ baseColumnX: Record<string, number>; slotWidths: Record<string, number> }>({ baseColumnX: {}, slotWidths: {} });
 
   const registerNodeRef = (id: string, el: HTMLElement | null) => {
+    if (!sharedObserverRef.current) {
+      sharedObserverRef.current = new ResizeObserver(entries => {
+        let hasChanges = false;
+        for (const entry of entries) {
+          const target = entry.target as HTMLElement;
+          const nodeId = target.dataset.studioNodeId;
+          if (!nodeId) continue;
+
+          const borderBox = entry.borderBoxSize?.[0];
+          const w = Math.round(borderBox?.inlineSize || target.offsetWidth || 0);
+          const h = Math.round(borderBox?.blockSize || target.offsetHeight || 0);
+
+          if (w > 0 && h > 0) {
+            const currentPending = pendingNodeSizesRef.current[nodeId];
+            if (!currentPending || Math.abs(currentPending.width - w) >= 1 || Math.abs(currentPending.height - h) >= 1) {
+              pendingNodeSizesRef.current[nodeId] = { width: w, height: h };
+              hasChanges = true;
+            }
+          }
+        }
+
+        if (hasChanges && sizeRafRef.current === null) {
+          sizeRafRef.current = requestAnimationFrame(() => {
+            sizeRafRef.current = null;
+            const updates = { ...pendingNodeSizesRef.current };
+            pendingNodeSizesRef.current = {};
+            setNodeSizes(prev => {
+              let changed = false;
+              const next = { ...prev };
+              for (const [key, val] of Object.entries(updates)) {
+                const curr = next[key];
+                if (!curr || Math.abs(curr.width - val.width) >= 1 || Math.abs(curr.height - val.height) >= 1) {
+                  next[key] = val;
+                  changed = true;
+                }
+              }
+              return changed ? next : prev;
+            });
+          });
+        }
+      });
+    }
+
+    const prevCard = observedNodesRef.current.get(id);
+
     if (!el) {
-      const existing = observerMapRef.current.get(id);
-      if (existing) {
-        existing.disconnect();
-        observerMapRef.current.delete(id);
+      if (prevCard && sharedObserverRef.current) {
+        sharedObserverRef.current.unobserve(prevCard);
+        observedNodesRef.current.delete(id);
       }
       return;
     }
 
     const nodeCard = (el.querySelector('.studio-canvas-node, .section-node-card') as HTMLElement) || el;
-    const initialW = Math.round(nodeCard.offsetWidth);
-    const initialH = Math.round(nodeCard.offsetHeight);
-    if (initialW > 0 && initialH > 0) {
-      setNodeSizes(prev => {
-        const curr = prev[id];
-        if (curr && Math.abs(curr.width - initialW) < 1 && Math.abs(curr.height - initialH) < 1) {
-          return prev;
-        }
-        return { ...prev, [id]: { width: initialW, height: initialH } };
-      });
+    nodeCard.dataset.studioNodeId = id;
+
+    if (prevCard && prevCard !== nodeCard && sharedObserverRef.current) {
+      sharedObserverRef.current.unobserve(prevCard);
     }
 
-    if (!observerMapRef.current.has(id)) {
-      const observer = new ResizeObserver(entries => {
-        for (const entry of entries) {
-          const target = entry.target as HTMLElement;
-          const borderBox = entry.borderBoxSize?.[0];
-          const w = Math.round(borderBox?.inlineSize || target.offsetWidth || 0);
-          const h = Math.round(borderBox?.blockSize || target.offsetHeight || 0);
-          if (w > 0 && h > 0) {
-            setNodeSizes(prev => {
-              const curr = prev[id];
-              if (curr && Math.abs(curr.width - w) < 1 && Math.abs(curr.height - h) < 1) {
-                return prev;
-              }
-              return { ...prev, [id]: { width: w, height: h } };
-            });
+    if (prevCard !== nodeCard) {
+      observedNodesRef.current.set(id, nodeCard);
+      sharedObserverRef.current.observe(nodeCard);
+
+      const initialW = Math.round(nodeCard.offsetWidth);
+      const initialH = Math.round(nodeCard.offsetHeight);
+      if (initialW > 0 && initialH > 0) {
+        setNodeSizes(prev => {
+          const curr = prev[id];
+          if (curr && Math.abs(curr.width - initialW) < 1 && Math.abs(curr.height - initialH) < 1) {
+            return prev;
           }
-        }
-      });
-      observer.observe(nodeCard);
-      observerMapRef.current.set(id, observer);
+          return { ...prev, [id]: { width: initialW, height: initialH } };
+        });
+      }
     }
   };
 
   useEffect(() => {
     return () => {
-      observerMapRef.current.forEach(obs => obs.disconnect());
-      observerMapRef.current.clear();
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      if (sizeRafRef.current !== null) {
+        cancelAnimationFrame(sizeRafRef.current);
+        sizeRafRef.current = null;
+      }
+      if (sharedObserverRef.current) {
+        sharedObserverRef.current.disconnect();
+        sharedObserverRef.current = null;
+      }
+      observedNodesRef.current.clear();
     };
   }, []);
 
@@ -492,6 +790,112 @@ export function KitchenCanvas({
       clusters: clusterList
     };
   }, [currentSections]);
+
+  const canvasStepNumberMap = useMemo(
+    () => computeCanvasStepNumbers(orderedSections, workspace.canvasNodes),
+    [orderedSections, workspace.canvasNodes]
+  );
+
+  const stepReorderInfoMap = useMemo(() => {
+    const map = new Map<string, {
+      canMoveUp: boolean;
+      canMoveDown: boolean;
+      moveUpTooltip?: string;
+      moveDownTooltip?: string;
+    }>();
+
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
+
+    const nodesBySection: Record<string, CanvasStepNode[]> = {};
+    for (const sec of currentSections) {
+      nodesBySection[sec.id] = [];
+    }
+    for (const node of workspace.canvasNodes) {
+      const sId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+      if (!nodesBySection[sId]) nodesBySection[sId] = [];
+      nodesBySection[sId].push(node);
+    }
+
+    for (const sNodes of Object.values(nodesBySection)) {
+      const bundles = partitionSectionIntoBundles(sNodes);
+
+      for (let bIdx = 0; bIdx < bundles.length; bIdx++) {
+        const bundle = bundles[bIdx];
+        const leadNode = bundle[0];
+
+        const isFirstBundle = bIdx === 0;
+        const isLastBundle = bIdx === bundles.length - 1;
+
+        let canMoveUp = !isFirstBundle;
+        let moveUpTooltip = isFirstBundle ? 'First step in section' : 'Move step up';
+        if (!isFirstBundle) {
+          const prevBundle = bundles[bIdx - 1];
+          const consumedYield = checkBundleConsumesYieldFrom(bundle, prevBundle);
+          if (consumedYield) {
+            canMoveUp = false;
+            moveUpTooltip = `Cannot move above step producing: ${consumedYield}`;
+          }
+        }
+
+        let canMoveDown = !isLastBundle;
+        let moveDownTooltip = isLastBundle ? 'Last step in section' : 'Move step down';
+        if (!isLastBundle) {
+          const nextBundle = bundles[bIdx + 1];
+          const consumedYield = checkBundleConsumesYieldFrom(nextBundle, bundle);
+          if (consumedYield) {
+            canMoveDown = false;
+            moveDownTooltip = `Cannot move below step consuming: ${consumedYield}`;
+          }
+        }
+
+        map.set(leadNode.id, {
+          canMoveUp,
+          canMoveDown,
+          moveUpTooltip,
+          moveDownTooltip
+        });
+
+        for (let subIdx = 1; subIdx < bundle.length; subIdx++) {
+          const subNode = bundle[subIdx];
+          const isFirstSub = subIdx === 1;
+          const isLastSub = subIdx === bundle.length - 1;
+
+          let subCanUp = !isFirstSub;
+          let subUpTooltip = isFirstSub ? 'Cannot move substep above parent step' : 'Move substep up';
+          if (!isFirstSub) {
+            const prevSub = bundle[subIdx - 1];
+            const consumedYield = checkBundleConsumesYieldFrom([subNode], [prevSub]);
+            if (consumedYield) {
+              subCanUp = false;
+              subUpTooltip = `Cannot move above step producing: ${consumedYield}`;
+            }
+          }
+
+          let subCanDown = !isLastSub;
+          let subDownTooltip = isLastSub ? 'Last substep of this step' : 'Move substep down';
+          if (!isLastSub) {
+            const nextSub = bundle[subIdx + 1];
+            const consumedYield = checkBundleConsumesYieldFrom([nextSub], [subNode]);
+            if (consumedYield) {
+              subCanDown = false;
+              subDownTooltip = `Cannot move below step consuming: ${consumedYield}`;
+            }
+          }
+
+          map.set(subNode.id, {
+            canMoveUp: subCanUp,
+            canMoveDown: subCanDown,
+            moveUpTooltip: subUpTooltip,
+            moveDownTooltip: subDownTooltip
+          });
+        }
+      }
+    }
+
+    return map;
+  }, [workspace.canvasNodes, currentSections]);
 
   // Compute dynamic positions for sections and child steps with real-time sliding
   const nodePositions = useMemo(() => {
@@ -1169,7 +1573,12 @@ export function KitchenCanvas({
       if (s.id === sectionId) return { ...s, ...updated };
       return s;
     });
-    updateWorkspaceState({ ...workspace, sections: nextSections });
+    const isTyping = updated.name !== undefined || updated.description !== undefined;
+    updateWorkspaceState(
+      { ...workspace, sections: nextSections },
+      true,
+      isTyping ? 'typing' : 'structural'
+    );
   };
 
   // Section and subsection creation with strict depth 1 rules
@@ -1235,90 +1644,110 @@ export function KitchenCanvas({
     });
   };
 
-  // Add step node with tree guardrails
+  // Add step node with contextual sequence insertion
   const handleAddStepNode = () => {
-    let parentId: string;
     let targetSectionId: string;
+    let parentId: string;
+    let insertIndex = -1;
+
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
 
     if (selectedStep) {
-      targetSectionId = selectedStep.sectionId || currentSections[0].id;
-      parentId = selectedStep.id;
+      targetSectionId = resolveNodeSectionId(selectedStep, nodesById, knownSectionIds, defaultSecId);
+      const selectedIdx = workspace.canvasNodes.findIndex(n => n.id === selectedStep.id);
 
-      let noteDepth = selectedStep.isCountedStep ? 0 : 1;
-      let curr: CanvasStepNode | undefined = selectedStep;
-      while (curr && curr.parentId && curr.parentId !== targetSectionId && !currentSections.some(s => s.id === curr?.parentId)) {
-        const nextParent = workspace.canvasNodes.find(n => n.id === curr?.parentId);
-        if (!nextParent) break;
-        if (!nextParent.isCountedStep) {
-          noteDepth++;
+      if (selectedIdx !== -1) {
+        // Walk forward to find the end of selectedStep's chain (any linked substeps or uncounted notes)
+        let lastBranchIdx = selectedIdx;
+        while (lastBranchIdx + 1 < workspace.canvasNodes.length) {
+          const candidate = workspace.canvasNodes[lastBranchIdx + 1];
+          const candSecId = resolveNodeSectionId(candidate, nodesById, knownSectionIds, defaultSecId);
+          if (candSecId !== targetSectionId) break;
+          if (candidate.isLinkedToPrevious || !candidate.isCountedStep) {
+            lastBranchIdx++;
+          } else {
+            break;
+          }
         }
-        curr = nextParent;
-      }
-      if (noteDepth >= 2) {
-        showToast('Maximum nesting depth 2 reached');
-        return;
-      }
 
-      const existingChildren = workspace.canvasNodes.filter(n => n.parentId === selectedStep.id);
-      const countedChildren = existingChildren.filter(n => n.isCountedStep);
-      const uncountedChildren = existingChildren.filter(n => !n.isCountedStep);
-
-      const mustBeUncounted = !selectedStep.isCountedStep;
-      if (mustBeUncounted || countedChildren.length >= 1) {
-        if (uncountedChildren.length >= 3) {
-          showToast('Maximum 3 note branches reached for this step');
-          return;
-        }
+        const anchorNode = workspace.canvasNodes[lastBranchIdx];
+        parentId = anchorNode.id;
+        insertIndex = lastBranchIdx + 1;
+      } else {
+        parentId = selectedStep.id;
+        insertIndex = workspace.canvasNodes.length;
       }
     } else if (selectedSection) {
       targetSectionId = selectedSection.id;
-      const sectionSteps = workspace.canvasNodes.filter(n => (n.sectionId || currentSections[0].id) === targetSectionId);
+      const sectionSteps = workspace.canvasNodes.filter(n =>
+        resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+      );
       if (sectionSteps.length === 0) {
         parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.length;
       } else {
-        const countedSteps = sectionSteps.filter(n => n.isCountedStep);
-        parentId = countedSteps.length > 0 ? countedSteps[countedSteps.length - 1].id : sectionSteps[sectionSteps.length - 1].id;
+        // Insert at the TOP of the section as Step 1
+        const firstStep = sectionSteps[0];
+        parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.findIndex(n => n.id === firstStep.id);
       }
     } else {
-      targetSectionId = currentSections[0].id;
-      const sectionSteps = workspace.canvasNodes.filter(n => (n.sectionId || currentSections[0].id) === targetSectionId);
+      targetSectionId = defaultSecId;
+      const sectionSteps = workspace.canvasNodes.filter(n =>
+        resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+      );
       if (sectionSteps.length === 0) {
         parentId = targetSectionId;
+        insertIndex = workspace.canvasNodes.length;
       } else {
-        const countedSteps = sectionSteps.filter(n => n.isCountedStep);
-        parentId = countedSteps.length > 0 ? countedSteps[countedSteps.length - 1].id : sectionSteps[sectionSteps.length - 1].id;
+        const lastStep = sectionSteps[sectionSteps.length - 1];
+        parentId = lastStep.id;
+        insertIndex = workspace.canvasNodes.findIndex(n => n.id === lastStep.id) + 1;
       }
     }
 
-    const parentNode = workspace.canvasNodes.find(n => n.id === parentId);
-    let isCounted = true;
-    if (parentNode) {
-      if (!parentNode.isCountedStep) {
-        isCounted = false;
-      } else {
-        const siblings = workspace.canvasNodes.filter(n => n.parentId === parentId);
-        if (siblings.some(s => s.isCountedStep)) {
-          isCounted = false;
-        }
-      }
-    }
+    const sectionSteps = workspace.canvasNodes.filter(n =>
+      resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === targetSectionId
+    );
 
     const newId = `step-${Date.now()}`;
-    const stepCount = workspace.canvasNodes.length + 1;
-
     const newNode: CanvasStepNode = {
       id: newId,
       parentId,
       sectionId: targetSectionId,
-      title: isCounted ? `Step ${stepCount}` : 'Note',
-      isCountedStep: isCounted,
+      title: 'Step',
+      isCountedStep: true,
       isLinkedToPrevious: false,
       instructionText: '',
       mentions: []
     };
 
-    const currentNodesWithNew = [...workspace.canvasNodes, newNode];
-    const reordered = reorderSectionsAndNodes(currentSections, currentNodesWithNew);
+    // Re-wire downstream nodes:
+    // 1. If inserted at the top of a section (section selected with existing steps),
+    //    re-parent the former first step to newNode.
+    // 2. If inserted after an anchor step (step selected), re-parent any downstream
+    //    step that was attached to the anchor to newNode.
+    const updatedExistingNodes = workspace.canvasNodes.map(node => {
+      if (selectedSection && sectionSteps.length > 0 && node.id === sectionSteps[0].id) {
+        return { ...node, parentId: newId };
+      }
+      if (selectedStep && node.parentId === parentId && node.id !== newId) {
+        return { ...node, parentId: newId };
+      }
+      return node;
+    });
+
+    // Splice newNode at the target index
+    const nextCanvasNodes = [...updatedExistingNodes];
+    if (insertIndex >= 0 && insertIndex <= nextCanvasNodes.length) {
+      nextCanvasNodes.splice(insertIndex, 0, newNode);
+    } else {
+      nextCanvasNodes.push(newNode);
+    }
+
+    const reordered = reorderSectionsAndNodes(currentSections, nextCanvasNodes);
     updateWorkspaceState({
       ...workspace,
       canvasNodes: reordered.canvasNodes
@@ -1326,12 +1755,111 @@ export function KitchenCanvas({
     setSelectedNodeId(newId);
   };
 
+  // Safe vertical step reordering with parent step bundling and yield linkage guards
+  const handleMoveStep = (stepId: string, direction: 'up' | 'down') => {
+    const knownSectionIds = new Set(currentSections.map(s => s.id));
+    const nodesById = new Map(workspace.canvasNodes.map(n => [n.id, n]));
+    const defaultSecId = currentSections[0]?.id || 'sec-main';
+    const targetNode = nodesById.get(stepId);
+    if (!targetNode) return;
+
+    const sId = resolveNodeSectionId(targetNode, nodesById, knownSectionIds, defaultSecId);
+    const sectionNodes = workspace.canvasNodes.filter(n =>
+      resolveNodeSectionId(n, nodesById, knownSectionIds, defaultSecId) === sId
+    );
+
+    const bundles = partitionSectionIntoBundles(sectionNodes);
+    const bIdx = bundles.findIndex(b => b.some(n => n.id === targetNode.id));
+    if (bIdx === -1) return;
+
+    const targetBundle = bundles[bIdx];
+    const isLeadNode = targetBundle[0].id === targetNode.id;
+
+    if (isLeadNode) {
+      if (direction === 'up') {
+        if (bIdx === 0) return;
+        const prevBundle = bundles[bIdx - 1];
+        const consumedYield = checkBundleConsumesYieldFrom(targetBundle, prevBundle);
+        if (consumedYield) {
+          toast.error(`Cannot move above step producing: ${consumedYield}`);
+          return;
+        }
+        bundles[bIdx - 1] = targetBundle;
+        bundles[bIdx] = prevBundle;
+      } else {
+        if (bIdx === bundles.length - 1) return;
+        const nextBundle = bundles[bIdx + 1];
+        const consumedYield = checkBundleConsumesYieldFrom(nextBundle, targetBundle);
+        if (consumedYield) {
+          toast.error(`Cannot move below step consuming: ${consumedYield}`);
+          return;
+        }
+        bundles[bIdx + 1] = targetBundle;
+        bundles[bIdx] = nextBundle;
+      }
+    } else {
+      const subIdx = targetBundle.findIndex(n => n.id === targetNode.id);
+      if (subIdx === -1) return;
+
+      if (direction === 'up') {
+        if (subIdx <= 1) return;
+        const prevSub = targetBundle[subIdx - 1];
+        const consumedYield = checkBundleConsumesYieldFrom([targetNode], [prevSub]);
+        if (consumedYield) {
+          toast.error(`Cannot move above step producing: ${consumedYield}`);
+          return;
+        }
+        targetBundle[subIdx - 1] = targetNode;
+        targetBundle[subIdx] = prevSub;
+      } else {
+        if (subIdx >= targetBundle.length - 1) return;
+        const nextSub = targetBundle[subIdx + 1];
+        const consumedYield = checkBundleConsumesYieldFrom([nextSub], [targetNode]);
+        if (consumedYield) {
+          toast.error(`Cannot move below step consuming: ${consumedYield}`);
+          return;
+        }
+        targetBundle[subIdx + 1] = targetNode;
+        targetBundle[subIdx] = nextSub;
+      }
+    }
+
+    const nextSectionNodes: CanvasStepNode[] = [];
+    for (const b of bundles) {
+      nextSectionNodes.push(...b);
+    }
+
+    for (let i = 0; i < nextSectionNodes.length; i++) {
+      if (i === 0) {
+        nextSectionNodes[0] = { ...nextSectionNodes[0], parentId: sId, isLinkedToPrevious: false };
+      } else {
+        const prev = nextSectionNodes[i - 1];
+        nextSectionNodes[i] = { ...nextSectionNodes[i], parentId: prev.id };
+      }
+    }
+
+    let secIdx = 0;
+    const nextCanvasNodes = workspace.canvasNodes.map(node => {
+      const candSecId = resolveNodeSectionId(node, nodesById, knownSectionIds, defaultSecId);
+      if (candSecId === sId) {
+        return nextSectionNodes[secIdx++];
+      }
+      return node;
+    });
+
+    const reordered = reorderSectionsAndNodes(currentSections, nextCanvasNodes);
+    updateWorkspaceState({
+      ...workspace,
+      canvasNodes: reordered.canvasNodes
+    });
+  };
+
   // Cascade delete logic
   const handleRequestDeleteSection = (sectionId: string) => {
     const section = currentSections.find(s => s.id === sectionId);
     if (!section) return;
     if (currentSections.length <= 1) {
-      showToast('Cannot delete the last remaining section');
+      toast.error('Cannot delete the last remaining section');
       return;
     }
     const knownSectionIds = new Set(currentSections.map(s => s.id));
@@ -1439,13 +1967,38 @@ export function KitchenCanvas({
 
   // Step Node modification
   const handleUpdateStep = (stepId: string, updated: Partial<CanvasStepNode>) => {
-    const updatedNodes = workspace.canvasNodes.map(n => {
+    const updatedNodes = workspace.canvasNodes.map((n, idx, arr) => {
       if (n.id === stepId) {
-        return { ...n, ...updated };
+        const next = { ...n, ...updated };
+        if (updated.isCountedStep !== undefined && !updated.isCountedStep) {
+          next.isLinkedToPrevious = false;
+        }
+        if (updated.isLinkedToPrevious !== undefined && updated.isLinkedToPrevious !== n.isLinkedToPrevious) {
+          if (updated.isLinkedToPrevious) {
+            if (!next.isCountedStep) {
+              next.isLinkedToPrevious = false;
+            } else {
+              // Find preceding counted step, passing through any uncounted notes
+              let prevCountedIdx = idx - 1;
+              while (prevCountedIdx >= 0 && !arr[prevCountedIdx].isCountedStep) {
+                prevCountedIdx--;
+              }
+              if (prevCountedIdx >= 0) {
+                next.parentId = arr[prevCountedIdx].id;
+              }
+            }
+          }
+        }
+        return next;
       }
       return n;
     });
-    updateWorkspaceState({ ...workspace, canvasNodes: updatedNodes });
+    const isTyping = updated.instructionText !== undefined || updated.title !== undefined;
+    updateWorkspaceState(
+      { ...workspace, canvasNodes: updatedNodes },
+      true,
+      isTyping ? 'typing' : 'structural'
+    );
   };
 
   // Jump to step with glow and auto centering
@@ -1485,6 +2038,17 @@ export function KitchenCanvas({
   };
 
   // Open Export Recipe Modal
+
+  const [authState, setAuthState] = useState(authStore.getState());
+
+  useEffect(() => {
+    const unsub = authStore.subscribe(state => setAuthState(state));
+    return () => unsub();
+  }, []);
+
+  const role = authState.role || authState.profile?.role;
+
+
   const handleExport = () => {
     setIsExportModalOpen(true);
   };
@@ -1525,16 +2089,43 @@ export function KitchenCanvas({
               {saveStatus === 'saved' ? '● Saved' : saveStatus === 'error' ? '▲ Save Error' : '○ Saving...'}
             </span>
           </div>
+
+          {/* History Undo / Redo Controls */}
+          <div className="canvas-history-btn-group" role="group" aria-label="Undo and Redo">
+            <button
+              type="button"
+              className="canvas-history-btn"
+              onClick={handleUndo}
+              disabled={past.length === 0}
+              title={past.length > 0 ? `Undo (Ctrl+Z) • ${past.length} available` : 'Undo (Ctrl+Z)'}
+              aria-label="Undo"
+            >
+              <Undo2 size={15} />
+            </button>
+            <button
+              type="button"
+              className="canvas-history-btn"
+              onClick={handleRedo}
+              disabled={future.length === 0}
+              title={future.length > 0 ? `Redo (Ctrl+Y) • ${future.length} available` : 'Redo (Ctrl+Y)'}
+              aria-label="Redo"
+            >
+              <Redo2 size={15} />
+            </button>
+          </div>
         </div>
 
         <div className="canvas-top-right">
-          {toastMessage && <div className="canvas-export-toast">{toastMessage}</div>}
           <button
             type="button"
             className="canvas-export-btn"
             onClick={handleExport}
+            style={role === 'admin' ? { background: 'var(--color-green)', borderColor: 'var(--color-green)' } : undefined}
           >
-            Export to src/recipes
+            {/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspace.id) ||
+            Boolean(workspace.graph?.id && !workspace.graph.id.startsWith('workspace-') && !workspace.graph.id.startsWith('untitled'))
+              ? (role === 'admin' ? 'Update Recipe' : 'Request Update')
+              : (role === 'admin' ? 'Publish Recipe' : 'Request Publish')}
           </button>
         </div>
       </header>
@@ -1652,6 +2243,7 @@ export function KitchenCanvas({
                 canReorder={canReorder}
                 accentColor={sectionAccentMap[sec.id]}
                 parentName={sectionParentMap[sec.id]?.name}
+                hasMasterVideo={hasMasterVideo}
                 onSelect={() => {
                   setSelectedNodeId(sec.id);
                   setActiveMentionId(null);
@@ -1683,6 +2275,8 @@ export function KitchenCanvas({
           const stepSlideDelta = reorderAnimatingDeltas[nodeSecId] || 0;
           const isStepSliding = !isStepParentDragged && (Boolean(draggingSectionId) || stepSlideDelta !== 0);
 
+          const reorderMeta = stepReorderInfoMap.get(node.id);
+
           return (
             <div
               key={node.id}
@@ -1695,7 +2289,7 @@ export function KitchenCanvas({
             >
               <StepNode
                 node={node}
-                stepNumber={index + 1}
+                stepNumber={canvasStepNumberMap.get(node.id) || String(index + 1)}
                 allNodes={workspace.canvasNodes}
                 isSelected={selectedNodeId === node.id}
                 isJumpHighlighted={highlightedStepId === node.id}
@@ -1717,6 +2311,12 @@ export function KitchenCanvas({
                   setIsYieldMode(true);
                   setActiveMentionId(null);
                 }}
+                onMoveUp={() => handleMoveStep(node.id, 'up')}
+                onMoveDown={() => handleMoveStep(node.id, 'down')}
+                canMoveUp={reorderMeta?.canMoveUp}
+                canMoveDown={reorderMeta?.canMoveDown}
+                moveUpTooltip={reorderMeta?.moveUpTooltip}
+                moveDownTooltip={reorderMeta?.moveDownTooltip}
               />
 
               {/* Sliding Inspector Card placed right beside the active step node */}
@@ -1748,7 +2348,19 @@ export function KitchenCanvas({
                         return seg;
                       });
                       const updatedInstructionText = (updatedSegments.length > 0 ? updatedSegments : [{ type: 'text' as const, id: 'init', text: node.instructionText }])
-                        .map(s => (s.type === 'text' ? s.text : `[${s.mention.displayText}]`))
+                        .map(s => {
+                          if (s.type === 'text') return s.text;
+                          if (s.mention.type === 'temperature') {
+                            return formatTemperature({
+                              isRange: s.mention.data?.isRange,
+                              value: s.mention.data?.temperatureValue,
+                              rangeMin: s.mention.data?.rangeMin,
+                              rangeMax: s.mention.data?.rangeMax,
+                              unit: s.mention.data?.temperatureUnit || 'F'
+                            });
+                          }
+                          return `[${s.mention.displayText}]`;
+                        })
                         .join('');
                       handleUpdateStep(node.id, {
                         mentions: updatedMentions,
@@ -1797,7 +2409,12 @@ export function KitchenCanvas({
                         }
                         return n;
                       });
-                      updateWorkspaceState({ ...workspace, canvasNodes: updatedNodes });
+                      const isTyping = Boolean(yieldData);
+                      updateWorkspaceState(
+                        { ...workspace, canvasNodes: updatedNodes },
+                        true,
+                        isTyping ? 'typing' : 'structural'
+                      );
                     }}
                     onOpenCustomItemModal={type => setCustomItemModalType(type)}
                   />
@@ -1838,24 +2455,43 @@ export function KitchenCanvas({
           onClose={() => setIsMetadataModalOpen(false)}
           onOpenMediaModal={type => setMediaModalType(type)}
           onSave={updatedGraph => {
-            updateWorkspaceState({
-              ...workspace,
-              title: updatedGraph.title ?? workspace.title,
-              graph: {
-                ...workspace.graph,
-                ...updatedGraph
-              }
-            });
+            updateWorkspaceState(
+              {
+                ...workspace,
+                title: updatedGraph.title ?? workspace.title,
+                graph: {
+                  ...workspace.graph,
+                  ...updatedGraph
+                }
+              },
+              false
+            );
           }}
         />
       )}
 
       {/* Cascade Deletion Confirmation Dialog */}
-      <CascadeDeleteModal
+      <ConfirmModal
         isOpen={Boolean(deleteModalState?.isOpen)}
-        type={deleteModalState?.type || 'step'}
-        title={deleteModalState?.title || ''}
-        itemCount={deleteModalState?.itemCount || 0}
+        title={
+          deleteModalState?.type === 'section'
+            ? `Delete Section "${deleteModalState.title}"?`
+            : 'Delete Step and Attached Notes?'
+        }
+        message={
+          <>
+            <p>
+              {deleteModalState?.type === 'section'
+                ? `This section contains ${deleteModalState.itemCount} step${deleteModalState.itemCount === 1 ? '' : 's'}. Deleting this section root will permanently delete all steps inside this column.`
+                : `This step has ${deleteModalState?.itemCount ?? 0} attached sub-note${deleteModalState?.itemCount === 1 ? '' : 's'}. Deleting it will permanently remove all connected child notes.`}
+            </p>
+            <p style={{ marginTop: '0.5rem', color: 'var(--color-text-muted, #71717a)', fontSize: '0.85rem' }}>
+              Tip: You can undo this deletion anytime using the Undo button or Ctrl+Z.
+            </p>
+          </>
+        }
+        confirmLabel="Delete Permanently"
+        confirmVariant="danger"
         onConfirm={() => {
           if (!deleteModalState) return;
           if (deleteModalState.type === 'section') {
@@ -1913,20 +2549,32 @@ export function KitchenCanvas({
       />
 
       {/* Export Recipe Modal */}
-      <ExportRecipeModal
+      <RequestPublishModal
         isOpen={isExportModalOpen}
         workspace={workspace}
         finalGraph={exportStudioWorkspaceToRecipeGraph(workspace)}
+        role={role}
         onClose={() => setIsExportModalOpen(false)}
-        onExportSuccess={(slug, filePath) => {
-          showToast(`Saved to ${filePath || `src/recipes/${slug}.json`}!`);
-          updateWorkspaceState({
-            ...workspace,
-            graph: {
-              ...workspace.graph,
-              id: slug
-            }
-          });
+        onPublishSuccess={(slug, recipeId) => {
+          const wasExisting =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspace.id) ||
+            Boolean(workspace.graph?.id && !workspace.graph.id.startsWith('workspace-') && !workspace.graph.id.startsWith('untitled'));
+          toast.success(
+            role === 'admin'
+              ? (wasExisting ? `Updated (${slug})!` : `Published (${slug})!`)
+              : `Submitted for review (${slug})!`
+          );
+          updateWorkspaceState(
+            {
+              ...workspace,
+              id: recipeId || workspace.id,
+              graph: {
+                ...workspace.graph,
+                id: slug
+              }
+            },
+            false
+          );
         }}
       />
 

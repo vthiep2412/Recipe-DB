@@ -1,5 +1,6 @@
 import type { RecipeGraph, CanvasStepNode, StudioWorkspace } from '../types/orchestration';
 import { formatFraction } from './cooklangParser';
+import { formatTemperature } from '../utils/temperature';
 
 function formatSecondsToDuration(sec?: number): string {
   if (!sec || sec <= 0) return '0m';
@@ -26,6 +27,7 @@ export function generateFablang(
 
   // 1. YAML Frontmatter
   lines.push('---');
+  lines.push('isFablang: true');
   lines.push(`title: "${escapeRawYamlString(graph.title || 'Untitled Recipe')}"`);
 
   if (graph.difficulty) {
@@ -95,6 +97,14 @@ export function generateFablang(
     }
   }
 
+  const rawTags = (graph as any)?.tags;
+  if (Array.isArray(rawTags) && rawTags.length > 0) {
+    lines.push('tags:');
+    for (const tag of rawTags) {
+      lines.push(`  - "${escapeRawYamlString(String(tag))}"`);
+    }
+  }
+
   lines.push('---');
   lines.push('');
 
@@ -151,6 +161,30 @@ export function generateFablang(
     const matchingComponent = graph.components.find(c =>
       c.id === `component-${section.id}` || c.id === section.id
     ) || graph.components.find(c => c.name === section.name);
+
+    // Section/Subsection Media directives
+    const sectionMedia = section.media || matchingComponent?.media;
+    if (sectionMedia?.galleryUrls && sectionMedia.galleryUrls.length > 0) {
+      sectionMedia.galleryUrls.forEach((imgUrl, idx) => {
+        lines.push(` > image${idx + 1}: ${imgUrl}`);
+      });
+    }
+
+    if (sectionMedia?.videoClip && (sectionMedia.videoClip.startSec > 0 || (sectionMedia.videoClip.endSec && sectionMedia.videoClip.endSec > 0))) {
+      const clip = sectionMedia.videoClip;
+      const startM = Math.floor(clip.startSec / 60);
+      const startS = clip.startSec % 60;
+      const startStr = `${startM}:${startS < 10 ? '0' : ''}${startS}`;
+      if (clip.endSec && clip.endSec > clip.startSec) {
+        const endM = Math.floor(clip.endSec / 60);
+        const endS = clip.endSec % 60;
+        const endStr = `${endM}:${endS < 10 ? '0' : ''}${endS}`;
+        lines.push(` > clip: ${startStr} to ${endStr}`);
+      } else {
+        lines.push(` > clip: ${startStr}`);
+      }
+    }
+
     let steps = matchingComponent ? matchingComponent.steps : [];
     if (steps.length === 0 && canvasNodes && canvasNodes.length > 0) {
       const matchingCanvasNodes = canvasNodes.filter(n => n.sectionId === section.id);
@@ -236,16 +270,17 @@ export function generateFablang(
             const name = m.displayText;
             const noteStr = m.data?.creatorNote ? `(${m.data.creatorNote})` : '';
 
-            if (isRemention && !m.data?.amount) {
-              return `${prefixChar}${name}${noteStr || (name.includes(' ') ? '{}' : '')}`;
+            if (isRemention) {
+              const needsBraces = name.includes(' ') || Boolean(noteStr);
+              return `${prefixChar}${name}${needsBraces ? '{}' : ''}${noteStr}`;
             }
 
             let amtStr = '';
             if (m.data?.amount !== undefined && m.data.amount !== '') {
               const formattedAmt = typeof m.data.amount === 'number' ? formatFraction(m.data.amount) : String(m.data.amount);
-              const u = m.data?.unit ? `%${m.data.unit}` : '';
+              const u = m.data?.unit && m.data.unit !== '(No Unit)' ? `%${m.data.unit}` : '';
               amtStr = `{${formattedAmt}${u}}`;
-            } else if (name.includes(' ') && !noteStr) {
+            } else if (name.includes(' ') || Boolean(noteStr)) {
               amtStr = '{}';
             }
             return `${prefixChar}${name}${amtStr}${noteStr}`;
@@ -253,8 +288,10 @@ export function generateFablang(
 
           if (m.type === 'cookware') {
             const name = m.displayText;
-            const sizeStr = m.data?.vesselSize ? `{${m.data.vesselSize}}` : (name.includes(' ') ? '{}' : '');
             const noteStr = m.data?.creatorNote ? `(${m.data.creatorNote})` : '';
+            const sizeStr = m.data?.vesselSize
+              ? `{${m.data.vesselSize}}`
+              : (name.includes(' ') || Boolean(noteStr) ? '{}' : '');
             return `#${name}${sizeStr}${noteStr}`;
           }
 
@@ -270,16 +307,26 @@ export function generateFablang(
             return `~{${sec}%seconds}${noteStr}`;
           }
 
+          if (m.type === 'temperature') {
+            return formatTemperature({
+              isRange: m.data?.isRange,
+              value: m.data?.temperatureValue,
+              rangeMin: m.data?.rangeMin,
+              rangeMax: m.data?.rangeMax,
+              unit: m.data?.temperatureUnit || 'F'
+            });
+          }
+
           return `[${m.displayText}]`;
         }).join('');
       } else {
         textContent = step.instructionText;
       }
 
-      // Append yield production syntax if step produces yield
+      // Append yield production syntax if step produces yield (ends cleanly with blank {})
       let yieldProductionSuffix = '';
       if (step.producesYield) {
-        yieldProductionSuffix = ` -> *${step.producesYield.name}*{#${step.producesYield.vesselId}}`;
+        yieldProductionSuffix = ` -> *${step.producesYield.name}*{}`;
       }
 
       lines.push(`${prefix}${directives}${textContent.trim()}${yieldProductionSuffix}`);

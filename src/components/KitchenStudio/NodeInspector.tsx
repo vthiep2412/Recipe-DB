@@ -10,13 +10,15 @@ import {
   STANDARD_INGREDIENTS,
   STANDARD_COOKWARE,
   ALL_MEASUREMENT_UNITS,
+  NO_UNIT_OPTION,
   VESSEL_SIZES,
   parseTimeStringToSeconds,
   formatSecondsToDisplay
 } from '../../constants/standardKitchenData';
 import { UniversalDropdown, DropdownItem } from './UniversalDropdown';
-import { CompactDropdown } from './CompactDropdown';
+import { Dropdown } from '../ui/Dropdown';
 import { parseFraction } from '../../parser/cooklangParser';
+import { formatTemperature } from '../../utils/temperature';
 
 interface NodeInspectorProps {
   activeStep: CanvasStepNode;
@@ -25,7 +27,7 @@ interface NodeInspectorProps {
   workspace: StudioWorkspace;
   onClose: () => void;
   onUpdateMention: (mentionId: string, updatedData: Partial<StepMentionToken>) => void;
-  onUpdateYield: (stepId: string, yieldData: { name: string; vesselId: string } | undefined) => void;
+  onUpdateYield: (stepId: string, yieldData: { name: string; vesselId?: string } | undefined) => void;
   onOpenCustomItemModal: (type: 'ingredient' | 'cookware') => void;
 }
 
@@ -41,7 +43,6 @@ export function NodeInspector({
 }: NodeInspectorProps) {
   // Yield state
   const [yieldName, setYieldName] = useState(activeStep.producesYield?.name || '');
-  const [yieldVessel, setYieldVessel] = useState(activeStep.producesYield?.vesselId || 'bowl-a');
 
   // Amount input local string state to allow free backspacing and clearing
   const [amountInput, setAmountInput] = useState<string>(() =>
@@ -57,12 +58,11 @@ export function NodeInspector({
   useEffect(() => {
     if (activeStep.producesYield) {
       setYieldName(activeStep.producesYield.name);
-      setYieldVessel(activeStep.producesYield.vesselId);
     }
   }, [activeStep.producesYield]);
 
   // Collect previous yields created in steps before this one
-  const previousYields: { stepId: string; stepTitle: string; name: string; vesselId: string }[] = [];
+  const previousYields: { stepId: string; stepTitle: string; name: string; vesselId?: string }[] = [];
   // Collect declared ingredients from steps strictly before this one for backward re-mention
   const previousIngredientsMap = new Map<string, { name: string; sourceStepTitle: string; originalId: string }>();
 
@@ -122,18 +122,12 @@ export function NodeInspector({
 
   // 1. Render Yield Mode
   if (isYieldMode) {
-    const vesselOptions: DropdownItem[] = STANDARD_COOKWARE.map(c => ({
-      id: c.id,
-      label: c.name,
-      group: 'Standard Vessels'
-    }));
-
     const handleSaveYield = () => {
       const trimmed = yieldName.trim();
       if (!trimmed) {
         onUpdateYield(activeStep.id, undefined);
       } else {
-        onUpdateYield(activeStep.id, { name: trimmed, vesselId: yieldVessel });
+        onUpdateYield(activeStep.id, { name: trimmed });
       }
       onClose();
     };
@@ -156,17 +150,6 @@ export function NodeInspector({
               placeholder="e.g. Mascarpone Cream or Coffee Dip"
               value={yieldName}
               onInput={e => setYieldName((e.target as HTMLInputElement).value)}
-            />
-          </div>
-
-          <div className="inspector-field">
-            <label className="inspector-label">Holding Vessel</label>
-            <UniversalDropdown
-              items={vesselOptions}
-              selectedId={yieldVessel}
-              onSelect={id => setYieldVessel(id)}
-              onAddNew={() => onOpenCustomItemModal('cookware')}
-              addNewLabel="+ Add New Vessel"
             />
           </div>
 
@@ -232,7 +215,8 @@ export function NodeInspector({
       ? `remention-${activeMention.data?.ingredientId || activeMention.displayText.toLowerCase()}`
       : (activeMention.data?.ingredientId || activeMention.displayText.toLowerCase());
     const standardMatch = STANDARD_INGREDIENTS.find(i => i.id === currentIngId || i.name.toLowerCase() === currentIngId.toLowerCase())
-    const availableUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
+    const baseUnits = standardMatch ? standardMatch.allowedUnits : ALL_MEASUREMENT_UNITS;
+    const availableUnits = baseUnits.includes(NO_UNIT_OPTION) ? baseUnits : [NO_UNIT_OPTION, ...baseUnits];
 
     return (
       <aside className="studio-inspector-card" aria-label="Ingredient Inspector">
@@ -417,11 +401,12 @@ export function NodeInspector({
                               onBlur={handleAmountBlur}
                             />
 
-                            <CompactDropdown
+                            <Dropdown
                               className="inspector-unit-compact-select"
-                              value={activeMention.data?.unit || availableUnits[0]}
+                              value={(!activeMention.data?.unit || activeMention.data.unit === NO_UNIT_OPTION) ? NO_UNIT_OPTION : activeMention.data.unit}
                               options={availableUnits}
                               onChange={newUnit => {
+                                const isNoUnit = newUnit === NO_UNIT_OPTION || !newUnit;
                                 const targetIsMetric = newUnit === 'g' || newUnit === 'ml';
                                 let updatedAmount = activeMention.data?.amount;
                                 if (targetIsMetric && typeof updatedAmount === 'string' && updatedAmount.includes('/')) {
@@ -432,7 +417,11 @@ export function NodeInspector({
                                   }
                                 }
                                 onUpdateMention(activeMention.id, {
-                                  data: { ...activeMention.data, unit: newUnit, amount: updatedAmount }
+                                  data: {
+                                    ...activeMention.data,
+                                    unit: isNoUnit ? undefined : newUnit,
+                                    amount: updatedAmount
+                                  }
                                 });
                               }}
                             />
@@ -613,6 +602,128 @@ export function NodeInspector({
               rows={3}
             />
           </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // 5. Render Temperature Mention Mode
+  if (activeMention.type === 'temperature') {
+    const isRange = Boolean(activeMention.data?.isRange);
+    const unit = activeMention.data?.temperatureUnit || 'F';
+    const singleVal = activeMention.data?.temperatureValue ?? 350;
+    const minVal = activeMention.data?.rangeMin ?? 350;
+    const maxVal = activeMention.data?.rangeMax ?? 375;
+
+    const handleUpdate = (updates: Partial<typeof activeMention.data>) => {
+      const mergedData = { ...activeMention.data, ...updates };
+      const formatted = formatTemperature({
+        isRange: mergedData.isRange,
+        value: mergedData.temperatureValue,
+        rangeMin: mergedData.rangeMin,
+        rangeMax: mergedData.rangeMax,
+        unit: mergedData.temperatureUnit || 'F'
+      });
+      onUpdateMention(activeMention.id, {
+        displayText: formatted,
+        data: mergedData
+      });
+    };
+
+    return (
+      <aside className="studio-inspector-card" aria-label="Temperature Inspector">
+        <div className="inspector-header">
+          <span className="inspector-title">Temperature Settings</span>
+          <button type="button" className="inspector-close-btn" onClick={onClose} aria-label="Close inspector">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="inspector-body">
+          {/* Mode Switch: Direct vs Range */}
+          <div className="inspector-field">
+            <label className="inspector-label">Type</label>
+            <div className="inspector-size-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <button
+                type="button"
+                className={`inspector-size-chip ${!isRange ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ isRange: false })}
+              >
+                Direct
+              </button>
+              <button
+                type="button"
+                className={`inspector-size-chip ${isRange ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ isRange: true, rangeMin: minVal, rangeMax: maxVal })}
+              >
+                Range
+              </button>
+            </div>
+          </div>
+
+          {/* Unit Switch: °F vs °C */}
+          <div className="inspector-field">
+            <label className="inspector-label">Unit</label>
+            <div className="inspector-size-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <button
+                type="button"
+                className={`inspector-size-chip ${unit === 'F' ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ temperatureUnit: 'F' })}
+              >
+                °F (Fahrenheit)
+              </button>
+              <button
+                type="button"
+                className={`inspector-size-chip ${unit === 'C' ? 'is-active' : ''}`}
+                onClick={() => handleUpdate({ temperatureUnit: 'C' })}
+              >
+                °C (Celsius)
+              </button>
+            </div>
+          </div>
+
+          {/* Temperature Numeric Inputs */}
+          {!isRange ? (
+            <div className="inspector-field">
+              <label className="inspector-label">Temperature ({unit === 'C' ? '°C' : '°F'})</label>
+              <input
+                type="number"
+                className="inspector-input"
+                value={singleVal}
+                onInput={e => {
+                  const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                  handleUpdate({ temperatureValue: num });
+                }}
+              />
+            </div>
+          ) : (
+            <div className="inspector-field">
+              <label className="inspector-label">Temperature Range ({unit === 'C' ? '°C' : '°F'})</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="number"
+                  className="inspector-input"
+                  placeholder="Min"
+                  value={minVal}
+                  onInput={e => {
+                    const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                    handleUpdate({ rangeMin: num });
+                  }}
+                />
+                <span style={{ color: 'var(--text-muted)' }}>–</span>
+                <input
+                  type="number"
+                  className="inspector-input"
+                  placeholder="Max"
+                  value={maxVal}
+                  onInput={e => {
+                    const num = parseFloat((e.target as HTMLInputElement).value) || 0;
+                    handleUpdate({ rangeMax: num });
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     );

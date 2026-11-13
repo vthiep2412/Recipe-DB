@@ -4,8 +4,18 @@ import { parseFraction, formatFraction } from './cooklangParser';
 
 function formatSecondsToDisplay(sec?: number): string | undefined {
   if (!sec) return undefined;
-  const mins = Math.round(sec / 60);
-  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} minutes`;
+  const totalMins = Math.round(sec / 60);
+  if (totalMins < 60) {
+    return totalMins === 1 ? '1 minute' : `${totalMins} minutes`;
+  }
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  const hourStr = h === 1 ? '1 hour' : `${h} hours`;
+  if (m === 0) {
+    return hourStr;
+  }
+  const minStr = m === 1 ? '1 minute' : `${m} minutes`;
+  return `${hourStr} ${minStr}`;
 }
 
 /**
@@ -28,14 +38,21 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
     }
 
-    const unitStr = inp.unit ? ` ${inp.unit}` : '';
-    const quantityText = displayAmt ? `${displayAmt}${unitStr}`.trim() : null;
+    const isSyntheticPiece =
+      inp.unit &&
+      (inp.unit.toLowerCase() === 'piece' || inp.unit.toLowerCase() === 'pieces') &&
+      (numVal === 1 || displayAmt === '1');
+
+    const effectiveUnit = (isSyntheticPiece || inp.unit === '(No Unit)') ? null : inp.unit || null;
+    const effectiveNum = isSyntheticPiece ? null : numVal;
+    const unitStr = effectiveUnit ? ` ${effectiveUnit}` : '';
+    const quantityText = isSyntheticPiece || !displayAmt ? null : `${displayAmt}${unitStr}`.trim();
 
     return {
       id: inp.id || `ing-${idx + 1}`,
       name: inp.name,
-      quantityValue: numVal,
-      unit: inp.unit || null,
+      quantityValue: effectiveNum,
+      unit: effectiveUnit,
       quantityText,
       note: inp.notes || null,
       isHidden: false
@@ -60,8 +77,13 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
           const parsed = parseFraction(rawAmt);
           displayAmt = parsed !== null ? formatFraction(parsed) : rawAmt;
         }
-        const unitStr = tok.unit ? ` ${tok.unit}` : '';
-        const quantityText = tok.isRemention
+        const isSyntheticPiece =
+          tok.unit &&
+          (tok.unit.toLowerCase() === 'piece' || tok.unit.toLowerCase() === 'pieces') &&
+          (rawAmt === 1 || rawAmt === '1' || displayAmt === '1');
+
+        const unitStr = tok.unit && tok.unit !== '(No Unit)' && !isSyntheticPiece ? ` ${tok.unit}` : '';
+        const quantityText = tok.isRemention || isSyntheticPiece
           ? undefined
           : (displayAmt ? `${displayAmt}${unitStr}`.trim() : undefined);
 
@@ -100,7 +122,7 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       stepId: node.id,
       title: node.title,
       isCountedStep: node.isCountedStep,
-      isLinkedToPrevious: node.isLinkedToPrevious,
+      isLinkedToPrevious: node.isCountedStep !== false ? node.isLinkedToPrevious : false,
       producesYield: node.producesYield,
       image: node.media?.galleryUrls?.[0],
       media: node.media,
@@ -130,18 +152,24 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
     const subsections: RecipeSubsection[] = childMetas.map(childMeta => {
       const childShowInline = childMeta.sectionMeta?.showInlineTools ?? false;
       const childSteps = childMeta.comp.steps.map(stepNode => convertStepNode(stepNode, childShowInline));
+      const subMedia = childMeta.comp.media || childMeta.sectionMeta?.media;
       return {
         id: childMeta.comp.id,
         name: childMeta.comp.name || 'Subsection',
         description: childMeta.sectionMeta?.description,
+        media: subMedia,
+        image: subMedia?.galleryUrls?.[0],
         steps: childSteps
       };
     });
 
+    const rootMedia = rootMeta.comp.media || rootMeta.sectionMeta?.media;
     return {
       id: rootMeta.comp.id,
       name: rootMeta.comp.name || 'Instructions',
       description: rootMeta.sectionMeta?.description,
+      media: rootMedia,
+      image: rootMedia?.galleryUrls?.[0],
       steps: rootSteps,
       subsections: subsections.length > 0 ? subsections : undefined
     };
@@ -174,9 +202,10 @@ export function recipeGraphToRecipeJSON(graph: RecipeGraph): RecipeJSON {
       prep: formatSecondsToDisplay(graph.times.prepSec),
       cook: formatSecondsToDisplay(graph.times.cookSec),
       bake: formatSecondsToDisplay(graph.times.bakeSec),
-      rest: formatSecondsToDisplay(graph.times.restSec)
+      rest: formatSecondsToDisplay(graph.times.restSec),
+      ...(graph.times.custom ? Object.fromEntries(graph.times.custom.map(c => [c.label, formatSecondsToDisplay(c.seconds)])) : {})
     },
-    tags: [],
+    tags: graph.tags || [],
     metadata: {},
     ingredients,
     sections,
@@ -194,7 +223,10 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
   }
 
   const sections: import('../types/orchestration').CanvasSection[] = Array.isArray(ws.sections) && ws.sections.length > 0
-    ? ws.sections
+    ? ws.sections.map((sec: any) => ({
+        ...sec,
+        media: sec.media || {}
+      }))
     : [
         {
           id: 'section-1',
@@ -215,7 +247,7 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
           parentId,
           sectionId,
           isCountedStep: node.isCountedStep !== false,
-          isLinkedToPrevious: Boolean(node.isLinkedToPrevious),
+          isLinkedToPrevious: node.isCountedStep !== false ? Boolean(node.isLinkedToPrevious) : false,
           mentions: Array.isArray(node.mentions) ? node.mentions : [],
           media: node.media || {}
         };
@@ -251,7 +283,8 @@ export function normalizeWorkspace(ws: any): import('../types/orchestration').St
     inputs: Array.isArray(ws.graph?.inputs) ? ws.graph.inputs : [],
     vessels: Array.isArray(ws.graph?.vessels) ? ws.graph.vessels : [],
     components: Array.isArray(ws.graph?.components) ? ws.graph.components : [],
-    sections
+    sections,
+    tags: Array.isArray(ws.graph?.tags) ? ws.graph.tags : (Array.isArray(ws.tags) ? ws.tags : undefined)
   };
 
   return {
